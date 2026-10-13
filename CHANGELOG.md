@@ -22,6 +22,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   argument (`mobile`, the default, `business` or `home`) files it under the matching Graph field.
   Graph keeps business and home numbers as lists, and a write replaces that list with the one
   number given — the same replace-not-merge rule the addresses follow.
+- **A refused calendar update no longer claims nothing changed when it may have.** A series
+  update is pinned to the version it read, and Graph answers a stale pin with `412`. The hint
+  said "nothing was modified", but the SDK retries an update after a gateway timeout, and when
+  the first attempt had gone through, the retry is the one refused — so an agent reported a
+  change that landed as a failure (#96). The hint now says the change may already have been
+  applied and to re-read the item before trying again. Retry behaviour is unchanged.
 
 ## [1.25.1] — 2026-10-07
 

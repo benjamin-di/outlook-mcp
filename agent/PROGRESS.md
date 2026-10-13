@@ -2,6 +2,14 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-13 — hint-412-pinned-write (#96), plus review fix on contact `title`
+
+- Addressed PR comments: IC_kwDOSA_0Lc8AAAABbgaGew (`[construct review]`: `outlook_update_contact`'s client-visible description never said `title` is the name prefix). Fixed: added create's line to the update docstring; new `test_contacts.py::test_title_is_described_as_the_name_prefix_where_the_model_reads_it` (both write tools, via `Client(mcp).list_tools()`) red for update → green. Surface 13,201 → 13,224 proxy (ceiling 13,300, no raise; budget header records it). ~76 tokens of headroom left — contact-clear-phone may need a deliberate raise.
+- #96 re-checked: open, unassigned, no comments; PR search hits unrelated.
+- `errors._HINT_TABLE` 412 hint reworded — no longer "Nothing was modified"; says the change may already have been applied after a retried request, re-read and check before re-sending. Retry behaviour unchanged. Tests red→green: `test_error_wrapper.py::test_wrap_412_conflict_says_the_change_may_have_landed_and_to_re_read`, `test_error_text_reaches_client.py::test_pinned_write_conflict_hint_reaches_the_client`. Stale docstring in `test_calendar_write.py` updated. CHANGELOG Unreleased → Fixed.
+- Findings: `agent/findings/hint-412-pinned-write.md` — kiota-http 1.12.3 retries PATCH on 429/503/504; disabling retry on the pinned PATCH loses every row of the trade-off once the hint is honest. No `[?]`.
+- Suite: 1350 passed, 85 deselected; ruff check + format clean.
+
 ## 2026-10-13 — contact-phone-type (#120), with contact-title-on-update folded in
 
 - Re-checked #120: open, unassigned, no comments; the PR search hit (#67) is an unrelated To Do PR. No PR comments on #122 to address.
