@@ -121,6 +121,58 @@ class TestUpdateContactRoundTrip:
             assert got["company"] == "Keep Me"
 
 
+class TestPhoneTypeRoundTrip:
+    """#120: each phone type lands in its own field, and only there.
+
+    The issue's live evidence showed Graph accepting ``businessPhones`` on a
+    consumer contact; these pin that our own write path gets it there, and that
+    the update path can fix a prefix in place (#119's follow-up).
+    """
+
+    async def test_create_files_a_business_number_as_business(
+        self, real_graph_client, live_write_config
+    ):
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="BusinessPhone",
+            phone="+15555550195",
+            phone_type="business",
+        ) as contact_id:
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["business_phones"] == ["+15555550195"]
+            assert got["mobile_phone"] == ""
+            assert got["home_phones"] == []
+
+    async def test_update_files_a_home_number_and_corrects_the_prefix(
+        self, real_graph_client, live_write_config
+    ):
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="HomePhone",
+            phone="+15555550194",
+            title="Probe",
+        ) as contact_id:
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                phone="+15555550193",
+                phone_type="home",
+                title="Dr.",
+                config=live_write_config,
+            )
+
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["home_phones"] == ["+15555550193"]
+            # Untouched: phone_type picks one field, it does not move the others.
+            assert got["mobile_phone"] == "+15555550194"
+            assert got["title"] == "Dr."
+            assert not got["display_name"].startswith("Probe")
+
+
 class TestAddressRoundTrip:
     """The address half of the same question, and the one that 400'd.
 

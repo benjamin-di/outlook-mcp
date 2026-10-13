@@ -2,6 +2,17 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-13 — contact-phone-type (#120), with contact-title-on-update folded in
+
+- Re-checked #120: open, unassigned, no comments; the PR search hit (#67) is an unrelated To Do PR. No PR comments on #122 to address.
+- `outlook_create_contact` / `outlook_update_contact` take `phone_type` (`mobile` default, `business`, `home`); `_assign_phone` files `phone` under `mobilePhone`, `businessPhones=[phone]` or `homePhones=[phone]` and leaves the other two unset (never `None`). `_check_phone_type` refuses an unknown type and a non-mobile type with no phone, before any Graph call. Plain `str` with values in the docstring, matching `importance`/`show_as`.
+- `outlook_update_contact` takes `title` (name prefix) — the queued #119 follow-up, same signature, so folded in per its card.
+- TDD: 7 wire tests (each type × create/update, lands only in its own field; update `title`) + 3 validation tests failed first (TypeError), then green.
+- Live: `TestPhoneTypeRoundTrip` (create business; update home + title, mobile untouched) added to `tests/test_live_contacts_write.py`, NOT run. The existing `[?]` contact-job-title-live now covers it — same command.
+- Docs: README + SKILL contact rows, update docstring (replace-list rule), CHANGELOG Unreleased → Fixed.
+- Suite: 1347 passed, 85 deselected; ruff check + format clean. Tool surface 13,100 → 13,201 proxy tokens (ceiling 13,300, no raise; budget header now records it). ~99 tokens of headroom left.
+- Design note: `phone_type` picks one field and does not clear the others, so "move mobile → business" still leaves the mobile number. Clearing would need an explicit null via `additional_data` (the backing store emits a `None` under its Python name). Not requested; left as is.
+
 ## 2026-10-13 — contact-job-title (#119)
 
 - Re-checked #119: open, unassigned, no comments, no linked PR (search hit #63 is an older, unrelated merged PR).

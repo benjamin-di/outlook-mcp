@@ -48,6 +48,9 @@ CHARS_PER_TOKEN = 4
 # deleted occurrences will not be reshaped (+34) — silent data loss, so it goes
 # where the model reads it. The other refusals carry their remedies in the error
 # text rather than in the schema every turn pays for.
+#
+# 13,201 with the contact fixes: `job_title` on create and update (#119, measured
+# 13,100), then `phone_type` on both and `title` on update (#120, +101). No raise.
 TOOL_SURFACE_CEILING = 13_300
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

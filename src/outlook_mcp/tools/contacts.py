@@ -138,6 +138,39 @@ def _build_address(slot: str, parts: Any) -> Any:
     return address
 
 
+_PHONE_TYPES = ("mobile", "business", "home")
+
+
+def _check_phone_type(phone: str | None, phone_type: str) -> None:
+    """Refuse a type that would quietly file the number somewhere else, or nowhere.
+
+    An unknown type falling back to mobile is #120 again with extra steps, and a
+    type with no number is a patch that carries nothing and reports "updated".
+    """
+    if phone_type not in _PHONE_TYPES:
+        raise ValueError(
+            f"Unknown phone_type {phone_type[:20]!r}. Use one of: {', '.join(_PHONE_TYPES)}."
+        )
+    if not phone and phone_type != "mobile":
+        raise ValueError("phone_type needs phone: it says which kind of number phone is.")
+
+
+def _assign_phone(contact: Any, phone: str, phone_type: str) -> None:
+    """File ``phone`` under the Graph field its type names (#120).
+
+    Consumer contacts have one ``mobilePhone`` but *lists* of business and home
+    numbers, so a business or home write replaces that list with ``[phone]`` —
+    the same replace-not-merge contract the addresses have. The other two fields
+    are left unset, never assigned ``None``: the backing store would emit them.
+    """
+    if phone_type == "business":
+        contact.business_phones = [phone]
+    elif phone_type == "home":
+        contact.home_phones = [phone]
+    else:
+        contact.mobile_phone = phone
+
+
 def _primary_phone(contact: Any) -> str:
     """Pick the most representative phone from the consumer-Graph contact fields.
 
@@ -317,6 +350,7 @@ async def create_contact(
     company: str | None = None,
     title: str | None = None,
     job_title: str | None = None,
+    phone_type: str = "mobile",
     *,
     config: Config,
 ) -> dict:
@@ -333,6 +367,7 @@ async def create_contact(
         validate_email(email)
     if phone:
         validate_phone(phone)
+    _check_phone_type(phone, phone_type)
 
     from msgraph.generated.models.contact import Contact
     from msgraph.generated.models.email_address import EmailAddress
@@ -347,7 +382,7 @@ async def create_contact(
         ea.name = first_name
         new_contact.email_addresses = [ea]
     if phone:
-        new_contact.mobile_phone = phone
+        _assign_phone(new_contact, phone, phone_type)
     if company:
         new_contact.company_name = company
     if title:
@@ -370,6 +405,8 @@ async def update_contact(
     last_name: str | None = None,
     email: str | None = None,
     phone: str | None = None,
+    phone_type: str = "mobile",
+    title: str | None = None,
     job_title: str | None = None,
     home_address: dict | None = None,
     business_address: dict | None = None,
@@ -385,6 +422,10 @@ async def update_contact(
     it: parts not supplied come back empty, not preserved. So pass back every
     part you intend to keep, which is why the read and write halves name the
     same five fields. Omit an address entirely to leave it untouched.
+
+    ``phone_type`` follows the same rule for the list-valued numbers: a business
+    or home write replaces that list with ``[phone]``. ``title`` is the name
+    prefix, here so a job that landed in it can be corrected in place (#119).
     """
     check_permission(config, CATEGORY_CONTACTS_WRITE, "outlook_update_contact")
     contact_id = validate_graph_id(contact_id)
@@ -396,6 +437,7 @@ async def update_contact(
         validate_email(email)
     if phone is not None:
         validate_phone(phone)
+    _check_phone_type(phone, phone_type)
 
     from msgraph.generated.models.contact import Contact
     from msgraph.generated.models.email_address import EmailAddress
@@ -410,7 +452,9 @@ async def update_contact(
         ea.address = email
         patch_body.email_addresses = [ea]
     if phone is not None:
-        patch_body.mobile_phone = phone
+        _assign_phone(patch_body, phone, phone_type)
+    if title is not None:
+        patch_body.title = title
     if job_title is not None:
         patch_body.job_title = job_title
 

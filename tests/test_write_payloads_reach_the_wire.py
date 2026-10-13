@@ -675,6 +675,80 @@ class TestContacts:
             '"otherAddress": {"city": "SentinelOtherCity2"}',
         )
 
+    async def test_update_contact_can_correct_the_name_prefix(self):
+        """#119 follow-up: a job stuck in the prefix was only fixable by recreating."""
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client, contact_id="AAMkAG123=", title="SENTINEL-TITLE-b15", config=_CFG
+        )
+
+        assert_on_wire(builder.patch.call_args[0][0], '"title": "SENTINEL-TITLE-b15"')
+
+    # #120: `phone` only ever wrote `mobilePhone`, so an office line from a
+    # business card was saved as a mobile. Each type lands in its own Graph
+    # field and nowhere else; the list fields carry exactly `[phone]`.
+    @pytest.mark.parametrize(
+        ("phone_type", "needle", "absent"),
+        [
+            ("mobile", '"mobilePhone": "+15555550102"', ("businessPhones", "homePhones")),
+            ("business", '"businessPhones": ["+15555550102"]', ("mobilePhone", "homePhones")),
+            ("home", '"homePhones": ["+15555550102"]', ("mobilePhone", "businessPhones")),
+        ],
+    )
+    async def test_create_contact_phone_lands_in_its_type(self, phone_type, needle, absent):
+        client = MagicMock()
+        client.me.contacts.post = AsyncMock(return_value=MagicMock(id="C1"))
+
+        await contacts.create_contact(
+            client, first_name="Jane", phone="+15555550102", phone_type=phone_type, config=_CFG
+        )
+
+        model = client.me.contacts.post.call_args[0][0]
+        body = wire(model)
+        assert needle in body, body
+        for key in absent:
+            assert f'"{key}"' not in body, body
+
+    @pytest.mark.parametrize(
+        ("phone_type", "needle", "absent"),
+        [
+            ("mobile", '"mobilePhone": "+15555550103"', ("businessPhones", "homePhones")),
+            ("business", '"businessPhones": ["+15555550103"]', ("mobilePhone", "homePhones")),
+            ("home", '"homePhones": ["+15555550103"]', ("mobilePhone", "businessPhones")),
+        ],
+    )
+    async def test_update_contact_phone_lands_in_its_type(self, phone_type, needle, absent):
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client,
+            contact_id="AAMkAG123=",
+            phone="+15555550103",
+            phone_type=phone_type,
+            config=_CFG,
+        )
+
+        body = wire(builder.patch.call_args[0][0])
+        assert needle in body, body
+        for key in absent:
+            assert f'"{key}"' not in body, body
+
+    async def test_phone_type_defaults_to_mobile(self):
+        """Today's behaviour stays the default: existing callers are unaffected."""
+        client = MagicMock()
+        client.me.contacts.post = AsyncMock(return_value=MagicMock(id="C1"))
+
+        await contacts.create_contact(client, first_name="Jane", phone="+15555550104", config=_CFG)
+
+        assert_on_wire(client.me.contacts.post.call_args[0][0], '"mobilePhone": "+15555550104"')
+
 
 # ── to do ─────────────────────────────────────────────────────────────
 

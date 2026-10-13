@@ -926,10 +926,12 @@ async def outlook_create_contact(
     company: str | None = None,
     title: str | None = None,
     job_title: str | None = None,
+    phone_type: str = "mobile",
 ) -> dict:
     """Create a new contact with name and optional email, phone, company, job_title.
 
     title is the name prefix ("Dr.", "Ms."), shown in the display name — not the job.
+    phone_type: "mobile", "business" or "home".
     """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
@@ -942,6 +944,7 @@ async def outlook_create_contact(
         company,
         title,
         job_title,
+        phone_type,
         config=config,
     )
 
@@ -955,6 +958,8 @@ async def outlook_update_contact(
     last_name: str | None = None,
     email: str | None = None,
     phone: str | None = None,
+    phone_type: str = "mobile",
+    title: str | None = None,
     job_title: str | None = None,
     home_address: dict | None = None,
     business_address: dict | None = None,
@@ -965,6 +970,7 @@ async def outlook_update_contact(
     An address takes the shape outlook_get_contact returns — any subset of
     {"street", "city", "state", "postal_code", "country_or_region"} — and REPLACES that
     whole address, so pass back every part you want to keep. Omit it to leave it untouched.
+    phone_type ("mobile", "business", "home") picks the field; business/home REPLACE that list.
     """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
@@ -975,6 +981,8 @@ async def outlook_update_contact(
         last_name,
         email,
         phone,
+        phone_type,
+        title,
         job_title,
         home_address,
         business_address,

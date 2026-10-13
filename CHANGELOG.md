@@ -14,6 +14,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   back "Engineer Jane Doe" (#119). `outlook_create_contact` and `outlook_update_contact` now take
   `job_title` (Graph's `jobTitle`), `outlook_get_contact` returns it, and `title` is described as
   the prefix it is. `title` keeps its name and meaning, so existing callers are unaffected.
+  `outlook_update_contact` also takes `title` now, so a job already stuck in the prefix can be
+  corrected in place instead of by deleting and recreating the contact.
+- **A business or home phone number can be saved as one.** `outlook_create_contact` and
+  `outlook_update_contact` wrote every `phone` to `mobilePhone`, so an office number from a
+  business card was saved as a mobile and had to be moved by hand (#120). A new `phone_type`
+  argument (`mobile`, the default, `business` or `home`) files it under the matching Graph field.
+  Graph keeps business and home numbers as lists, and a write replaces that list with the one
+  number given — the same replace-not-merge rule the addresses follow.
 
 ## [1.25.1] — 2026-10-07
 

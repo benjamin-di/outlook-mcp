@@ -373,6 +373,38 @@ class TestUpdateContact:
         assert payload.mobile_phone == "+19998887777"
         assert getattr(payload, "phones", None) is None
 
+    async def test_unknown_phone_type_is_refused(self):
+        """A misspelt type must not fall back to mobile and report success."""
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        with pytest.raises(ValueError, match="phone_type.*mobile, business, home"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                phone="+19998887777",
+                phone_type="work",
+                config=_CFG,
+            )
+        mock_client.me.contacts.by_contact_id.return_value.patch.assert_not_called()
+
+    async def test_phone_type_without_phone_is_refused(self):
+        """Without a number there is nothing to file under the type — a patch
+        that carried nothing would report "updated" and change nothing (#41's shape)."""
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        with pytest.raises(ValueError, match="phone_type needs phone"):
+            await update_contact(
+                mock_client, contact_id="contact123", phone_type="business", config=_CFG
+            )
+        mock_client.me.contacts.by_contact_id.return_value.patch.assert_not_called()
+
+    async def test_create_refuses_unknown_phone_type(self):
+        mock_client = MagicMock()
+        mock_client.me.contacts.post = AsyncMock()
+        with pytest.raises(ValueError, match="phone_type"):
+            await create_contact(
+                mock_client, first_name="John", phone="+1234567890", phone_type="fax", config=_CFG
+            )
+        mock_client.me.contacts.post.assert_not_called()
+
     async def test_update_validates_id(self):
         """update_contact rejects invalid contact IDs."""
         mock_client = MagicMock()
