@@ -213,6 +213,7 @@ def _format_contact_detail(contact: Any) -> dict:
         "business_phones": list(getattr(contact, "business_phones", None) or []),
         "company": sanitize_output(contact.company_name or ""),
         "title": sanitize_output(contact.title or ""),
+        "job_title": sanitize_output(getattr(contact, "job_title", "") or ""),
         "department": sanitize_output(getattr(contact, "department", "") or ""),
         "birthday": str(contact.birthday) if contact.birthday else None,
         "home_address": _format_address(getattr(contact, "home_address", None)),
@@ -315,10 +316,17 @@ async def create_contact(
     phone: str | None = None,
     company: str | None = None,
     title: str | None = None,
+    job_title: str | None = None,
     *,
     config: Config,
 ) -> dict:
-    """Create a new contact."""
+    """Create a new contact.
+
+    ``title`` is Graph's name prefix ("Dr.", "Ms."), which Graph folds into the
+    display name; the job goes in ``job_title``. The two used to be one argument
+    in practice — a model filling in a business card put the job in ``title``
+    and got "Engineer Jane Doe" back (#119).
+    """
     check_permission(config, CATEGORY_CONTACTS_WRITE, "outlook_create_contact")
 
     if email:
@@ -344,6 +352,8 @@ async def create_contact(
         new_contact.company_name = company
     if title:
         new_contact.title = title
+    if job_title:
+        new_contact.job_title = job_title
 
     created = await graph_client.me.contacts.post(new_contact)
 
@@ -360,6 +370,7 @@ async def update_contact(
     last_name: str | None = None,
     email: str | None = None,
     phone: str | None = None,
+    job_title: str | None = None,
     home_address: dict | None = None,
     business_address: dict | None = None,
     other_address: dict | None = None,
@@ -400,6 +411,8 @@ async def update_contact(
         patch_body.email_addresses = [ea]
     if phone is not None:
         patch_body.mobile_phone = phone
+    if job_title is not None:
+        patch_body.job_title = job_title
 
     if home_address is not None:
         patch_body.home_address = _build_address("home", home_address)

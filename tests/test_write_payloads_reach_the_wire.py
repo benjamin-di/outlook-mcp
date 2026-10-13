@@ -602,6 +602,7 @@ class TestContacts:
             phone="+15555550100",
             company="SENTINEL-COMPANY-b11",
             title="SENTINEL-TITLE-b12",
+            job_title="SENTINEL-JOBTITLE-b13",
             config=_CFG,
         )
 
@@ -612,8 +613,22 @@ class TestContacts:
             "sentinel.contact@example.com",
             "+15555550100",
             "SENTINEL-COMPANY-b11",
-            "SENTINEL-TITLE-b12",
+            # Two fields a model can confuse, so each is pinned to its own key:
+            # `title` is Graph's name prefix ("Dr."), `jobTitle` the job (#119).
+            '"title": "SENTINEL-TITLE-b12"',
+            '"jobTitle": "SENTINEL-JOBTITLE-b13"',
         )
+
+    async def test_create_contact_job_title_never_becomes_the_name_prefix(self):
+        """#119: a job written to `title` became part of the display name."""
+        client = MagicMock()
+        client.me.contacts.post = AsyncMock(return_value=MagicMock(id="C1"))
+
+        await contacts.create_contact(client, first_name="Jane", job_title="Engineer", config=_CFG)
+
+        body = wire(client.me.contacts.post.call_args[0][0])
+        assert '"jobTitle": "Engineer"' in body
+        assert '"title"' not in body
 
     async def test_update_contact_every_argument_reaches_the_wire(self):
         builder = MagicMock()
@@ -628,6 +643,7 @@ class TestContacts:
             last_name="SentinelLast2",
             email="sentinel.contact2@example.com",
             phone="+15555550101",
+            job_title="SENTINEL-JOBTITLE-b14",
             home_address={
                 "street": "SentinelStreet2",
                 "city": "SentinelCity2",
@@ -646,6 +662,7 @@ class TestContacts:
             "SentinelLast2",
             "sentinel.contact2@example.com",
             "+15555550101",
+            '"jobTitle": "SENTINEL-JOBTITLE-b14"',
             # An address is a nested model, so "reaches the wire" also means
             # kiota serialized the child object under the right camelCase keys —
             # and that each of the three slots landed in its own.

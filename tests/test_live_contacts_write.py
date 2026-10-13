@@ -44,7 +44,8 @@ class TestCreateContactRoundTrip:
             email="live.write.guard@example.com",
             phone="+15555550199",
             company="LiveWriteGuard Co",
-            title="Probe",
+            title="Dr.",
+            job_title="Probe",
         ) as contact_id:
             got = await get_contact(real_graph_client.sdk_client, contact_id)
 
@@ -55,7 +56,13 @@ class TestCreateContactRoundTrip:
             ]
             assert got["mobile_phone"] == "+15555550199"
             assert got["company"] == "LiveWriteGuard Co"
-            assert got["title"] == "Probe"
+            # #119: a faithful round trip is not enough — the old test wrote a
+            # job into `title`, read it back from `title`, and passed while the
+            # contact displayed as "Probe <first> <last>". Each value must land
+            # in the field that means it.
+            assert got["title"] == "Dr."
+            assert got["job_title"] == "Probe"
+            assert not got["display_name"].startswith("Probe")
 
 
 class TestUpdateContactRoundTrip:
@@ -75,10 +82,13 @@ class TestUpdateContactRoundTrip:
                 last_name="After",
                 email="after@example.com",
                 phone="+15555550197",
+                job_title="Probe-After",
                 config=live_write_config,
             )
 
             got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["job_title"] == "Probe-After"
+            assert got["title"] == ""
             assert got["first_name"] == f"{LIVE_WRITE_NAME}-After"
             assert got["last_name"] == "After"
             assert got["mobile_phone"] == "+15555550197"

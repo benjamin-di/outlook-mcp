@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **A contact's job title no longer becomes part of its name.** `outlook_create_contact`'s
+  `title` writes Graph's `title`, the name prefix ("Dr.", "Ms."), which Graph folds into the
+  display name — so an agent filling in a business card that passed the person's job there got
+  back "Engineer Jane Doe" (#119). `outlook_create_contact` and `outlook_update_contact` now take
+  `job_title` (Graph's `jobTitle`), `outlook_get_contact` returns it, and `title` is described as
+  the prefix it is. `title` keeps its name and meaning, so existing callers are unaffected.
+
 ## [1.25.1] — 2026-10-07
 
 A patch release. The last two code items from the 1.24.0 security review, a calendar fix from a

@@ -43,6 +43,7 @@ def _make_mock_contact(**overrides):
             "surname",
             "company_name",
             "title",
+            "job_title",
             "department",
             "birthday",
             "email_addresses",
@@ -61,7 +62,8 @@ def _make_mock_contact(**overrides):
     contact.given_name = overrides.get("given_name", "John")
     contact.surname = overrides.get("surname", "Doe")
     contact.company_name = overrides.get("company_name", "Acme")
-    contact.title = overrides.get("title", "Engineer")
+    contact.title = overrides.get("title", "Dr.")
+    contact.job_title = overrides.get("job_title", "Engineer")
     contact.department = overrides.get("department", "")
     contact.birthday = overrides.get("birthday", None)
 
@@ -241,7 +243,8 @@ class TestGetContact:
         assert result["last_name"] == "Doe"
         assert result["display_name"] == "John Doe"
         assert result["company"] == "Acme"
-        assert result["title"] == "Engineer"
+        assert result["title"] == "Dr."
+        assert result["job_title"] == "Engineer"
         assert len(result["email_addresses"]) == 1
         assert result["email_addresses"][0]["address"] == "john@test.com"
         assert result["mobile_phone"] == "+1234567890"
@@ -860,6 +863,7 @@ class TestGetContactAsksGraphForEverything:
             "business_phones",
             "company",
             "title",
+            "job_title",
             "department",
             "birthday",
             "home_address",

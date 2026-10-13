@@ -925,8 +925,12 @@ async def outlook_create_contact(
     phone: str | None = None,
     company: str | None = None,
     title: str | None = None,
+    job_title: str | None = None,
 ) -> dict:
-    """Create a new contact with name and optional email, phone, company, title."""
+    """Create a new contact with name and optional email, phone, company, job_title.
+
+    title is the name prefix ("Dr.", "Ms."), shown in the display name — not the job.
+    """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
     return await contacts.create_contact(
@@ -937,6 +941,7 @@ async def outlook_create_contact(
         phone,
         company,
         title,
+        job_title,
         config=config,
     )
 
@@ -950,6 +955,7 @@ async def outlook_update_contact(
     last_name: str | None = None,
     email: str | None = None,
     phone: str | None = None,
+    job_title: str | None = None,
     home_address: dict | None = None,
     business_address: dict | None = None,
     other_address: dict | None = None,
@@ -969,6 +975,7 @@ async def outlook_update_contact(
         last_name,
         email,
         phone,
+        job_title,
         home_address,
         business_address,
         other_address,
