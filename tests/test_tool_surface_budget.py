@@ -51,6 +51,8 @@ CHARS_PER_TOKEN = 4
 #
 # 13,201 with the contact fixes: `job_title` on create and update (#119, measured
 # 13,100), then `phone_type` on both and `title` on update (#120, +101). No raise.
+# 13,224 once update's docstring says `title` is the name prefix, as create's
+# does (+23) — undescribed, models fill it with the job (#119). No raise.
 TOOL_SURFACE_CEILING = 13_300
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

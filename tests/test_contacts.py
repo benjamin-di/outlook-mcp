@@ -4,10 +4,12 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from mcp.client import Client
 
 from outlook_mcp.config import Config
 from outlook_mcp.errors import ReadOnlyError
 from outlook_mcp.pagination import encode_cursor
+from outlook_mcp.server import mcp
 from outlook_mcp.tools.contacts import (
     _ADDRESS_FIELDS,
     _LIST_SELECT,
@@ -904,3 +906,16 @@ class TestGetContactAsksGraphForEverything:
             "categories",
             "personal_notes",
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool", ["outlook_create_contact", "outlook_update_contact"])
+async def test_title_is_described_as_the_name_prefix_where_the_model_reads_it(tool):
+    """#119: an undescribed `title` gets filled with the job. The tool description is the
+    only text a client sees, so both write tools must say what `title` is there."""
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools[tool].description
+    assert "name prefix" in description
+    assert "not the job" in description
