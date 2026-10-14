@@ -91,11 +91,11 @@ Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v
 
 ### Agent-friendly shape (1.8.0)
 
-Two pure-code upgrades that make the same 57 tools cheaper and more recoverable for AI agents:
+Two pure-code upgrades that make the tools cheaper and more recoverable for AI agents:
 
-- **Concise mode** — pass `concise=True` to the five high-volume read tools (`outlook_list_inbox`, `outlook_read_message`, `outlook_search_mail`, `outlook_list_events`, `outlook_list_thread`) to drop bulky fields: full message bodies, quoted prior-message text in threads, body previews and categories on inbox listings — typical payload reduction ~10×. On `outlook_list_events` the trade is different and smaller: the attendee list becomes a count, and `organizer`, `response_status`, `type` and `show_as` come off, so a concise scan cannot tell a recurring occurrence from a one-off. Default `concise=False` preserves the existing response shape — strict backward compat.
+- **Concise mode** — pass `concise=True` to the six high-volume read tools (`outlook_list_inbox`, `outlook_read_message`, `outlook_read_messages`, `outlook_search_mail`, `outlook_list_events`, `outlook_list_thread`) to drop bulky fields: full message bodies, quoted prior-message text in threads, body previews and categories on inbox listings — typical payload reduction ~10×. On `outlook_list_events` the trade is different and smaller: the attendee list becomes a count, and `organizer`, `response_status`, `type` and `show_as` come off, so a concise scan cannot tell a recurring occurrence from a one-off. Default `concise=False` preserves the existing response shape — strict backward compat.
 
-- **Structured Graph errors** — every tool wraps msgraph SDK exceptions into `{code, message, action}` responses with operator-friendly recovery hints: re-auth on 401, a link to the repo's [ROADMAP dead-ends list](https://github.com/mpalermiti/outlook-mcp/blob/main/ROADMAP.md#investigated-and-not-viable) on 403/`ErrorAccessDenied`, re-list on 404/`ErrorItemNotFound`, back-off on 429, retry on 503. `OutlookMCPError` subclasses and validation errors pass through unchanged.
+- **Structured Graph errors** — every tool turns msgraph SDK exceptions into a tool error whose text carries Graph's message and a recovery hint: re-auth on 401, a link to the repo's [ROADMAP dead-ends list](https://github.com/mpalermiti/outlook-mcp/blob/main/ROADMAP.md#investigated-and-not-viable) on 403/`ErrorAccessDenied`, re-list on 404/`ErrorItemNotFound`, back-off on 429, retry on 503. `OutlookMCPError` subclasses and validation errors pass through unchanged.
 
 ---
 
@@ -462,7 +462,7 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 All 68 tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
 
 ```bash
-# e.g. a recurring mail + calendar agent: ~30 tools instead of 68 (~55% fewer tool tokens/turn)
+# e.g. a recurring mail + calendar agent: 28 tools instead of 68 (about half the tool tokens per turn)
 OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"
 ```
 
@@ -543,8 +543,8 @@ By default, `read_only: false` unlocks **all** write tools. For finer control, s
 
 | Category | Tools | Risk |
 |---|---|---|
-| `mail_drafts` | create/update/delete draft | Safe — drafts only, no send |
-| `mail_triage` | move, delete (soft), flag, categorize, mark read, copy, batch | Moderate — reversible except hard delete |
+| `mail_drafts` | create/update/delete draft, attach to/remove from a draft | Safe — drafts only, no send |
+| `mail_triage` | move, delete (soft), flag, categorize, mark read, copy, batch, reclassify and set/delete Focused Inbox overrides | Moderate — reversible except hard delete |
 | `mail_folders` | create/rename/delete folder | Moderate |
 | `mail_send` | send, reply, forward, send_draft, send_with_attachments | **Dangerous** — sends email on your behalf |
 | `calendar_write` | create/update/delete event, RSVP | Moderate — your own calendar. The parts that email other people text the agent wrote need `mail_send` as well: inviting attendees, rewording (subject, body, location) any event that already has them, and adding a message to an RSVP. A bare RSVP, a time change and a cancellation still notify the people involved, but carry nothing the agent wrote |
@@ -626,10 +626,11 @@ uv run outlook-mcp
 
 ## Roadmap
 
-- **Inbox Rules** -- list, create, delete rules
 - **Advanced mail** -- raw MIME export, internet message headers
 - **Calendar** -- cancel event (with attendee notification)
 - **Enterprise (Entra ID)** -- work/school account support
+
+Committed direction, and what was investigated and ruled out (inbox rules, mailbox settings), is in [ROADMAP.md](ROADMAP.md).
 
 ---
 

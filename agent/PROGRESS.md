@@ -2,6 +2,15 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-13 — docs-truth-audit, plus closing contact-job-title-live
+
+- No new steering on PR #122 (the only `[construct review]` comment was already addressed). Michael answered contact-job-title-live with **B** (ship without the live run): card checked off, live test left in place unrun.
+- Audit: README, SKILL, ROADMAP, CHANGELOG Unreleased, CLAUDE.md against the running server's `list_tools()` / `list_prompts()`, `toolsets`, `permissions`, `errors`, `cli.py`. 20 checks, each with its result, in `agent/findings/docs-truth-audit.md`.
+- Fixed: README "same 57 tools"; toolset example ~30 → 28 tools ("about half"; measured 6,536 of 13,224 proxy tokens); concise lists five → six (`outlook_read_messages`) in README and SKILL; error shape described as tool-error text, not `{code, message, action}` responses (README, SKILL); `allow_categories` table now names draft attachments (mail_drafts) and reclassify + Focused overrides (mail_triage); README roadmap drops inbox rules and points at ROADMAP.md; SKILL `list_inbox` "category" → "uncategorized only"; CLAUDE.md architecture gains cli/permissions/folder_resolver/calendar_resolver. CHANGELOG Unreleased → Documentation.
+- Guard: `tests/test_docs_match_the_surface.py` (10 tests: README rows, SKILL bullets, per-section and total counts, toolset example + groups, concise list, category set, prompts). Red on 3 before the fixes, green after; mutation-checked (drop a SKILL bullet / bump a feature count / drop a group → each reddens).
+- Suite: 1360 passed, 85 deselected; ruff check + format clean. Tool surface unchanged (no src edits).
+- Left as findings footnotes (no queued work depends on them): README roadmap's remaining promises (MIME, cancel, Entra — Entra contradicts the README's own scope line); ROADMAP lists blocked rules CRUD under Near-term; SKILL "online meeting" vs #70.
+
 ## 2026-10-13 — hint-412-pinned-write (#96), plus review fix on contact `title`
 
 - Addressed PR comments: IC_kwDOSA_0Lc8AAAABbgaGew (`[construct review]`: `outlook_update_contact`'s client-visible description never said `title` is the name prefix). Fixed: added create's line to the update docstring; new `test_contacts.py::test_title_is_described_as_the_name_prefix_where_the_model_reads_it` (both write tools, via `Client(mcp).list_tools()`) red for update → green. Surface 13,201 → 13,224 proxy (ceiling 13,300, no raise; budget header records it). ~76 tokens of headroom left — contact-clear-phone may need a deliberate raise.

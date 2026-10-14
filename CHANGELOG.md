@@ -29,6 +29,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   change that landed as a failure (#96). The hint now says the change may already have been
   applied and to re-read the item before trying again. Retry behaviour is unchanged.
 
+### Documentation
+
+- **The README and SKILL.md match the registered surface again, and a test keeps them there.**
+  `concise` is taken by six read tools, not five (`outlook_read_messages` was missing from
+  both lists); the toolset example loads 28 tools, not "~30"; errors reach the client as a
+  tool error whose text carries the message and hint, not a `{code, message, action}`
+  response; the `allow_categories` table names every tool each category gates (draft
+  attachments, reclassify, Focused Inbox overrides were missing); and the README's roadmap
+  no longer offers inbox rules, which ROADMAP.md records as not viable on personal accounts.
+  `tests/test_docs_match_the_surface.py` pins tool lists, per-section and total counts,
+  toolset groups, the concise list, the category set and the prompts to the code.
+
 ## [1.25.1] — 2026-10-07
 
 A patch release. The last two code items from the 1.24.0 security review, a calendar fix from a
