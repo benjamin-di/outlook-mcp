@@ -2,6 +2,15 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-14 — live-gap-98 (#98), plus review fix on pypi-environment
+
+- Addressed PR comments: IC_kwDOSA_0Lc8AAAABb2MBvw (`[construct review]` on actions-sha-pin: the pypi-environment `[?]` omitted that option A breaks the documented `gh workflow run publish.yml` retry, which dispatches on the default branch and would be refused by a tag-only environment; and that with no environment on PyPI's entry, `registry` could also mint a PyPI token). Both verified by reading RELEASING.md, publish.yml and the findings file; the `[?]` card's Why/A/Recommend/Notes and the findings file now say so. Small fix, done in-session.
+- #98 re-checked: open, unassigned, no comments; PR hits #103/#83/#63 leave it out.
+- `tests/test_live_calendar_write.py::TestMovingAMastersDateMovesItsOccurrences`: timed (weekly Mon 09:00 America/New_York ×3, moved to Tue with no `timezone`/`recurrence`) and all-day (×3, numbered only). Each: premise three Mondays via `/instances` → `updated` → three Tuesdays at the same time of day. Strict `xfail(raises=_SeriesDidNotMoveError)`: only #98's exact shape is absorbed; any other failure is red; a fix is XPASS(strict) → red → remove the marker. Behaviour unchanged (card said don't fix). No CHANGELOG entry: test-only.
+- Offline verification: default suite 1365 passed, 87 deselected (+2), ruff check + format clean. Scratch (uncommitted) dry run of both bodies against fakes, 7/7: bug→`_SeriesDidNotMoveError`, Tuesdays→pass, Wednesdays→plain AssertionError, delete always runs, update carries no tz/recurrence/attendees. xfail(strict, raises=subclass) semantics checked on a scratch file.
+- NOT run live. Parked `[?]` live-gap-98-run. Findings: `agent/findings/live-gap-98.md` (assertions, run command, result table).
+- Note for next worker: ruff's N818 wants exception classes to end in `Error` — in tests too.
+
 ## 2026-10-14 — actions-sha-pin
 
 - No new steering on PR #122 (no unaddressed comments).

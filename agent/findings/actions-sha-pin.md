@@ -86,3 +86,8 @@ Two settings have to change together:
 2. **PyPI:** Project → Publishing → edit the GitHub publisher and set Environment to `pypi`.
 
 The workflow change is one line under the `pypi` job, `environment: pypi`, plus flipping test 4 to require it. Do the GitHub side first, then the workflow line. Change PyPI last, and only once a release has gone through with the environment named. A mismatch in the other direction fails the upload. A dispatch re-run retries it once fixed.
+
+**Correction (2026-10-14, from review):** two things the paragraphs above left out.
+
+- **The retry has to change with it.** The documented retry, `gh workflow run publish.yml`, dispatches on the default branch. A `pypi` environment limited to `v*` tags refuses that run's `pypi` job, and `registry` is then skipped, so a release that failed after the upload could not be finished the documented way. The same change that adds `environment: pypi` must move the retry (RELEASING.md, the `workflow_dispatch` comment in `publish.yml`, and the Verification section above) to `gh workflow run publish.yml --ref vX.Y.Z`, or to `gh run rerun <id> --failed`, which keeps the release's ref. It is "one line" plus that.
+- **What the environment buys is more than the dispatch gap.** With no environment on PyPI's entry, PyPI accepts an OIDC token from any job in `publish.yml`, so `registry`, which holds `id-token: write` and runs the downloaded mcp-publisher, could upload too. The split keeps the token out of `build`; "only `pypi` can publish" holds against PyPI only once PyPI's entry names the environment, since PyPI checks `environment` only when the publisher names one.
