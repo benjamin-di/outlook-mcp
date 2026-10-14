@@ -15,6 +15,7 @@ Raising the ceiling is a legitimate outcome — a new tool has to go somewhere. 
 just has to be deliberate, with the new number written down next to the reason.
 """
 
+import inspect
 import json
 
 import pytest
@@ -49,9 +50,14 @@ CHARS_PER_TOKEN = 4
 # where the model reads it. The other refusals carry their remedies in the error
 # text rather than in the schema every turn pays for.
 #
-# 13,201 with the contact fixes: `job_title` on create and update (#119, measured
-# 13,100), then `phone_type` on both and `title` on update (#120, +101). No raise.
-# 13,224 once update's docstring says `title` is the name prefix, as create's
+# 13,004 on every Python once the descriptions are dedented (-239). Every number
+# above was taken on an interpreter that keeps docstring indentation (3.10-3.12);
+# the same 1.25.1 surface measured 13,243 there and 13,024 on 3.13, which strips
+# it. Compare numbers from here on only with each other. Ceiling unchanged.
+#
+# 13,203 with the contact fixes, on the dedented measure: `job_title` on create
+# and update (#119), then `phone_type` on both and `title` on update (#120,
+# +101), then update's docstring saying `title` is the name prefix, as create's
 # does (+23) — undescribed, models fill it with the job (#119). No raise.
 TOOL_SURFACE_CEILING = 13_300
 
@@ -78,6 +84,25 @@ async def test_the_tool_surface_stays_within_budget():
         f"{TOOL_SURFACE_CEILING} ceiling. Every client pays this on every turn. "
         f"Either trim it, or raise the ceiling deliberately and say why."
     )
+
+
+@pytest.mark.asyncio
+async def test_descriptions_carry_no_source_indentation():
+    """The surface above is the same surface on every Python.
+
+    Python 3.13 strips a docstring's indentation when it compiles it; 3.10-3.12
+    keep it, and the SDK publishes ``__doc__`` as it finds it. So on the older
+    versions every client paid for this file's indentation on every turn (~240
+    proxy tokens on 1.25.1), and the budget measured a different surface
+    depending on which Python ran it: #122 measured 13,224 on 3.13 and 13,448 on
+    3.12 against a 13,300 ceiling.
+    """
+    async with Client(mcp) as client:
+        tools = (await client.list_tools()).tools
+
+    indented = [t.name for t in tools if t.description != inspect.cleandoc(t.description or "")]
+
+    assert indented == []
 
 
 @pytest.mark.asyncio

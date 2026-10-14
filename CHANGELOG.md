@@ -8,6 +8,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Tool descriptions no longer carry the source file's indentation.** The SDK publishes each
+  tool's docstring as Python stores it. Python 3.13 strips a docstring's indentation when it
+  compiles it; 3.10–3.12 keep it, so on those versions every client paid for about 240 proxy
+  tokens of spaces on every turn. The tool-surface budget also measured a different number on
+  each Python, so a change measured on 3.13 could fit the ceiling locally and fail CI. The
+  descriptions are now dedented once, when each tool is registered, and the surface measures
+  13,004 on every supported version.
 - **A contact's job title no longer becomes part of its name.** `outlook_create_contact`'s
   `title` writes Graph's `title`, the name prefix ("Dr.", "Ms."), which Graph folds into the
   display name — so an agent filling in a business card that passed the person's job there got
