@@ -2,6 +2,16 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-14 — actions-sha-pin
+
+- No new steering on PR #122 (no unaddressed comments).
+- Pinned all 9 `uses:` in ci.yml/publish.yml to full SHAs, `# vX.Y.Z` comments, each the commit the current major tag resolves to (no bumps): checkout v4.4.0, setup-uv v5.4.2 (annotated `v5` dereferenced); upload-artifact v4.6.2 / download-artifact v4.3.0 added for the job split. Table in `agent/findings/actions-sha-pin.md`.
+- `.github/dependabot.yml`: github-actions only, weekly.
+- `publish.yml` split: `build` (contents: read, no token; lockstep, tests, lint, build, upload `dist`) → `pypi` (id-token only; download, setup-uv `enable-cache: false`, `uv publish`) → `registry` (id-token + contents; checkout, wait for PyPI, mcp-publisher, summary; version via `needs.build.outputs.version`). No `environment:` — parked as `[?]` pypi-environment.
+- Guard `tests/test_workflows_are_pinned.py` (4 tests, indentation-parsed — no PyYAML in the env): red 3/4 → green; mutations (unpin one checkout; add `environment:`) each redden.
+- Suite: 1365 passed, 85 deselected; ruff check + format clean. actionlint 1.7.12 clean (ephemeral `uvx --from actionlint-py`, sandbox off for the download). RELEASING.md + CHANGELOG Unreleased → Security.
+- Not verifiable offline: a real release run. First release after merge is the test; `gh workflow run publish.yml` re-runs idempotently.
+
 ## 2026-10-13 — docs-truth-audit, plus closing contact-job-title-live
 
 - No new steering on PR #122 (the only `[construct review]` comment was already addressed). Michael answered contact-job-title-live with **B** (ship without the live run): card checked off, live test left in place unrun.

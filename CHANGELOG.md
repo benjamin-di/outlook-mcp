@@ -36,6 +36,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   change that landed as a failure (#96). The hint now says the change may already have been
   applied and to re-read the item before trying again. Retry behaviour is unchanged.
 
+### Security
+
+- **The release pipeline runs only actions it can name exactly.** Every `uses:` in the CI and
+  publish workflows is pinned to a full commit SHA, with the version it was resolved from as a
+  comment; a version tag can be moved by the action's owner, a SHA cannot. Dependabot
+  (GitHub Actions only) opens PRs to move the pins. Publishing is split into three jobs: `build`
+  runs the checks, tests and build with no publishing token; `pypi` only uploads the built files,
+  with no checkout and no cache; `registry` publishes to the MCP registry.
+  `tests/test_workflows_are_pinned.py` holds both lines.
+
 ### Documentation
 
 - **The README and SKILL.md match the registered surface again, and a test keeps them there.**
