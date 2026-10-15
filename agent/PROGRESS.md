@@ -2,6 +2,17 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-15 — contact-clear-phone (#120 follow-up)
+
+- No new steering on PR #122 (every comment already addressed; no review yet of 8fdcea7).
+- #120 re-checked: open, unassigned, no comments; PR search hit #67 unrelated.
+- `outlook_update_contact` takes `clear_phones: list[str] | None` (`mobile`/`business`/`home`). `_clear_phones` sends `"mobilePhone": null` via `additional_data` (not `mobile_phone = None`, which leaks the Python name) and `[]` for the lists. `_check_clear_phones` refuses unknown types and clearing the type `phone` is written to in the same call, before any Graph call. Create unchanged (nothing to clear).
+- TDD: `test_write_payloads_reach_the_wire.py::TestContacts` +2 (move mobile→business in one PATCH, `mobilePhone` is the only null; lists empty as `[]`), `test_contacts.py` +2 (refusals): red (TypeError) → green. Mutation: `contact.mobile_phone = None` instead of `additional_data` → the move test fails.
+- Live: `tests/test_live_contacts_write.py::TestPhoneTypeRoundTrip` +2 (move, empty a list), NOT run. Only `--collect-only` was used on that file to confirm the two new tests collect (12 collected) — nothing executed. No `[?]`: Michael closed the contact live run with B on 2026-10-13. ASSUMED: Graph clears a list on `[]`.
+- Surface 13,203 → 13,261 proxy (Python 3.13), ceiling 13,300, no raise; budget header records it. ~39 tokens left: the next new argument anywhere needs a deliberate raise.
+- Docs: README + SKILL update_contact rows, update_contact docstrings, CHANGELOG Unreleased → Fixed (#120 entry).
+- Suite: 1377 passed, 89 deselected; ruff check + format clean.
+
 ## 2026-10-14 — kiota-cap-watch, plus review fix on live-gap-98
 
 - Addressed PR comments: IC_kwDOSA_0Lc8AAAABb3Ho4A (`[construct review]` on live-gap-98: `_assert_moved` raised `_SeriesDidNotMoveError` for any three Mondays, ignoring time of day and which Mondays, so a different defect would XFAIL; and `-rxX` never prints dates for an XFAIL). Agreed. New offline `tests/test_live_gap_98_classifier.py` (8 tests, imports the live module as a module so its class is not re-collected) red on exactly the reviewer's three cases → green after `_assert_moved` requires the original three Mondays at `time_of_day`. Findings file's "how it stays out of the way" and `-rxX` sentence corrected; live-gap-98-run Notes updated. Small, done in-session.

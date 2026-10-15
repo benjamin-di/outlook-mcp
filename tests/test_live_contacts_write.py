@@ -172,6 +172,53 @@ class TestPhoneTypeRoundTrip:
             assert got["title"] == "Dr."
             assert not got["display_name"].startswith("Probe")
 
+    async def test_update_moves_a_mobile_number_to_business(
+        self, real_graph_client, live_write_config
+    ):
+        """#120's own case on an existing contact: the office number saved as
+        mobile moves to business, and no copy stays behind in mobile."""
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="MovePhone",
+            phone="+15555550192",
+        ) as contact_id:
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                phone="+15555550192",
+                phone_type="business",
+                clear_phones=["mobile"],
+                config=live_write_config,
+            )
+
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["business_phones"] == ["+15555550192"]
+            assert got["mobile_phone"] == ""
+            assert got["home_phones"] == []
+
+    async def test_update_empties_a_number_list(self, real_graph_client, live_write_config):
+        """The lists clear by sending ``[]``, not null — the half #120's
+        transcript did not show, so it is pinned here."""
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="ClearPhone",
+            phone="+15555550191",
+            phone_type="business",
+        ) as contact_id:
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                clear_phones=["business"],
+                config=live_write_config,
+            )
+
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["business_phones"] == []
+
 
 class TestAddressRoundTrip:
     """The address half of the same question, and the one that 400'd.

@@ -740,6 +740,49 @@ class TestContacts:
         for key in absent:
             assert f'"{key}"' not in body, body
 
+    async def test_update_contact_moves_a_number_out_of_mobile_in_one_patch(self):
+        """#120 follow-up: `phone_type` files a number but cannot empty the old slot.
+
+        The issue's own live transcript is the target shape — one PATCH carrying
+        `"mobilePhone": null` beside the new list. `mobile_phone = None` would
+        not get there: the backing store emits it under its Python name.
+        """
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client,
+            contact_id="AAMkAG123=",
+            phone="+15555550105",
+            phone_type="business",
+            clear_phones=["mobile"],
+            config=_CFG,
+        )
+
+        body = wire(builder.patch.call_args[0][0])
+        assert '"businessPhones": ["+15555550105"]' in body, body
+        assert '"mobilePhone": null' in body, body
+        assert '"homePhones"' not in body, body
+        # The one null is the one asked for; anything else would clear data.
+        assert_on_wire(builder.patch.call_args[0][0], '"mobilePhone": null', allow_null=True)
+        nulls = sorted(k for k, v in json.loads(body).items() if v is None)
+        assert nulls == ["mobilePhone"], body
+
+    async def test_update_contact_empties_the_number_lists_it_is_told_to(self):
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client, contact_id="AAMkAG123=", clear_phones=["business", "home"], config=_CFG
+        )
+
+        assert_on_wire(builder.patch.call_args[0][0], '"businessPhones": []', '"homePhones": []')
+        assert '"mobilePhone"' not in wire(builder.patch.call_args[0][0])
+
     async def test_phone_type_defaults_to_mobile(self):
         """Today's behaviour stays the default: existing callers are unaffected."""
         client = MagicMock()

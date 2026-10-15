@@ -975,6 +975,7 @@ async def outlook_update_contact(
     home_address: dict | None = None,
     business_address: dict | None = None,
     other_address: dict | None = None,
+    clear_phones: list[str] | None = None,
 ) -> dict:
     """Update an existing contact (partial patch — only provided fields change).
 
@@ -982,6 +983,7 @@ async def outlook_update_contact(
     {"street", "city", "state", "postal_code", "country_or_region"} — and REPLACES that
     whole address, so pass back every part you want to keep. Omit it to leave it untouched.
     phone_type ("mobile", "business", "home") picks the field; business/home REPLACE that list.
+    clear_phones empties those types: phone_type="business", clear_phones=["mobile"] moves it.
     title is the name prefix ("Dr.", "Ms."), shown in the display name — not the job.
     """
     client = _get_graph_client(ctx)
@@ -999,6 +1001,7 @@ async def outlook_update_contact(
         home_address,
         business_address,
         other_address,
+        clear_phones,
         config=config,
     )
 

@@ -398,6 +398,29 @@ class TestUpdateContact:
             )
         mock_client.me.contacts.by_contact_id.return_value.patch.assert_not_called()
 
+    async def test_clearing_an_unknown_phone_type_is_refused(self):
+        """A misspelt type would clear nothing and report "updated"."""
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        with pytest.raises(ValueError, match="clear_phones.*mobile, business, home"):
+            await update_contact(
+                mock_client, contact_id="contact123", clear_phones=["work"], config=_CFG
+            )
+        mock_client.me.contacts.by_contact_id.return_value.patch.assert_not_called()
+
+    async def test_clearing_the_type_being_written_is_refused(self):
+        """Write and clear the same field: one of them would be silently lost."""
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        with pytest.raises(ValueError, match="clear_phones.*business"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                phone="+19998887777",
+                phone_type="business",
+                clear_phones=["business"],
+                config=_CFG,
+            )
+        mock_client.me.contacts.by_contact_id.return_value.patch.assert_not_called()
+
     async def test_create_refuses_unknown_phone_type(self):
         mock_client = MagicMock()
         mock_client.me.contacts.post = AsyncMock()

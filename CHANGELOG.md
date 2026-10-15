@@ -29,6 +29,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   argument (`mobile`, the default, `business` or `home`) files it under the matching Graph field.
   Graph keeps business and home numbers as lists, and a write replaces that list with the one
   number given — the same replace-not-merge rule the addresses follow.
+  `outlook_update_contact` also takes `clear_phones`, which empties the types it names, so a
+  number already saved as mobile moves to business in one update instead of leaving a copy
+  behind in mobile.
 - **A refused calendar update no longer claims nothing changed when it may have.** A series
   update is pinned to the version it read, and Graph answers a stale pin with `412`. The hint
   said "nothing was modified", but the SDK retries an update after a gateway timeout, and when

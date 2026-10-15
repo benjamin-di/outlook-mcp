@@ -171,6 +171,36 @@ def _assign_phone(contact: Any, phone: str, phone_type: str) -> None:
         contact.mobile_phone = phone
 
 
+def _check_clear_phones(clear_phones: list[str], phone: str | None, phone_type: str) -> None:
+    """Refuse a clear that would do nothing, or undo the number being written."""
+    unknown = [t for t in clear_phones if t not in _PHONE_TYPES]
+    if unknown:
+        raise ValueError(
+            f"Unknown clear_phones type {unknown[0][:20]!r}. Use any of: {', '.join(_PHONE_TYPES)}."
+        )
+    if phone is not None and phone_type in clear_phones:
+        raise ValueError(
+            f"clear_phones names {phone_type!r}, the type phone is being written to. "
+            f"Clear the other types; writing {phone_type!r} already replaces it."
+        )
+
+
+def _clear_phones(contact: Any, clear_phones: list[str]) -> None:
+    """Empty each named phone field — the other half of moving a number (#120).
+
+    The lists clear as ``[]``, which kiota serializes as written. ``mobilePhone``
+    needs an explicit JSON null, and ``contact.mobile_phone = None`` does not
+    produce one: the backing store emits it under its Python name. So it goes
+    through ``additional_data``, as ``update_event``'s ``remove_recurrence`` does.
+    """
+    if "mobile" in clear_phones:
+        contact.additional_data = {**(contact.additional_data or {}), "mobilePhone": None}
+    if "business" in clear_phones:
+        contact.business_phones = []
+    if "home" in clear_phones:
+        contact.home_phones = []
+
+
 def _primary_phone(contact: Any) -> str:
     """Pick the most representative phone from the consumer-Graph contact fields.
 
@@ -411,6 +441,7 @@ async def update_contact(
     home_address: dict | None = None,
     business_address: dict | None = None,
     other_address: dict | None = None,
+    clear_phones: list[str] | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -424,8 +455,10 @@ async def update_contact(
     same five fields. Omit an address entirely to leave it untouched.
 
     ``phone_type`` follows the same rule for the list-valued numbers: a business
-    or home write replaces that list with ``[phone]``. ``title`` is the name
-    prefix, here so a job that landed in it can be corrected in place (#119).
+    or home write replaces that list with ``[phone]``. ``clear_phones`` empties
+    the named types, so a number filed as mobile moves to business in one patch.
+    ``title`` is the name prefix, here so a job that landed in it can be
+    corrected in place (#119).
     """
     check_permission(config, CATEGORY_CONTACTS_WRITE, "outlook_update_contact")
     contact_id = validate_graph_id(contact_id)
@@ -438,6 +471,8 @@ async def update_contact(
     if phone is not None:
         validate_phone(phone)
     _check_phone_type(phone, phone_type)
+    if clear_phones is not None:
+        _check_clear_phones(clear_phones, phone, phone_type)
 
     from msgraph.generated.models.contact import Contact
     from msgraph.generated.models.email_address import EmailAddress
@@ -453,6 +488,8 @@ async def update_contact(
         patch_body.email_addresses = [ea]
     if phone is not None:
         _assign_phone(patch_body, phone, phone_type)
+    if clear_phones:
+        _clear_phones(patch_body, clear_phones)
     if title is not None:
         patch_body.title = title
     if job_title is not None:

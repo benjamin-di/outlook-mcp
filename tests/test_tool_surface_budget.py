@@ -59,6 +59,10 @@ CHARS_PER_TOKEN = 4
 # and update (#119), then `phone_type` on both and `title` on update (#120,
 # +101), then update's docstring saying `title` is the name prefix, as create's
 # does (+23) — undescribed, models fill it with the job (#119). No raise.
+#
+# 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
+# (+58): without it, moving a number from mobile to business left a copy in
+# mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
 TOOL_SURFACE_CEILING = 13_300
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
