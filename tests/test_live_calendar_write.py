@@ -1528,7 +1528,10 @@ class TestMovingAMastersDateMovesItsOccurrences:
         """Three occurrences on consecutive Tuesdays, or #98's no-op, or a plain failure."""
         starts = [o.start.date_time for o in occurrences]
         days = [date.fromisoformat(s[:10]) for s in starts]
-        if len(days) == 3 and {d.weekday() for d in days} == {0}:
+        same_time = all(s[11:19] == time_of_day for s in starts)
+        # Only the untouched series is #98. Mondays at another time, or other
+        # Mondays, are a different defect and must not hide behind the xfail.
+        if days == [monday + timedelta(weeks=n) for n in range(3)] and same_time:
             raise _SeriesDidNotMoveError(
                 f"moved to Tuesday, answered `updated`, still on Mondays: {starts}"
             )

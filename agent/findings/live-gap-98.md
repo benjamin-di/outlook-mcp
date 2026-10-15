@@ -40,8 +40,12 @@ occurrences are not.
 
 Both tests are `xfail(strict=True, raises=_SeriesDidNotMoveError)`.
 
-- `_SeriesDidNotMoveError` is raised only for #98's exact signature: three occurrences, all
-  still on Monday, after an `updated`.
+- `_SeriesDidNotMoveError` is raised only for #98's exact signature: after an `updated`, the
+  occurrences are the original three Mondays at the original time of day, untouched.
+- Anything that moved the series somewhere other than the three Tuesdays (other Mondays, the
+  same Mondays at another time, an all-day start that is not midnight) is a plain failure.
+  Pinned offline by `tests/test_live_gap_98_classifier.py` (2026-10-14, after a review showed
+  the first version let those through as XFAIL).
 - Anything else (a failed premise, an error from Graph, occurrences on a third day, a changed
   time of day) is a plain failure and shows red.
 - If the occurrences land on Tuesday, the test passes, and strict `xfail` turns that pass into a
@@ -63,7 +67,8 @@ OUTLOOK_MCP_LIVE_WRITE=1 uv run pytest -m live_write \
 ```
 
 About a minute. Creates and deletes two throwaway events about a month out. `-rxX` prints the
-xfail reason and the occurrence dates beside each result.
+xfail reason beside each XFAIL. It does not print the occurrence dates: for an XFAIL pytest
+shows only the marker's reason. A plain failure's message does list the start times.
 
 ## What a pass and a fail look like
 
