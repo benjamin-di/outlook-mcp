@@ -2,6 +2,13 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-14 — kiota-cap-watch, plus review fix on live-gap-98
+
+- Addressed PR comments: IC_kwDOSA_0Lc8AAAABb3Ho4A (`[construct review]` on live-gap-98: `_assert_moved` raised `_SeriesDidNotMoveError` for any three Mondays, ignoring time of day and which Mondays, so a different defect would XFAIL; and `-rxX` never prints dates for an XFAIL). Agreed. New offline `tests/test_live_gap_98_classifier.py` (8 tests, imports the live module as a module so its class is not re-collected) red on exactly the reviewer's three cases → green after `_assert_moved` requires the original three Mondays at `time_of_day`. Findings file's "how it stays out of the way" and `-rxX` sentence corrected; live-gap-98-run Notes updated. Small, done in-session.
+- kiota-cap-watch: msgraph-sdk-python-core#1129 is a merged PR (2026-10-06); msgraph-core 1.5.2 (same day) contains it and requires kiota >=1.13; msgraph-sdk 1.64.0 still accepts core >=1.5.1. So the cap can lift only together with a direct `msgraph-core>=1.5.2` floor. Cap untouched. `agent/findings/kiota-cap-watch.md` has every source, date and label. Parked `[?]` kiota-cap-lift.
+- Evidence: suite 1373 passed, 87 deselected; ruff check + format clean.
+- Environment notes for the next worker: `uv` is at `~/.local/bin` (not on PATH) and its default cache is outside the sandbox — `export PATH=$HOME/.local/bin:$PATH UV_CACHE_DIR=$TMPDIR/uvcache` then `uv run --frozen ...` works offline. `gh` fails TLS inside the sandbox (OSStatus -26276); read-only `gh` calls need the sandbox off. A throwaway-venv install of newer kiota to run the /me wire test was declined by the permission gate; the fix mechanism is VERIFIED by reading only.
+
 ## 2026-10-14 — live-gap-98 (#98), plus review fix on pypi-environment
 
 - Addressed PR comments: IC_kwDOSA_0Lc8AAAABb2MBvw (`[construct review]` on actions-sha-pin: the pypi-environment `[?]` omitted that option A breaks the documented `gh workflow run publish.yml` retry, which dispatches on the default branch and would be refused by a tag-only environment; and that with no environment on PyPI's entry, `registry` could also mint a PyPI token). Both verified by reading RELEASING.md, publish.yml and the findings file; the `[?]` card's Why/A/Recommend/Notes and the findings file now say so. Small fix, done in-session.
