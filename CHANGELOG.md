@@ -60,9 +60,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   with no checkout and no cache; `registry` publishes to the MCP registry.
   `tests/test_workflows_are_pinned.py` holds both lines.
 - **Only a release tag can upload to PyPI.** The `pypi` job now runs in a `pypi` GitHub
-  environment limited to release tags, so a workflow run started from a branch cannot publish,
+  environment limited to `v*` tags, so a workflow run started from a branch cannot publish,
   and once PyPI's trusted publisher names the same environment, no other job in the workflow
-  can either. The manual retry after a partial failure now names the release tag
+  can either. The environment checks only the tag's name, so the lock is as strong as the
+  rule on who may create a `v*` tag; RELEASING.md's appendix sets that up too. The manual retry after a partial failure now names the release tag
   (`gh workflow run publish.yml --ref vX.Y.Z`); without it the run starts on `main` and the
   environment refuses it. RELEASING.md's appendix gives both settings and their order.
 

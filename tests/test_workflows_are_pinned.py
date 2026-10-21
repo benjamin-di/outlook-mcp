@@ -50,6 +50,24 @@ def _jobs(path: Path) -> dict[str, str]:
     return {k: "\n".join(v) for k, v in jobs.items()}
 
 
+def _environment(job: str) -> str | None:
+    """A job's `environment:` value, unquoted and without its comment.
+
+    None when the job names no environment. Any `environment:` key counts,
+    whatever follows it; the mapping form reads its `name:`.
+    """
+    m = re.search(r"^    environment:(.*)$", job, re.M)
+    if not m:
+        return None
+    value = re.sub(r"\s+#.*$", "", m.group(1)).strip()
+    if not value:
+        name = re.search(r"^    environment:\n(?:      .*\n)*?      name:(.*)$", job, re.M)
+        value = re.sub(r"\s+#.*$", "", name.group(1)).strip() if name else ""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return value
+
+
 def test_every_action_is_pinned_to_a_commit_sha_with_its_version():
     offenders = []
     for path in _workflow_files():
@@ -103,11 +121,26 @@ def test_only_the_pypi_job_runs_in_the_pypi_environment():
     # PyPI's side accepts any job, so naming it here first cannot break a
     # release; PyPI's entry is changed after one release has gone through.
     named = {
-        name: m.group(1)
+        name: env
         for name, body in _jobs(WORKFLOWS / "publish.yml").items()
-        if (m := re.search(r"^    environment:\s*([\w-]+)", body, re.M))
+        if (env := _environment(body)) is not None
     }
     assert named == {"pypi": "pypi"}, named
+
+
+def test_the_environment_reader_sees_every_spelling():
+    # Any `environment:` key on a job counts, however its value is written: a
+    # spelling the reader skips would let `registry` run in `pypi` unnoticed.
+    job = "  registry:\n    runs-on: ubuntu-latest\n{}    steps: []\n"
+    for line, expected in [
+        ("    environment: pypi # release tags only\n", "pypi"),
+        ('    environment: "pypi"\n', "pypi"),
+        ("    environment: 'pypi'\n", "pypi"),
+        ("    environment: ${{ 'pypi' }}\n", "${{ 'pypi' }}"),
+        ("    environment:\n      name: pypi\n      url: https://pypi.org\n", "pypi"),
+        ("", None),
+    ]:
+        assert _environment(job.format(line)) == expected, line
 
 
 def test_the_documented_publish_retry_names_the_release_ref():

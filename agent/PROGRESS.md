@@ -2,6 +2,16 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-20 — review fixes on pypi-environment (steering)
+
+- Addressed PR comments: IC_kwDOSA_0Lc8AAAABeBdKIw (`[construct review]` of cfbb1d2, three findings). All verified, all small, fixed in-session:
+  1. PyPI has no publisher edit (warehouse views: add/delete/constrain only; `_get_publisher_for_environment` falls back to a blank-env publisher). RELEASING.md step now: constrain link from PyPI's email, or delete + re-add; never a second entry beside the blank one. Settings card corrected.
+  2. The `v*` environment rule checks only the tag name; "Protect release tags" ruleset has no `creation` rule (VERIFIED `gh api .../rulesets/24471530`). RELEASING.md gains a step: separate tag ruleset with only Restrict creations + Repository admin bypass (or required reviewer on `pypi`). CHANGELOG entry no longer overstates. Settings card now three settings, options A/B/C.
+  3. `test_only_the_pypi_job_runs_in_the_pypi_environment` missed quoted values. New `_environment` helper (any `environment:` key counts; quotes, comment, mapping `name:` handled) + `test_the_environment_reader_sees_every_spelling`: red (2 failed, helper missing) → green. Mutation: `"pypi"`, `'pypi'`, `${{ 'pypi' }}` on `registry` each → red.
+- live-gap-98-run skipped: #119 still has no result from Neil.
+- Findings: `agent/findings/actions-sha-pin.md` § Correction (2026-10-20, from review of cfbb1d2).
+- Queue: no `- [ ]` task left that a worker can run (live-gap-98-run waits on Neil; pypi-environment-settings is `[?]`).
+
 ## 2026-10-20 — pypi-environment (Michael answered A)
 
 - No new steering on PR #122 (no new Michael or `[construct review]` comments).
