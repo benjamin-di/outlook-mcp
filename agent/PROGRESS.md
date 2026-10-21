@@ -2,6 +2,19 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-20 — pypi-environment (Michael answered A)
+
+- No new steering on PR #122 (no new Michael or `[construct review]` comments).
+- live-gap-98-run (first `[ ]`) skipped again: #119 still has no result from Neil. Worker note added on the card.
+- `publish.yml`: `environment: pypi # release tags only; ...` on the `pypi` job only; header and `workflow_dispatch` comments explain it; registry step's retry comment names `--ref vX.Y.Z`.
+- RELEASING.md: three-jobs paragraph mentions the environment; retry is `gh workflow run publish.yml --ref vX.Y.Z` with a line on why and `gh run rerun <id> --failed`; appendix table Environment → `pypi` plus a "The `pypi` environment" section (GitHub tag rule `v*` first, PyPI field after one release).
+- TDD: `tests/test_workflows_are_pinned.py` test 4 flipped to `test_only_the_pypi_job_runs_in_the_pypi_environment`; new `test_the_documented_publish_retry_names_the_release_ref` (RELEASING.md + publish.yml). Red 2 → green; mutation: env added to `registry` → red, bare retry restored in RELEASING.md → red.
+- VERIFIED: PyPI warehouse `_check_environment` returns True for a blank publisher environment (read via `gh api repos/pypi/warehouse/contents/...`), so the workflow-first order is safe. Repo has 0 GitHub environments today.
+- Not run: actionlint (binary download blocked in sandbox). PyYAML parse (ephemeral `uv run --no-project --with pyyaml`) shows `environment` only on `pypi`.
+- CHANGELOG Unreleased → Security. Findings `agent/findings/actions-sha-pin.md` § Done.
+- Parked `[?]` pypi-environment-settings: Michael's two settings (GitHub env before next release, PyPI field after it).
+- Suite: 1378 passed, 89 deselected; ruff check + format clean.
+
 ## 2026-10-20 — kiota-cap-lift (Michael answered A)
 
 - No new steering on PR #122 (all Michael/`[construct review]` comments already addressed).
