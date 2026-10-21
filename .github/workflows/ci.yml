@@ -68,7 +68,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/fresh/bin/python" - <<'PY'
           import importlib.metadata as md
-          for name in ("mcp", "msgraph-sdk", "microsoft-kiota-http", "azure-identity", "pydantic"):
+          for name in ("mcp", "msgraph-sdk", "msgraph-core", "microsoft-kiota-http", "azure-identity", "pydantic"):
               print(f"{name}=={md.version(name)}")
           PY
       - name: /me must reach the wire as /me (#80)
@@ -147,7 +147,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/pypi/bin/python" - <<'PY'
           import importlib.metadata as md
-          for name in ("outlook-graph-mcp", "mcp", "msgraph-sdk", "microsoft-kiota-http", "azure-identity", "pydantic"):
+          for name in ("outlook-graph-mcp", "mcp", "msgraph-sdk", "msgraph-core", "microsoft-kiota-http", "azure-identity", "pydantic"):
               print(f"{name}=={md.version(name)}")
           PY
       - name: /me must reach the wire as /me (#80)

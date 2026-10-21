@@ -39,6 +39,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   change that landed as a failure (#96). The hint now says the change may already have been
   applied and to re-read the item before trying again. Retry behaviour is unchanged.
 
+### Changed
+
+- **New installs get current Microsoft Graph libraries again.** 1.22.1 held `microsoft-kiota-*`
+  below 1.13 because `msgraph-core` 1.5.1 stopped rewriting `/me` under it, so every call
+  failed with `me-token-to-replace is invalid` (#80). `msgraph-core` 1.5.2 carries the fix
+  (microsoftgraph/msgraph-sdk-python-core#1129), so the cap is gone and `msgraph-core>=1.5.2`
+  takes its place. The floor is what keeps it fixed: `msgraph-sdk` still accepts 1.5.1, which
+  installs beside kiota 1.13+ and breaks `/me` the same way. The lock now resolves kiota 1.14.3
+  and `msgraph-core` 1.5.2, and `tests/test_me_rewrite_reaches_the_wire.py` fails on 1.5.1 with
+  kiota 1.14.3 and passes on 1.5.2.
+
 ### Security
 
 - **The release pipeline runs only actions it can name exactly.** Every `uses:` in the CI and

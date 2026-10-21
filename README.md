@@ -238,7 +238,7 @@ uv run outlook-mcp serve    # Start MCP server (default, used by OpenClaw/Claude
 
 ### `me-token-to-replace is invalid` on every call
 
-You're on 1.22.0 installed after 2026-09-18. A fresh install of that version resolves `microsoft-kiota-*` 1.13 or later, which `msgraph-core` doesn't yet handle, so every `/me` request reaches Graph as `/users/me-token-to-replace`. Fixed in 1.22.1, which caps kiota below 1.13 ([#80](https://github.com/mpalermiti/outlook-mcp/issues/80)):
+You're on 1.22.0 installed after 2026-09-18. A fresh install of that version resolves `microsoft-kiota-*` 1.13 or later, which `msgraph-core` 1.5.1 doesn't handle, so every `/me` request reaches Graph as `/users/me-token-to-replace`. Fixed in 1.22.1, which caps kiota below 1.13 ([#80](https://github.com/mpalermiti/outlook-mcp/issues/80)):
 
 ```bash
 uv tool upgrade outlook-graph-mcp
