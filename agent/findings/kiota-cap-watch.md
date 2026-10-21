@@ -1,5 +1,12 @@
 # kiota cap watch — 2026-10-14
 
+**Update 2026-10-20: lifted** (Michael chose A). The four caps are gone and `msgraph-core>=1.5.2`
+replaces them; the lock resolves kiota 1.14.3 + msgraph-core 1.5.2. VERIFIED locally:
+`tests/test_me_rewrite_reaches_the_wire.py` passes on the new lock and fails (2/2) on
+`msgraph-core==1.5.1` + kiota 1.14.3 (`uv run --with msgraph-core==1.5.1`), so the floor is
+load-bearing. PyPI re-checked the same day: msgraph-core 1.5.2 and kiota 1.14.3 are latest;
+msgraph-sdk 1.64.0 still accepts `msgraph_core>=1.5.1`.
+
 **Status: the upstream fix has shipped. The cap can lift, but not by itself: lifting it safely
 also needs a `msgraph-core>=1.5.2` floor.** Nothing in `pyproject.toml` or `uv.lock` was changed
 (workers do not change dependencies).

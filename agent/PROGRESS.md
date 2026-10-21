@@ -2,6 +2,15 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-20 — kiota-cap-lift (Michael answered A)
+
+- No new steering on PR #122 (all Michael/`[construct review]` comments already addressed).
+- live-gap-98-run (first `[ ]`) skipped: Michael's answer is B, wait for Neil on #119; #119 has no result yet. Worker note added on the card.
+- `pyproject.toml`: four `microsoft-kiota-*<1.13` caps and their comment replaced by `msgraph-core>=1.5.2` with a comment naming #80, msgraph-sdk-python-core#1129 and why a floor (msgraph-sdk 1.64.0 still accepts core 1.5.1). `uv lock` → kiota-abstractions/http/auth-azure 1.14.3, core 1.5.2; `uv lock --upgrade-package microsoft-kiota-serialization-json` → 1.14.3 so the lock matches what a fresh install gets. msgraph-sdk stays 1.62.0 in the lock (no unrelated bumps).
+- Also: CHANGELOG Unreleased → Changed; README troubleshooting "doesn't yet handle" → "1.5.1 doesn't handle"; wire-test failure text points at the floor; `ci.yml` fresh/published version reports print msgraph-core.
+- Evidence: local suite 1377 passed / ruff clean on the new lock. `uv run --no-sync --with msgraph-core==1.5.1 pytest tests/test_me_rewrite_reaches_the_wire.py` → 2 failed ("rewrite did not fire") with kiota 1.14.3, so the floor is load-bearing. CI run 39553812140 (push, 85b8adb): all jobs green; fresh-install log: msgraph-sdk 1.64.0, msgraph-core 1.5.2, kiota-http 1.14.3, `/me` → `https://graph.microsoft.com/v1.0/me`.
+- Env note for next worker: `uv` is at `~/.local/bin/uv` (not on PATH) and its cache is outside the sandbox; `.venv/bin/pytest` / `.venv/bin/ruff` run the suite inside it. `gh` needs the sandbox off (TLS).
+
 ## 2026-10-15 — contact-clear-phone (#120 follow-up)
 
 - No new steering on PR #122 (every comment already addressed; no review yet of 8fdcea7).
