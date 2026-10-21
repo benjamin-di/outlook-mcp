@@ -94,10 +94,33 @@ def test_only_the_pypi_job_uploads_and_only_publishing_jobs_get_a_token():
     assert re.search(r"enable-cache:\s*false", pypi)
 
 
-def test_no_publish_job_names_an_environment_pypi_does_not_expect():
-    # PyPI's trusted-publisher entry for this project names no environment
-    # (RELEASING.md appendix; every release run so far had none). Adding one
-    # here without changing PyPI to match breaks the next release, so it is a
-    # deliberate two-sided change, not something to slip into a workflow edit.
-    for name, body in _jobs(WORKFLOWS / "publish.yml").items():
-        assert not re.search(r"^\s+environment:", body, re.M), name
+def test_only_the_pypi_job_runs_in_the_pypi_environment():
+    # The `pypi` GitHub environment is limited to release tags, and PyPI's
+    # trusted-publisher entry names the same environment (RELEASING.md
+    # appendix). PyPI then refuses a token from any job outside it, so
+    # `registry`, which also holds `id-token: write`, cannot upload to PyPI,
+    # and a dispatch from a branch cannot publish. A blank environment on
+    # PyPI's side accepts any job, so naming it here first cannot break a
+    # release; PyPI's entry is changed after one release has gone through.
+    named = {
+        name: m.group(1)
+        for name, body in _jobs(WORKFLOWS / "publish.yml").items()
+        if (m := re.search(r"^    environment:\s*([\w-]+)", body, re.M))
+    }
+    assert named == {"pypi": "pypi"}, named
+
+
+def test_the_documented_publish_retry_names_the_release_ref():
+    # A bare `gh workflow run publish.yml` dispatches on the default branch,
+    # which the tag-only `pypi` environment refuses: the upload job fails and
+    # `registry` is skipped, so a half-finished release could not be finished
+    # the documented way.
+    bare = re.compile(r"gh workflow run publish\.yml(?![^\n`]*--ref )")
+    root = WORKFLOWS.parent.parent
+    offenders = [
+        f"{path.relative_to(root)}:{n}: {line.strip()}"
+        for path in (root / "RELEASING.md", WORKFLOWS / "publish.yml")
+        for n, line in enumerate(path.read_text().splitlines(), 1)
+        if bare.search(line)
+    ]
+    assert not offenders, "retry with `--ref vX.Y.Z`:\n" + "\n".join(offenders)

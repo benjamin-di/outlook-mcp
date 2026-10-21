@@ -98,7 +98,7 @@ gh release create vX.Y.Z --target main --title "vX.Y.Z" --notes "<changelog body
 
 Publishing the release triggers `.github/workflows/publish.yml`, which re-checks the version lockstep, runs tests and lint, builds, publishes to **PyPI**, waits for PyPI's index to catch up, then publishes to the **MCP registry**. Both authenticate through GitHub OIDC — no stored tokens, and no five-minute registry login to race by hand.
 
-It runs as three jobs — `build` (checks, tests, build; no token), `pypi` (uploads the built files and nothing else) and `registry` — so the publishing token exists only in the two jobs that publish. Every action in both workflows is pinned to a commit SHA; Dependabot (`.github/dependabot.yml`, GitHub Actions only) opens PRs to move the pins.
+It runs as three jobs — `build` (checks, tests, build; no token), `pypi` (uploads the built files and nothing else) and `registry` — so the publishing token exists only in the two jobs that publish. `pypi` runs in the `pypi` GitHub environment, which accepts release tags only, so a run from a branch cannot upload (setup in the appendix). Every action in both workflows is pinned to a commit SHA; Dependabot (`.github/dependabot.yml`, GitHub Actions only) opens PRs to move the pins.
 
 Watch it:
 
@@ -106,11 +106,13 @@ Watch it:
 gh run watch
 ```
 
-If it fails partway, re-run it. Uploads already on PyPI are skipped, so a dispatch retries only what didn't finish:
+If it fails partway, re-run it on the release tag. Uploads already on PyPI are skipped, so a dispatch retries only what didn't finish:
 
 ```bash
-gh workflow run publish.yml
+gh workflow run publish.yml --ref vX.Y.Z
 ```
+
+Name the tag: a dispatch without `--ref` runs on `main`, which the `pypi` environment refuses, and `registry` is then skipped. `gh run rerun <run-id> --failed` also works — it keeps the release's ref.
 
 The MCP registry step uses a pinned, checksum-verified `mcp-publisher` (`scripts/install-mcp-publisher.sh`), because that job holds the publishing credential. If the registry ever refuses the pinned version, move the pin — the script says how — in a PR before tagging; CI's `mcp-publisher-pin` job checks the new pin.
 
@@ -208,6 +210,13 @@ Step 5 uploads to PyPI without a token by using PyPI's *trusted publishing*: PyP
    | Owner | `mpalermiti` |
    | Repository | `outlook-mcp` |
    | Workflow name | `publish.yml` |
-   | Environment | *(leave blank)* |
+   | Environment | `pypi` |
 
 Until this is saved, the workflow's PyPI step fails with an OIDC/trusted-publishing error. Once saved, `UV_PUBLISH_TOKEN` is no longer needed and can be dropped from the shell environment.
+
+### The `pypi` environment
+
+The `pypi` job names a GitHub environment, `pypi`. PyPI checks the environment claim only when its publisher entry names one; with the field blank it accepts a token from any job in `publish.yml`, including `registry`. Naming it on both sides means only the `pypi` job, running on a release tag, can upload.
+
+1. **GitHub:** Settings → Environments → `pypi` (GitHub creates it, unprotected, the first time a run uses it; create it ahead to protect that run too). Deployment branches and tags → **Selected branches and tags** → add a **tag** rule `v*`. Required reviewers are optional.
+2. **PyPI:** set the publisher's Environment to `pypi` — *after* one release has gone through with the workflow naming it. A blank field on PyPI accepts any environment, so the workflow side can never break a release; the PyPI side, changed first, would refuse a run that names none.

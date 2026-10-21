@@ -68,7 +68,7 @@ Red before the change (3 of 4 failed: unpinned uses, no dependabot.yml, uploader
 - Suite: 1365 passed, 85 deselected. ruff check and format are clean.
 - `actionlint` 1.7.12 (run ephemerally via `uvx --from actionlint-py`, not added to the project) is clean on both workflows.
 - All three YAML files parse (PyYAML, ephemeral).
-- Not verifiable offline: an actual release run. The first release after merge is the real test. If it fails, `gh workflow run publish.yml` re-runs all three jobs idempotently (`--check-url` on PyPI, duplicate-version handling in the registry step).
+- Not verifiable offline: an actual release run. The first release after merge is the real test. If it fails, `gh workflow run publish.yml --ref vX.Y.Z` (the release tag; see below) re-runs all three jobs idempotently (`--check-url` on PyPI, duplicate-version handling in the registry step).
 
 ## Parked: a protected `pypi` environment
 
@@ -91,3 +91,12 @@ The workflow change is one line under the `pypi` job, `environment: pypi`, plus 
 
 - **The retry has to change with it.** The documented retry, `gh workflow run publish.yml`, dispatches on the default branch. A `pypi` environment limited to `v*` tags refuses that run's `pypi` job, and `registry` is then skipped, so a release that failed after the upload could not be finished the documented way. The same change that adds `environment: pypi` must move the retry (RELEASING.md, the `workflow_dispatch` comment in `publish.yml`, and the Verification section above) to `gh workflow run publish.yml --ref vX.Y.Z`, or to `gh run rerun <id> --failed`, which keeps the release's ref. It is "one line" plus that.
 - **What the environment buys is more than the dispatch gap.** With no environment on PyPI's entry, PyPI accepts an OIDC token from any job in `publish.yml`, so `registry`, which holds `id-token: write` and runs the downloaded mcp-publisher, could upload too. The split keeps the token out of `build`; "only `pypi` can publish" holds against PyPI only once PyPI's entry names the environment, since PyPI checks `environment` only when the publisher names one.
+
+## Done (2026-10-20, Michael chose A)
+
+- `publish.yml`: `environment: pypi` on the `pypi` job only. The `workflow_dispatch` comment, the registry step's retry comment and RELEASING.md now give the retry as `gh workflow run publish.yml --ref vX.Y.Z` (RELEASING.md also names `gh run rerun <id> --failed`). RELEASING.md appendix: Environment `pypi`, plus a "The `pypi` environment" section with both settings and their order.
+- Guards in `tests/test_workflows_are_pinned.py`: test 4 flipped to `test_only_the_pypi_job_runs_in_the_pypi_environment` (exactly `{pypi: pypi}`), and new `test_the_documented_publish_retry_names_the_release_ref` (no `gh workflow run publish.yml` without `--ref` in RELEASING.md or publish.yml). Both red before, green after; mutation-checked (environment on `registry` → red; bare retry restored in RELEASING.md → red).
+- **VERIFIED (2026-10-20, PyPI source):** warehouse `warehouse/oidc/models/github.py::_check_environment` returns `True` when the publisher's environment is `""`, so a blank PyPI entry accepts a job that names `pypi`. The earlier ASSUMED line is settled: the workflow side cannot break a release.
+- **VERIFIED (2026-10-20, `gh api .../environments`):** the repo still has 0 environments. ASSUMED (GitHub docs, not exercised): a job naming a missing environment creates it with no protection rules on first run, so merging before Michael creates it publishes as today, just unprotected.
+- Not verifiable here: `actionlint` (its binary download is blocked in the sandbox); PyYAML parse is clean and shows `environment` only on `pypi`. A real release is the end-to-end test.
+- Still Michael's, in order: (1) GitHub Settings → Environments → `pypi`, tag rule `v*`, before the next release; (2) PyPI publisher Environment → `pypi`, after that release succeeds.

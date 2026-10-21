@@ -19,6 +19,8 @@ name: Publish
 # Three jobs, so a token exists only where it is used. `build` runs the suite
 # and every dev dependency and gets no token. `pypi` only uploads what `build`
 # built: no checkout, no repo code. `registry` needs the repo for server.json.
+# Only `pypi` runs in the `pypi` environment, which accepts release tags only,
+# and PyPI's trusted publisher names that environment (RELEASING.md appendix).
 # Every action is pinned to a commit SHA; tests/test_workflows_are_pinned.py
 # holds both lines.
 
@@ -27,6 +29,8 @@ on:
     types: [published]
   # Manual re-run — safe to repeat. PyPI uploads are skipped if already present,
   # so a dispatch after a partial failure retries only what did not finish.
+  # Dispatch on the release tag (`gh workflow run publish.yml --ref vX.Y.Z`):
+  # the `pypi` environment refuses a run from a branch.
   workflow_dispatch:
 
 jobs:
@@ -88,6 +92,7 @@ jobs:
   pypi:
     needs: build
     runs-on: ubuntu-latest
+    environment: pypi # release tags only; PyPI accepts no other job
     permissions:
       id-token: write # lets GitHub vouch for this job to PyPI
 
@@ -152,8 +157,8 @@ jobs:
         run: |
           ./mcp-publisher login github-oidc
           # The registry rejects a duplicate version, which would turn the
-          # documented retry (`gh workflow run publish.yml`) red after a run
-          # that already succeeded. Treat "already published" as done — the
+          # documented retry (`gh workflow run publish.yml --ref vX.Y.Z`) red
+          # after a run that already succeeded. Treat "already published" as done — the
           # same idempotence --check-url gives the PyPI step above.
           set +e
           OUT=$(./mcp-publisher publish 2>&1)
