@@ -2,12 +2,15 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
-## 2026-10-21 — no runnable task (queue-empty)
+## 2026-10-21 — aiohttp-alerts (found this session; no runnable task was on the board)
 
 - No new steering on PR #122: newest comment is the worker's own reply to IC_kwDOSA_0Lc8AAAABeBmjEQ; no new Michael or `[construct review]` comments, no inline comments.
 - live-gap-98-run skipped: #119 still has no result from Neil, #98 has no comments. Worker note on the card updated in place (not appended, to keep the line short).
 - pypi-environment-settings is `[?]`, not touched.
-- Queued aiohttp-alerts (end of queue): push showed three open Dependabot `aiohttp` alerts from 2026-10-20; `aiohttp` is transitive via kiota-authentication-azure, locked at 3.14.3. Not investigated further this session (dep changes are out of bounds; card is read-only + a `[?]` if a lock refresh is warranted).
+- Queued and then ran aiohttp-alerts: the push showed three open Dependabot `aiohttp` alerts (GHSA-2g87-pp6c-29x5, GHSA-5wr8-gcqf-gqf3, GHSA-494j-54xm-rwp3; created 2026-10-20, all patched in 3.14.4). Read-only. VERIFIED: aiohttp never loads (sys.modules check after importing the whole package plus msgraph/kiota); only azure-core's async transport imports it, and `auth.py` uses sync credentials. Fresh installs get 3.14.5 (kiota-auth-azure: `aiohttp>=3.8.0`; PyPI latest 3.14.5). Only `uv.lock` holds 3.14.3.
+- `uv lock --upgrade-package aiohttp` diff generated (aiohttp→3.14.5, yarl→1.25.1; `==3.14.4` moves the same two), then the lock was restored byte-for-byte (`git status` clean). Parked `[?]` aiohttp-lock-refresh (A refresh / B dismiss alerts / C leave).
+- Findings: `agent/findings/aiohttp-alerts.md`.
+- Env note: `uv lock` works in the sandbox with `UV_CACHE_DIR=$TMPDIR/uvcache` and pypi.org + files.pythonhosted.org allowed.
 - Suite: 1379 passed, 89 deselected; ruff check + format clean.
 
 ## 2026-10-21 — review fix on 51d4226 (steering)
