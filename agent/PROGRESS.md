@@ -2,6 +2,13 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-21 — no runnable task (queue-empty)
+
+- No new steering on PR #122: newest comment is the worker's own reply to IC_kwDOSA_0Lc8AAAABeBmjEQ; no new Michael or `[construct review]` comments, no inline comments.
+- live-gap-98-run skipped: #119 still has no result from Neil, #98 has no comments. Worker note on the card updated in place (not appended, to keep the line short).
+- pypi-environment-settings is `[?]`, not touched.
+- Suite: 1379 passed, 89 deselected; ruff check + format clean.
+
 ## 2026-10-21 — review fix on 51d4226 (steering)
 
 - Addressed PR comments: IC_kwDOSA_0Lc8AAAABeBmjEQ (`[construct review]` of 51d4226: CHANGELOG Unreleased still said RELEASING.md's appendix gives "both settings"; it now has three numbered steps). Verified against RELEASING.md appendix steps 1–3; CHANGELOG now says "the three settings and their order", and the over-long line in that paragraph is rewrapped. Grep for "both settings"/"two settings" in CHANGELOG/RELEASING/README: none left (the dated Done entry in `agent/findings/actions-sha-pin.md` is history, corrected by its own § Correction).
