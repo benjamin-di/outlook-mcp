@@ -7,6 +7,7 @@ Newest first. Every worker session prepends: date, task, key outcomes, files/tes
 - No new steering on PR #122: newest comment is the worker's own reply to IC_kwDOSA_0Lc8AAAABeBmjEQ; no new Michael or `[construct review]` comments, no inline comments.
 - live-gap-98-run skipped: #119 still has no result from Neil, #98 has no comments. Worker note on the card updated in place (not appended, to keep the line short).
 - pypi-environment-settings is `[?]`, not touched.
+- Queued aiohttp-alerts (end of queue): push showed three open Dependabot `aiohttp` alerts from 2026-10-20; `aiohttp` is transitive via kiota-authentication-azure, locked at 3.14.3. Not investigated further this session (dep changes are out of bounds; card is read-only + a `[?]` if a lock refresh is warranted).
 - Suite: 1379 passed, 89 deselected; ruff check + format clean.
 
 ## 2026-10-21 — review fix on 51d4226 (steering)
