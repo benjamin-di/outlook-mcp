@@ -2,6 +2,16 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-22 — review fix on 2ca7b62 (steering)
+
+- Addressed PR comments: IC_kwDOSA_0Lc8AAAABeZX1Cg (`[construct review]` of 2ca7b62, two findings). Both verified, both small, fixed in-session:
+  1. Wrong PyPI name: the distribution is `outlook-graph-mcp` (`pyproject.toml` `name`, README, ci.yml `published-install`); `outlook-mcp` on PyPI is an unrelated project. Fixed in `agent/findings/aiohttp-alerts.md` (both `pip install` lines, plus a note on the name) and the aiohttp-alerts card. Remaining `outlook-mcp` hits on the card name the GitHub repo/server, correctly.
+  2. Alert timing: Dependabot reads `main`, so a lock refresh on `agent/work` closes nothing until #122 merges. VERIFIED `gh api .../dependabot/alerts`: #1 multidict `fixed_at` 2026-10-08T02:11:44Z; #2–4 aiohttp open. aiohttp-lock-refresh card: A now says the alerts close once the PR merges, B says dismissing clears them today, Recommend states the trade. Findings gain a "When the alerts close" paragraph.
+- live-gap-98-run skipped: #119 last comments unchanged (Neil 2026-10-20 20:45, Michael 21:27); #98 has 0 comments.
+- Queue: no `- [ ]` task a worker can run; two `[?]` wait on Michael.
+- Env note: `uv` is at `~/.local/bin/uv` (not on the sandbox PATH); `gh` needs the sandbox off (TLS verify fails inside it).
+- Suite: 1379 passed, 89 deselected; ruff check + format clean.
+
 ## 2026-10-21 — aiohttp-alerts (found this session; no runnable task was on the board)
 
 - No new steering on PR #122: newest comment is the worker's own reply to IC_kwDOSA_0Lc8AAAABeBmjEQ; no new Michael or `[construct review]` comments, no inline comments.

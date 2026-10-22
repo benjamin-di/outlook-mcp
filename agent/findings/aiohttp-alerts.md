@@ -30,8 +30,9 @@ All three: manifest `uv.lock`, relationship `transitive`, scope `runtime`, creat
    `microsoft-kiota-authentication-azure`, which requires `aiohttp>=3.8.0` (VERIFIED, its
    METADATA); `pyproject.toml` does not mention aiohttp. PyPI's latest is 3.14.5; 3.14.4 was
    uploaded 2026-10-05 (VERIFIED, PyPI JSON). The published wheel carries no lock, so
-   `pip install outlook-mcp` resolves the patched version. ASSUMED, not checked: an *existing*
-   environment upgraded with `pip install -U outlook-mcp` keeps its old aiohttp (pip's default
+   `pip install outlook-graph-mcp` resolves the patched version (the PyPI distribution is
+   `outlook-graph-mcp`; `outlook-mcp` on PyPI is an unrelated project). ASSUMED, not checked: an *existing*
+   environment upgraded with `pip install -U outlook-graph-mcp` keeps its old aiohttp (pip's default
    `only-if-needed` strategy), but per (1) it is never loaded.
 
 **The repo: only the lock.** `uv.lock` pins aiohttp 3.14.3, so `uv sync` (the CI `test` job,
@@ -57,3 +58,9 @@ green, since nothing imports aiohttp, but a worker doing the refresh runs it.
 
 Other option instead of the refresh: dismiss the three alerts on GitHub as "vulnerable code
 is not actually used". Only Michael can do that.
+
+**When the alerts close.** Dependabot reads the default branch, so a refreshed lock on
+`agent/work` closes nothing until the rolling PR merges into `main`. VERIFIED: alert #1
+(multidict) was fixed automatically at 2026-10-08T02:11:44Z, after `main` moved multidict
+6.8.0 → 6.9.1 (`gh api .../dependabot/alerts`). Dismissing clears them the same day; the
+refresh clears them on merge, for good.
