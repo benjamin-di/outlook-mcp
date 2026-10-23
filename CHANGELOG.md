@@ -12,14 +12,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   (#126): one on another machine or in a container, behind a reverse proxy, or for a client
   that only speaks HTTP. `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` through the
   SDK's own streamable-HTTP app, stateless and answering JSON, with `OUTLOOK_MCP_HTTP_HOST` and
-  `OUTLOOK_MCP_HTTP_PORT` (default `127.0.0.1:8000`). It binds loopback unless told otherwise,
-  and a bind other machines can reach refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. With a
-  token set, every request must carry `Authorization: Bearer <token>` or gets `401`; tokens are
-  comma-separated so one can be rotated, and compared in constant time. The settings are checked
+  `OUTLOOK_MCP_HTTP_PORT` (default `127.0.0.1:8000`). One rule holds on every bind, loopback
+  included: no `OUTLOOK_MCP_HTTP_TOKEN`, no server, since a loopback port with no token would let
+  any process running as that user read the mailbox with one request. Every request must carry
+  `Authorization: Bearer <token>` or gets `401`; tokens are comma-separated so one can be
+  rotated, and compared in constant time. The server speaks plain HTTP, so on a bind other
+  machines can reach, the token crosses the network in the clear unless a reverse proxy in front
+  terminates TLS; the refusal to start says so, as does the README. The settings are checked
   before anything binds, and no token or request URL is logged. stdio stays the default and is
   unchanged: without the variable, the server makes exactly the call it made before. No new
-  dependency, since the SDK already ships the HTTP server. Meant to sit behind TLS and an
-  authenticating reverse proxy; one process still serves one account.
+  dependency, since the SDK already ships the HTTP server. One process still serves one account.
 
 ### Fixed
 
