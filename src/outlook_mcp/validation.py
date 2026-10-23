@@ -57,6 +57,14 @@ _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 # Phone pattern
 _PHONE_RE = re.compile(r"^[0-9 ()+.\-]{1,30}$")
 
+# An event key (`key` on the event tools) is stored in an extended property and
+# found with `ep/value eq '<key>'` inside a `$filter` string literal. So it is
+# held to characters no literal needs escaping for and no query string reads
+# differently: no quote, space, slash, `+` (a space to some decoders) or `%`.
+# 128 is room for a typed booking reference ("flight:AB12CD:LHR-JFK") with
+# plenty to spare.
+_EVENT_KEY_RE = re.compile(r"^[A-Za-z0-9._:@\-]{1,128}$")
+
 # KQL characters to strip. The value is embedded as `$search="<value>"`, so the
 # only real boundary is the string literal itself. Verified live against Graph:
 #   "  MUST strip — an embedded quote makes Graph SILENTLY DISCARD $search and
@@ -476,6 +484,17 @@ def validate_folder_name(name: str) -> str:
     if lower in WELL_KNOWN_FOLDERS:
         return lower
     return validate_graph_id(name)
+
+
+def validate_event_key(value: str) -> str:
+    """Validate an event key: 1-128 letters, digits and ``. _ : @ -``, checked whole."""
+    if not isinstance(value, str) or not _EVENT_KEY_RE.fullmatch(value):
+        shown = sanitize_output(str(value)[:50])
+        raise ValueError(
+            f"Invalid event key '{shown}'. A key is 1-128 characters from letters, digits "
+            "and . _ : @ - with no spaces, e.g. booking:ABC123."
+        )
+    return value
 
 
 def validate_phone(value: str) -> str:

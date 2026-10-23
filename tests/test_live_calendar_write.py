@@ -15,6 +15,7 @@ unbounded ranges, calendar only, and everything created is deleted in a
 
 from __future__ import annotations
 
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
@@ -23,7 +24,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from outlook_mcp.tools._recurrence import maybe_zone
-from outlook_mcp.tools.calendar_read import get_event, list_events
+from outlook_mcp.tools.calendar_read import find_events_by_key, get_event, list_events
 from outlook_mcp.tools.calendar_write import create_event, delete_event, update_event
 from tests.conftest import LIVE_WRITE_SUBJECT
 
@@ -1402,6 +1403,28 @@ class TestOccurrenceChangesAreNotDiscardedSilently:
                 await _instances(sdk, event_id, monday, _EAST), edited_day, deleted_day
             )
 
+    async def test_keying_a_series_keeps_them(self, real_graph_client, live_write_config):
+        """A key is not a reshape, so `update_event` patches it unguarded.
+
+        That is only safe if Graph agrees: a master patched with an extended
+        property must keep its edited and deleted occurrences, as a subject
+        patch does. Also checks the key comes back on the master, and that the
+        lookup finds the master rather than an occurrence.
+        """
+        sdk = real_graph_client.sdk_client
+        key = f"outlook-mcp:live-write:{uuid.uuid4().hex}"
+        async with self._series_with_changed_occurrences(
+            real_graph_client, live_write_config, " key-exceptions"
+        ) as (event_id, monday, edited_day, deleted_day):
+            await update_event(sdk, event_id=event_id, key=key, config=live_write_config)
+
+            self._assert_changes_survive(
+                await _instances(sdk, event_id, monday, _EAST), edited_day, deleted_day
+            )
+            assert (await get_event(sdk, event_id))["key"] == key
+            found = await find_events_by_key(sdk, key)
+            assert [(e["id"], e["type"]) for e in found["events"]] == [(event_id, "seriesMaster")]
+
     async def test_changing_an_occurrence_moves_the_masters_change_key(
         self, real_graph_client, live_write_config
     ):
@@ -1701,3 +1724,62 @@ class TestCreatingInAnotherCalendar:
                     await delete_event(
                         real_graph_client.sdk_client, event_id, config=live_write_config
                     )
+
+
+class TestEventKeys:
+    """A key written by the tools is found by the tools, and only that key.
+
+    The offline suite pins what is sent; only Graph can say the `$filter` matches
+    what the POST stored. Each run uses a key no other event can have.
+    """
+
+    async def test_a_key_is_stored_found_and_replaced(self, real_graph_client, live_write_config):
+        sdk = real_graph_client.sdk_client
+        monday = _anchor_monday()
+        first = f"outlook-mcp:live-write:{uuid.uuid4().hex}"
+        second = f"outlook-mcp:live-write:{uuid.uuid4().hex}"
+
+        async with _temporary_event(
+            real_graph_client,
+            live_write_config,
+            subject_suffix=" key",
+            start=f"{monday.isoformat()}T15:00:00Z",
+            end=f"{monday.isoformat()}T15:30:00Z",
+            key=first,
+        ) as event_id:
+            assert (await get_event(sdk, event_id))["key"] == first
+            found = await find_events_by_key(sdk, first)
+            assert [(e["id"], e["key"], e["type"]) for e in found["events"]] == [
+                (event_id, first, "singleInstance")
+            ]
+            listed = await list_events(
+                sdk,
+                after=f"{monday.isoformat()}T00:00:00Z",
+                before=f"{monday.isoformat()}T23:59:00Z",
+            )
+            assert [e.get("key") for e in listed["events"] if e["id"] == event_id] == [first]
+
+            await update_event(sdk, event_id=event_id, key=second, config=live_write_config)
+
+            assert (await get_event(sdk, event_id))["key"] == second
+            assert [e["id"] for e in (await find_events_by_key(sdk, second))["events"]] == [
+                event_id
+            ]
+            # Replaced, not added beside: the old key finds nothing.
+            assert (await find_events_by_key(sdk, first))["events"] == []
+
+    async def test_a_prefix_of_a_key_is_not_a_match(self, real_graph_client, live_write_config):
+        """`eq`, not `startswith`: "booking:12" must not find "booking:123"."""
+        sdk = real_graph_client.sdk_client
+        monday = _anchor_monday()
+        key = f"outlook-mcp:live-write:{uuid.uuid4().hex}"
+
+        async with _temporary_event(
+            real_graph_client,
+            live_write_config,
+            subject_suffix=" key-prefix",
+            start=f"{monday.isoformat()}T16:00:00Z",
+            end=f"{monday.isoformat()}T16:30:00Z",
+            key=key,
+        ):
+            assert (await find_events_by_key(sdk, key[:-1]))["events"] == []

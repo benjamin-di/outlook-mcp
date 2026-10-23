@@ -65,6 +65,7 @@ TOOL_GROUPS: dict[str, str] = {
     # calendar
     "outlook_list_events": "calendar",
     "outlook_get_event": "calendar",
+    "outlook_find_event_by_key": "calendar",
     "outlook_create_event": "calendar",
     "outlook_update_event": "calendar",
     "outlook_delete_event": "calendar",
@@ -126,6 +127,7 @@ READ_ONLY: set[str] = {
     "outlook_list_attachments",
     "outlook_list_events",
     "outlook_get_event",
+    "outlook_find_event_by_key",
     "outlook_list_calendars",
     "outlook_list_contacts",
     "outlook_get_contact",
