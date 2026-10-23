@@ -4,11 +4,14 @@ stdio is how every client launches this server today, so the first thing pinned
 here is that its path did not move: `main` still makes exactly the call it made
 before, and the HTTP variables are not even read unless HTTP was asked for.
 
-The rest pins the security model. Loopback unless told otherwise; a bind other
-machines can reach refuses to start without a bearer token; with a token, every
-request carries it or gets 401 before it reaches the MCP layer; nothing logs the
-token or a request URL. The round-trip tests run the production uvicorn config on
-an ephemeral port, so they see what an HTTP client sees, not what a mock was told.
+The rest pins the security model, which has one rule for every bind: no bearer
+token, no server. Loopback is no exception, because a loopback port with no token
+lets any process running as that user read the mailbox with one HTTP request.
+Every request carries the token or gets 401 before it reaches the MCP layer; a
+bind other machines can reach is told, as plainly as the refusal itself, that
+plain HTTP sends the token in the clear; nothing logs the token or a request URL.
+The round-trip tests run the production uvicorn config on an ephemeral port, so
+they see what an HTTP client sees, not what a mock was told.
 """
 
 from __future__ import annotations
@@ -93,13 +96,14 @@ def test_stdio_stays_the_default(env, no_transport_env, monkeypatch):
 
 def test_http_is_served_only_when_asked_for(no_transport_env, monkeypatch):
     monkeypatch.setenv(TRANSPORT_ENV, "streamable-http")
+    monkeypatch.setenv(TOKEN_ENV, TOKEN)
     served = []
     monkeypatch.setattr(server.mcp, "run", lambda *_, **__: pytest.fail("stdio must not start"))
     monkeypatch.setattr(http_transport, "serve", lambda mcp, settings: served.append(settings))
 
     server.main()
 
-    assert served == [HttpSettings()]
+    assert served == [HttpSettings(tokens=(TOKEN,))]
 
 
 # ── Refused before anything binds ───────────────────────────────────────
@@ -109,11 +113,18 @@ def test_http_is_served_only_when_asked_for(no_transport_env, monkeypatch):
     "env, named",
     [
         ({TRANSPORT_ENV: "http"}, TRANSPORT_ENV),
+        (HTTP, TOKEN_ENV),
         ({**HTTP, HOST_ENV: "0.0.0.0"}, TOKEN_ENV),
-        ({**HTTP, PORT_ENV: "eighty"}, PORT_ENV),
+        ({**HTTP, PORT_ENV: "eighty", TOKEN_ENV: TOKEN}, PORT_ENV),
         ({**HTTP, TOKEN_ENV: "short"}, TOKEN_ENV),
     ],
-    ids=["unknown-transport", "public-bind-without-token", "bad-port", "bad-token"],
+    ids=[
+        "unknown-transport",
+        "loopback-without-token",
+        "public-bind-without-token",
+        "bad-port",
+        "bad-token",
+    ],
 )
 def test_main_exits_with_the_reason_and_starts_nothing(
     env, named, no_transport_env, monkeypatch, capsys
@@ -132,22 +143,45 @@ def test_main_exits_with_the_reason_and_starts_nothing(
     assert named in err
 
 
-def test_defaults_are_loopback_port_8000_and_no_token():
-    assert settings_from_env(HTTP) == HttpSettings(host="127.0.0.1", port=8000, tokens=())
+LOOPBACK = ["127.0.0.1", "127.0.0.2", "localhost", "::1"]
+PUBLIC = ["0.0.0.0", "::", "192.0.2.10", "2001:db8::1", "mcp.example.com"]
 
 
-@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "localhost", "::1"])
-def test_a_loopback_bind_needs_no_token(host):
-    assert settings_from_env({**HTTP, HOST_ENV: host}).tokens == ()
+def test_defaults_are_loopback_and_port_8000():
+    settings = settings_from_env({**HTTP, TOKEN_ENV: TOKEN})
+
+    assert settings == HttpSettings(host="127.0.0.1", port=8000, tokens=(TOKEN,))
 
 
-@pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.0.2.10", "2001:db8::1", "mcp.example.com"])
-def test_a_bind_other_machines_can_reach_needs_a_token(host):
+@pytest.mark.parametrize("host", [None, *LOOPBACK, *PUBLIC])
+def test_every_bind_needs_a_token_loopback_included(host):
+    env = {**HTTP} if host is None else {**HTTP, HOST_ENV: host}
     with pytest.raises(ValueError, match=TOKEN_ENV):
-        settings_from_env({**HTTP, HOST_ENV: host})
+        settings_from_env(env)
 
     # ...and is accepted once one is set.
-    assert settings_from_env({**HTTP, HOST_ENV: host, TOKEN_ENV: TOKEN}).host == host
+    assert settings_from_env({**env, TOKEN_ENV: TOKEN}).tokens == (TOKEN,)
+
+
+@pytest.mark.parametrize("host", LOOPBACK)
+def test_the_loopback_refusal_names_the_local_risk(host):
+    with pytest.raises(ValueError) as exc:
+        settings_from_env({**HTTP, HOST_ENV: host})
+
+    assert "any process on this machine" in str(exc.value)
+    # Nothing crosses a network from a loopback bind; saying so would be noise.
+    assert "in the clear" not in str(exc.value)
+
+
+@pytest.mark.parametrize("host", PUBLIC)
+def test_a_public_bind_refusal_says_plain_http_sends_the_token_in_the_clear(host):
+    with pytest.raises(ValueError) as exc:
+        settings_from_env({**HTTP, HOST_ENV: host})
+
+    message = str(exc.value)
+    assert f"{HOST_ENV}={host} accepts connections from other machines" in message
+    assert "in the clear" in message
+    assert "terminates TLS" in message
 
 
 def test_tokens_are_comma_separated_so_one_can_be_rotated():
@@ -176,13 +210,25 @@ def test_the_settings_never_print_their_tokens():
 @pytest.mark.parametrize("port", ["eighty", "0", "65536", "-1", "80.5"])
 def test_an_invalid_port_is_refused(port):
     with pytest.raises(ValueError, match=PORT_ENV):
-        settings_from_env({**HTTP, PORT_ENV: port})
+        settings_from_env({**HTTP, PORT_ENV: port, TOKEN_ENV: TOKEN})
 
 
-def test_without_a_token_the_sdk_app_is_served_unwrapped():
+@pytest.mark.asyncio
+async def test_an_app_built_without_a_token_refuses_every_request():
+    """``settings_from_env`` never hands back settings without a token. Settings
+    built by hand without one still get the gate, which then matches nothing:
+    there is no unguarded app to fall back to."""
+    sent = []
     app = http_transport.build_app(server.mcp, HttpSettings())
 
-    assert not isinstance(app, http_transport.BearerTokenMiddleware)
+    async def send(message):
+        sent.append(message)
+
+    headers = [(b"authorization", f"Bearer {TOKEN}".encode())]
+    await app({"type": "http", "headers": headers}, None, send)
+
+    assert isinstance(app, http_transport.BearerTokenMiddleware)
+    assert sent[0]["status"] == 401
 
 
 # ── A real HTTP round trip ──────────────────────────────────────────────
@@ -284,13 +330,13 @@ async def test_a_bind_other_machines_can_reach_accepts_the_proxys_host():
     proxied request to a 0.0.0.0 bind gets 421. Driven in-process, so the test
     never listens on a public interface.
     """
-    app = http_transport.build_app(server.mcp, HttpSettings(host="0.0.0.0"))
+    app = http_transport.build_app(server.mcp, HttpSettings(host="0.0.0.0", tokens=(TOKEN,)))
+    sdk_app = app.app  # the lifespan belongs to the SDK's Starlette app inside the gate
+    headers = {"Accept": "application/json, text/event-stream", "Authorization": f"Bearer {TOKEN}"}
     transport = httpx2.ASGITransport(app=app)
-    async with app.router.lifespan_context(app):
+    async with sdk_app.router.lifespan_context(sdk_app):
         async with httpx2.AsyncClient(transport=transport, base_url="https://mcp.example.com") as c:
-            response = await c.post(
-                "/mcp", json=INITIALIZE, headers={"Accept": "application/json, text/event-stream"}
-            )
+            response = await c.post("/mcp", json=INITIALIZE, headers=headers)
 
     assert response.status_code == 200
 
