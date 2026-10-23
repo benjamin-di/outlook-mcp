@@ -24,11 +24,11 @@ You'll like this if you're:
 - Looking for **real coverage** — mail, calendar, contacts, to-do, drafts, folders, batch ops, threading — instead of a mail-only or calendar-only wrapper
 - Security-conscious: tokens in the OS keyring (Keychain on macOS, libsecret on Linux -- never cleartext unless you opt in), granular `allow_categories`, optional `read_only` mode, zero telemetry
 
-This **isn't for you** if you need work/school M365 accounts (use Microsoft's official tooling — Entra ID auth and admin-consent flows are out of scope here), or if a basic mail-only client would suffice (this has 69 tools — way more than you need for "read my inbox").
+This **isn't for you** if you need work/school M365 accounts (use Microsoft's official tooling — Entra ID auth and admin-consent flows are out of scope here), or if a basic mail-only client would suffice (this has 71 tools — way more than you need for "read my inbox").
 
 ### How it differs from other Outlook tools you'll find
 
-This is the only **first-class MCP server** in the personal-Outlook space — most alternatives are bash scripts or skill-shaped CLI wrappers the agent shells out to. That distinction matters: the agent gets typed tool schemas with structured args/returns, not stdout it has to parse. Other things you won't find elsewhere: `/$batch`-optimized triage (10-20× faster on bulk ops), recursive folder ops with name resolution, granular per-category permissions, multiple mailboxes (one server per account via `OUTLOOK_MCP_CONFIG_DIR`), and full attachment write paths including >3MB upload sessions for drafts.
+This is the only **first-class MCP server** in the personal-Outlook space — most alternatives are bash scripts or skill-shaped CLI wrappers the agent shells out to. That distinction matters: the agent gets typed tool schemas with structured args/returns, not stdout it has to parse. Other things you won't find elsewhere: `/$batch`-optimized triage (10-20× faster on bulk ops), recursive folder ops with name resolution, granular per-category permissions, multiple mailboxes (one server per account via `OUTLOOK_MCP_CONFIG_DIR`), and full attachment write paths including >3MB upload sessions for drafts and calendar events.
 
 ---
 
@@ -44,7 +44,7 @@ Give your AI agent full Outlook access. Example prompts that just work:
 - *"Draft a reply to the last message from my sister saying I'll call her this weekend."*
 - *"Move all newsletter and promotional email from this week to a 'Read Later' folder — batch 20 at a time."*
 
-The server exposes 69 discrete tools so the agent can compose its own workflow — read, triage, write, schedule, track tasks — without hardcoded macros.
+The server exposes 71 discrete tools so the agent can compose its own workflow — read, triage, write, schedule, track tasks — without hardcoded macros.
 
 ## Works With
 
@@ -59,14 +59,14 @@ Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v
 
 ## Features
 
-**69 tools** across 13 categories:
+**71 tools** across 13 categories:
 
 - **Auth (1)** -- auth status check (login is via CLI)
 - **Mail Read (7)** -- list inbox (with Focused Inbox and uncategorized filters), read message, bulk read by ID via `$batch`, search (KQL), list folders, delta-sync inbox changes, composed "since last call" digest across mail/events/contacts
 - **Mail Write (3)** -- send, reply/reply-all, forward
 - **Mail Triage (9)** -- move, delete (soft by default), flag, categorize, mark read/unread, reclassify (Focused Inbox), list/set/delete per-sender Focused Inbox overrides
 - **Calendar Read (4)** -- list events (with recurring expansion), get event details, find events by key, delta-sync event changes
-- **Calendar Write (4)** -- create, update, delete, RSVP (accept/decline/tentative)
+- **Calendar Write (6)** -- create, update, delete, RSVP (accept/decline/tentative), attach and remove event files
 - **Contacts (7)** -- list, search, get, create, update, delete, delta-sync changes
 - **To Do (14)** -- task lists, tasks (list/get/create/update/complete/delete), checklist items (add/update/delete), task attachments (list/download/upload/delete)
 - **Drafts (5)** -- list, create, update, send, delete
@@ -323,7 +323,7 @@ configured `timezone`; responses are always UTC.
 | Tool | Description |
 |------|-------------|
 | `outlook_list_events` | List events in a date range. Expands recurring events. Each event carries `type` — `occurrence` or `exception` for an instance of a series, `singleInstance` for a one-off — so a listing tells recurring work apart without a second call. A `seriesMaster` never appears here: `calendarView` returns expanded instances, so use `outlook_get_event` to see a master. Each event also carries `show_as`, the free/busy status Outlook labels "Show as". Configurable via `days`, `after`, `before`. `calendar` selects which calendar to read: omit (or `"primary"`) for the default, otherwise a display name (case-insensitive; not-found and ambiguous errors name what exists) or an ID from `outlook_list_calendars`. A `cursor` continues the listing it came from, so later pages need neither `calendar` nor a second lookup. An event that has a `key` (see `outlook_create_event`) carries it; one without has no `key` field. `concise=True` omits `type`, `show_as` and `key`. |
-| `outlook_get_event` | Get full event details: attendees, body, online meeting URL, recurrence, `type` (`singleInstance` / `seriesMaster` / `occurrence` / `exception`), `show_as`, and `key` (`null` when the event has none). |
+| `outlook_get_event` | Get full event details: attendees, body, online meeting URL, recurrence, `type` (`singleInstance` / `seriesMaster` / `occurrence` / `exception`), `show_as`, `key` (`null` when the event has none), and `attachments` — `id`, `name`, `size`, `content_type` and `is_inline` of each file, never its bytes (`[]` when there are none; read with a second request only when Graph reports the event has attachments). |
 | `outlook_find_event_by_key` | Find the events whose `key` is the one given — the caller's own reference set by `outlook_create_event` or `outlook_update_event`. No date window: a booking months away is found as readily as tomorrow's. Searches the default calendar, or `calendar` (resolved as for `outlook_list_events`). Returns events in the default listing's shape, `key` included: single events and series masters, never occurrences, so the ID found is the one to update. Nothing matching returns an empty list; `has_more` is `true` when more than 25 events share the key. |
 | `outlook_list_events_delta` | List only event changes inside a window since the last call. `start` and `end` (ISO 8601) required on the first call (Graph constraint — no whole-calendar sync). Each changed event carries every field the **default** `outlook_list_events` listing returns except `key`, `type` and `show_as` included, plus `is_deleted` (`concise=True` has its own narrower shape, which the delta tool does not mirror). Unlike the listing, this endpoint *does* return `seriesMaster` items, so a caller seeding from `outlook_list_events` should expect ids here that the seed never held. Deletes come back as `{id, is_deleted: True}` and nothing else. Cursor is stateless. |
 
@@ -335,6 +335,8 @@ configured `timezone`; responses are always UTC.
 | `outlook_update_event` | Update event fields (subject, time, location, body, attendees, all-day, `show_as`). Only patches changed fields. Pass `recurrence` to turn a single event into a series, or `remove_recurrence=True` to turn a series back into a single event. `attendees` **replaces** the whole guest list and emails invitations/cancellations; `is_all_day` needs `start`+`end` in the same call, while `show_as` patches on its own. Patching a time keeps the zone the event is anchored in; `timezone` (with `start`+`end`) re-anchors it elsewhere, which is how a series created before zones existed gets repaired. A `start`, `end` or `recurrence` patch to a series with edited or deleted occurrences is refused, naming them — Graph would silently discard every one. `key` sets or replaces the event's key and patches on its own; there is no clearing one. |
 | `outlook_delete_event` | Delete a calendar event. |
 | `outlook_rsvp` | RSVP to an event: `accept`, `decline`, or `tentative`. Optionally include a message. |
+| `outlook_attach_to_event` | Attach files to an event — an e-ticket on a flight, say. `attachment_paths` resolve inside `attachments_dir`, as for `outlook_attach_to_draft`; a missing file, or one path outside it, attaches nothing. Files over 3 MB use an upload session. Returns the new attachment IDs (none yet for an upload-session file). Attendees are not sent the files when they are attached; they get them with the event's next update, so on an event with attendees this needs `mail_send` under a restricted `allow_categories`. |
+| `outlook_remove_event_attachment` | Remove one attachment from an event, by the ID `outlook_attach_to_event` returned or `outlook_get_event` lists. |
 
 ### Contacts
 
@@ -460,10 +462,10 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 
 ### Toolset selection (optional) — `OUTLOOK_MCP_TOOLSETS`
 
-All 69 tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
+All 71 tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
 
 ```bash
-# e.g. a recurring mail + calendar agent: 29 tools instead of 69 (about half the tool tokens per turn)
+# e.g. a recurring mail + calendar agent: 31 tools instead of 71 (about half the tool tokens per turn)
 OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"
 ```
 
@@ -548,7 +550,7 @@ By default, `read_only: false` unlocks **all** write tools. For finer control, s
 | `mail_triage` | move, delete (soft), flag, categorize, mark read, copy, batch, reclassify and set/delete Focused Inbox overrides | Moderate — reversible except hard delete |
 | `mail_folders` | create/rename/delete folder | Moderate |
 | `mail_send` | send, reply, forward, send_draft, send_with_attachments | **Dangerous** — sends email on your behalf |
-| `calendar_write` | create/update/delete event, RSVP | Moderate — your own calendar. The parts that email other people text the agent wrote need `mail_send` as well: inviting attendees, rewording (subject, body, location) any event that already has them, and adding a message to an RSVP. A bare RSVP, a time change and a cancellation still notify the people involved, but carry nothing the agent wrote |
+| `calendar_write` | create/update/delete event, RSVP, attach/remove event files | Moderate — your own calendar, but `outlook_attach_to_event` reads local files from `attachments_dir` and pushes their bytes to Graph. The parts that email other people text the agent wrote need `mail_send` as well: inviting attendees, rewording (subject, body, location) any event that already has them, attaching a file to such an event (they get it with its next update), and adding a message to an RSVP. A bare RSVP, a time change and a cancellation still notify the people involved, but carry nothing the agent wrote |
 | `contacts_write` | create/update/delete contact | Moderate |
 | `todo_write` | create/update/complete/delete task, checklist items; upload/delete task attachments | Moderate — your own task list, but `outlook_upload_task_attachment` reads local files from `attachments_dir` and pushes their bytes to Graph, and task/checklist/attachment deletes are irreversible. Listing and downloading attachments are plain reads, gated like every other read (not at all) and fenced to `attachments_dir` |
 
