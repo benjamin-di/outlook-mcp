@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import re
+from html import escape
 from typing import Any
 
 from outlook_mcp.config import Config
@@ -104,10 +107,79 @@ async def list_drafts(
     }
 
 
+# The opening tag of a draft's HTML body, whatever its case and attributes.
+_BODY_OPEN_TAG = re.compile(r"<body\b[^>]*>", re.IGNORECASE)
+
+
+def _insert_above_quote(draft_body: Any, html: str) -> str:
+    """The draft's body with ``html`` as the first thing inside ``<body>``.
+
+    That is where Outlook puts a reply: createReply, createReplyAll and
+    createForward return the draft with the original already quoted below an
+    ``<hr>`` and Outlook's header block, so inserting here puts the new text
+    above both and leaves the original's markup as Graph wrote it.
+
+    Graph documents the draft these actions create as HTML. A plain-text one
+    keeps its text, escaped, with its line breaks.
+    """
+    from msgraph.generated.models.body_type import BodyType
+
+    content = getattr(draft_body, "content", None) or ""
+    if getattr(draft_body, "content_type", None) != BodyType.Html:
+        quoted = escape(content).replace("\r\n", "\n").replace("\n", "<br>")
+        return f"{html}<br>{quoted}" if quoted else html
+    match = _BODY_OPEN_TAG.search(content)
+    if match is None:
+        return html + content
+    return content[: match.end()] + html + content[match.end() :]
+
+
+async def _create_in_thread(
+    graph_client: Any,
+    source_id: str,
+    fields: Any,
+    body: str,
+    is_html: bool,
+    action: str,
+) -> Any:
+    """POST createReply / createReplyAll / createForward and return the draft.
+
+    ``fields`` (recipients, subject, importance) ride on the action's
+    ``message``. A plain-text body goes in ``comment``, which Graph places
+    above the quoted original. ``comment`` cannot carry markup and Graph
+    refuses it together with ``message.body``, so an HTML body is left out
+    here and patched in by the caller.
+    """
+    from msgraph.generated.users.item.messages.item.create_forward import (
+        create_forward_post_request_body as fwd,
+    )
+    from msgraph.generated.users.item.messages.item.create_reply import (
+        create_reply_post_request_body as rep,
+    )
+    from msgraph.generated.users.item.messages.item.create_reply_all import (
+        create_reply_all_post_request_body as rep_all,
+    )
+
+    source = graph_client.me.messages.by_message_id(source_id)
+    if action == "forward":
+        request_body: Any = fwd.CreateForwardPostRequestBody()
+        builder = source.create_forward
+    elif action == "reply_all":
+        request_body = rep_all.CreateReplyAllPostRequestBody()
+        builder = source.create_reply_all
+    else:
+        request_body = rep.CreateReplyPostRequestBody()
+        builder = source.create_reply
+    request_body.message = fields
+    if not is_html:
+        request_body.comment = body
+    return await builder.post(request_body)
+
+
 async def create_draft(
     graph_client: Any,
-    to: list[str],
-    subject: str,
+    to: list[str] | None,
+    subject: str | None,
     body: str,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
@@ -115,6 +187,9 @@ async def create_draft(
     importance: str = "normal",
     reply_to: list[str] | None = None,
     deferred_send_datetime: str | None = None,
+    reply_to_message_id: str | None = None,
+    reply_all: bool = False,
+    forward_message_id: str | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -122,6 +197,13 @@ async def create_draft(
 
     Validates all email addresses, builds a Message object,
     and POSTs to /me/messages (which creates in Drafts).
+
+    Pass ``reply_to_message_id`` (with ``reply_all`` for reply-all) or
+    ``forward_message_id`` to create the draft in that message's thread
+    instead, through createReply / createReplyAll / createForward: Graph
+    quotes the original below the body and, for a reply, picks the
+    recipients and subject. Recipients, subject, Reply-To and importance
+    passed with it replace Graph's. Nothing is sent.
 
     Pass ``deferred_send_datetime`` (ISO 8601, UTC preferred) to schedule the
     draft for delayed delivery. The value is set as the
@@ -132,8 +214,23 @@ async def create_draft(
     """
     check_permission(config, CATEGORY_MAIL_DRAFTS, "outlook_create_draft")
 
+    if reply_to_message_id and forward_message_id:
+        raise ValueError("Pass reply_to_message_id or forward_message_id, not both.")
+    if reply_all and not reply_to_message_id:
+        raise ValueError("reply_all is for a reply: pass reply_to_message_id with it.")
+    source_id = reply_to_message_id or forward_message_id
+    if source_id is None and (to is None or subject is None):
+        raise ValueError(
+            "A new draft needs `to` and `subject`. To answer a message, pass "
+            "reply_to_message_id or forward_message_id."
+        )
+    if forward_message_id and not to:
+        raise ValueError("A forward needs `to`: Graph has no recipients to pick for it.")
+    if source_id is not None:
+        source_id = validate_graph_id(source_id)
+
     # Validate all email addresses
-    validated_to = [validate_email(e) for e in to]
+    validated_to = [validate_email(e) for e in to] if to else []
     validated_cc = [validate_email(e) for e in cc] if cc else []
     validated_bcc = [validate_email(e) for e in bcc] if bcc else []
     validated_reply_to = [validate_email(e) for e in reply_to] if reply_to else []
@@ -152,11 +249,14 @@ async def create_draft(
         return r
 
     msg = Message()
-    msg.subject = subject
-    msg.body = ItemBody()
-    msg.body.content = body
-    msg.body.content_type = BodyType.Html if is_html else BodyType.Text
-    msg.to_recipients = [_make_recipient(e) for e in validated_to]
+    if subject is not None:
+        msg.subject = subject
+    if source_id is None:
+        msg.body = ItemBody()
+        msg.body.content = body
+        msg.body.content_type = BodyType.Html if is_html else BodyType.Text
+    if validated_to:
+        msg.to_recipients = [_make_recipient(e) for e in validated_to]
     if validated_cc:
         msg.cc_recipients = [_make_recipient(e) for e in validated_cc]
     if validated_bcc:
@@ -171,20 +271,58 @@ async def create_draft(
     }
     msg.importance = importance_map.get(importance, Importance.Normal)
 
+    deferred_prop = None
     deferred_normalized = None
     if deferred_send_datetime is not None:
-        prop, deferred_normalized = _build_deferred_send_property(
+        deferred_prop, deferred_normalized = _build_deferred_send_property(
             deferred_send_datetime, config.timezone
         )
-        msg.single_value_extended_properties = [prop]
 
-    # POST /me/messages creates a draft
-    created = await graph_client.me.messages.post(msg)
+    if source_id is None:
+        if deferred_prop is not None:
+            msg.single_value_extended_properties = [deferred_prop]
+        # POST /me/messages creates a draft
+        created = await graph_client.me.messages.post(msg)
+        result = {
+            "status": "created",
+            "draft_id": created.id,
+        }
+    else:
+        if forward_message_id:
+            action = "forward"
+        elif reply_all:
+            action = "reply_all"
+        else:
+            action = "reply"
+        created = await _create_in_thread(graph_client, source_id, msg, body, is_html, action)
 
-    result = {
-        "status": "created",
-        "draft_id": created.id,
-    }
+        # What the create call could not carry: markup (comment is plain text)
+        # and the deferred-send property, set the way update_draft sets it.
+        patch = Message()
+        if is_html:
+            patch.body = ItemBody()
+            patch.body.content = _insert_above_quote(created.body, body)
+            patch.body.content_type = BodyType.Html
+        if deferred_prop is not None:
+            patch.single_value_extended_properties = [deferred_prop]
+        if is_html or deferred_prop is not None:
+            new_draft = graph_client.me.messages.by_message_id(created.id)
+            try:
+                await new_draft.patch(patch)
+            except Exception:
+                # Leave no half-made reply behind (one without its body, or that
+                # would send at once): the PATCH's error is the one to report.
+                with contextlib.suppress(Exception):
+                    await new_draft.delete()
+                raise
+
+        result = {
+            "status": "created",
+            "draft_id": created.id,
+            "to": [r.email_address.address for r in created.to_recipients or [] if r.email_address],
+            "cc": [r.email_address.address for r in created.cc_recipients or [] if r.email_address],
+        }
+
     if deferred_normalized is not None:
         result["deferred_send_datetime"] = deferred_normalized
     return result

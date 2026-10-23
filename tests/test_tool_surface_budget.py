@@ -63,7 +63,14 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,399 with reply and forward drafts on `outlook_create_draft` (#143, +138):
+# `reply_to_message_id`, `reply_all` and `forward_message_id` (+80), `to` and
+# `subject` made optional because Graph fills a reply's (+20), and one docstring
+# line saying so (+38). A new tool for it would have cost a whole second schema.
+# Ceiling raised to 13,450: the same ~50 tokens of room for a wording fix, not
+# for another batch.
+TOOL_SURFACE_CEILING = 13_450
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
