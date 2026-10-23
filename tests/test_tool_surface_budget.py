@@ -63,7 +63,15 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,314 with `phone` on `outlook_search_contacts` (+53): the argument, `query`
+# becoming optional (one of the two is required, checked in the handler), and one
+# line saying `phone` finds a number written any way. On the Exchange Online
+# mailbox checked, Graph's contact `$search` found a number only as stored, so the
+# same number without its country code found nothing. A separate find-by-phone
+# tool would pay the scaffolding every schema carries for the same rows. Over the
+# ~39 tokens left, so a deliberate raise to 13,500: ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

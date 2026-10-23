@@ -325,13 +325,113 @@ async def list_contacts(
     }
 
 
+# A phone search reads the listing in pages of this size, and at most this many
+# pages: 10,000 contacts, past any address book a person keeps. A bigger one is
+# searched as far as the cap and says so with `has_more`.
+_PHONE_SCAN_PAGE = 1000
+_PHONE_SCAN_PAGES = 10
+
+# The shorter of two numbers has to have at least this many digits for one to be
+# read as the other with its country or area code. Fewer would let an extension or
+# a short code match every number that happens to end in it.
+_MIN_PHONE_DIGITS = 7
+
+
+def _phone_digits(number: str) -> str:
+    """The digits of a phone number, as written."""
+    return "".join(ch for ch in number if ch in "0123456789")
+
+
+def _same_number(wanted: str, stored: str) -> bool:
+    """Whether ``stored`` is the number whose digits are ``wanted``, written with or
+    without its country or area code: the shorter's digits end the longer's.
+
+    Compared as written and again without leading zeros, so an international
+    ``00`` or a trunk ``0`` on one side does not hide the match (``+44 20 7946
+    0018`` is ``020 7946 0018``), while a suffix that itself starts with 0
+    (``010 0199`` of ``+1 555 010 0199``) still matches.
+    """
+    digits = _phone_digits(stored)
+    for one, other in ((wanted, digits), (wanted.lstrip("0"), digits.lstrip("0"))):
+        shorter, longer = sorted((one, other), key=len)
+        if len(shorter) >= _MIN_PHONE_DIGITS and longer.endswith(shorter):
+            return True
+    return False
+
+
+def _holds_number(contact: Any, wanted: str) -> bool:
+    """Whether any of the contact's three consumer phone fields holds ``wanted``.
+
+    Spelled out field by field, as in ``_primary_phone``, so every field read is
+    one the scan's ``$select`` asks for.
+    """
+    numbers = [getattr(contact, "mobile_phone", "") or ""]
+    numbers += list(getattr(contact, "home_phones", None) or [])
+    numbers += list(getattr(contact, "business_phones", None) or [])
+    return any(_same_number(wanted, number) for number in numbers if number)
+
+
+async def _search_by_phone(graph_client: Any, wanted: str, count: int) -> dict:
+    """Contacts holding the number whose digits are ``wanted``, from the listing.
+
+    Graph's contact ``$search`` finds a number only as it is stored, and phone
+    fields cannot be filtered (``$filter`` on contacts reaches only
+    ``emailAddresses/any(a:a/address eq ...)``). So this reads the listing, only
+    the summary fields, and compares digits here. Nothing is kept after the call.
+    The pages are followed by their raw ``@odata.nextLink``, as
+    ``todo.fetch_all_task_lists`` follows its pages.
+    """
+    from msgraph.generated.users.item.contacts.contacts_request_builder import (
+        ContactsRequestBuilder,
+    )
+
+    req_config = build_request_config(
+        ContactsRequestBuilder.ContactsRequestBuilderGetQueryParameters,
+        {"$top": _PHONE_SCAN_PAGE, "$select": _SUMMARY_SELECT},
+    )
+    response = await graph_client.me.contacts.get(request_configuration=req_config)
+    matches: list[Any] = []
+    pages = 1
+    while True:
+        matches.extend(c for c in (response.value or []) if _holds_number(c, wanted))
+        next_link = getattr(response, "odata_next_link", None)
+        if not isinstance(next_link, str) or not next_link or pages >= _PHONE_SCAN_PAGES:
+            break
+        pages += 1
+        response = await graph_client.me.contacts.with_url(next_link).get()
+    unread = isinstance(next_link, str) and bool(next_link)
+
+    found = [_format_contact_summary(c) for c in matches[:count]]
+    return {
+        "contacts": found,
+        "count": len(found),
+        # No cursor: a scan cut short at the cap, or more matches than `count`,
+        # is all `has_more` can say.
+        "has_more": len(matches) > count or unread,
+        "cursor": None,
+    }
+
+
 async def search_contacts(
     graph_client: Any,
-    query: str,
+    query: str | None = None,
     count: int = 25,
+    phone: str | None = None,
 ) -> dict:
-    """Search contacts using KQL."""
+    """Search contacts using KQL, or by phone number (see ``_search_by_phone``)."""
     count = _clamp(count, 1, 100)
+    if (query is None) == (phone is None):
+        raise ValueError(
+            "Pass query or phone, not both: query is a KQL search, phone finds a number."
+        )
+    if phone is not None:
+        wanted = _phone_digits(validate_phone(phone))
+        if len(wanted) < _MIN_PHONE_DIGITS:
+            raise ValueError(
+                f"phone needs at least {_MIN_PHONE_DIGITS} digits to tell one number from another."
+            )
+        return await _search_by_phone(graph_client, wanted, count)
+
     safe_query = sanitize_kql(query)
 
     query_params: dict[str, Any] = {

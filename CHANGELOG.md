@@ -6,6 +6,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Contacts can be found by phone number, however it is written** (#165). Graph's contact
+  `$search` finds a number only as it is stored, so a number from a signature or a missed call
+  without its country code, or with a different one, found nothing, and an agent concluded the
+  caller was not a contact. `outlook_search_contacts` takes `phone` in place of `query`: it reads
+  the contact listing (pages of 1,000, up to 10,000 contacts; nothing is kept) and matches when
+  the shorter number's digits end the longer's, as written or without leading zeros, with at
+  least seven digits. `+44 20 7946 0018` finds `020 7946 0018`. Graph has no server-side
+  alternative: `$filter` on contacts reaches only `emailAddresses`. Fewer than seven digits is
+  refused. `query` searches are unchanged.
+
 ## [1.26.0] — 2026-10-23
 
 ### Fixed
