@@ -63,7 +63,14 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,337 with `include_sender_auth` on `outlook_read_message` and
+# `outlook_read_messages` and the read tool's one-line description of it (+76):
+# the agent could not tell a spoofed From line from a real one (#130). The
+# guidance on when to use it is in INSTRUCTIONS, paid once per session. That is
+# 37 over 13,300, so the ceiling rises to 13,400: deliberate, for a security
+# field, and ~63 tokens of headroom.
+TOOL_SURFACE_CEILING = 13_400
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

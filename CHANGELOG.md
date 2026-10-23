@@ -19,6 +19,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   guessed between. It costs one sentence in one docstring (+10 proxy tokens), with no ceiling
   change.
 
+- **The read tools can say whether Microsoft verified who a message is from (#130).** A From
+  line is whatever the sender typed, so mail claiming to come from the user's bank or manager
+  could be spoofed, and nothing told the agent which it was. `outlook_read_message` and
+  `outlook_read_messages` take `include_sender_auth=True`, which adds `sender_authentication`:
+  `authenticated`, the From domain, Microsoft's `dkim`, `dmarc` and `compauth` results, and a
+  short `reason`. It is read from the `Authentication-Results` header Microsoft stamps on
+  receipt, and only the topmost one counts, since a sender can write that header into the
+  message too. The header is parsed as RFC 8601, with comments and quoted strings respected.
+  `authenticated` is true only for a pass aligned with the From domain: `dmarc=pass` for it,
+  `dkim=pass` signed by it or a subdomain, or `compauth=pass` where every `header.from` is it.
+  A failing `dmarc` or `compauth`, either stated twice, another service's header, or one that
+  cannot be parsed authenticates nothing. `authenticated` vouches for `from_domain` only, never
+  for the display name, and `false` means unverified, not spoofed. Off by default, so the
+  default read sends the same request and returns the same fields as before.
+  The opt-in read selects `internetMessageHeaders` and every field the formatters read, and
+  `test_select_covers_the_formatter.py` pins that list against both. The headers themselves
+  are not returned. The instructions every client receives say to use it before acting on a
+  message because of who sent it. The tool surface grows by 76 proxy tokens, to 13,337, so
+  the ceiling rises from 13,300 to 13,400.
+
 ### Fixed
 
 - **`outlook_batch_triage` retries a throttled message instead of reporting it as failed.**
