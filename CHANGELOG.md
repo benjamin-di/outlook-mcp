@@ -15,12 +15,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Until now the only way to answer in the thread was `outlook_reply` or `outlook_forward`, which
   send at once, and a new draft with "RE:" in its subject started a new conversation. For a
   reply Graph picks the recipients and subject, and a `to`, `cc`, `bcc`, `subject`, `reply_to` or
-  `importance` passed with it replaces Graph's; a forward needs `to`, as Graph requires. A
-  plain-text body goes in Graph's `comment`, which Graph places above the quote. `comment`
-  cannot carry markup, so an HTML body is patched into the draft's own HTML right after its
-  `<body>` tag, where Outlook puts a reply, leaving the original's markup as Graph wrote it.
-  `deferred_send_datetime` works as for a new draft. If that follow-up patch fails, the new
-  draft is deleted, so a failed call leaves no half-made reply. The result adds `to` and `cc` as
+  `importance` passed with it replaces Graph's; a forward needs `to`, as Graph requires. The
+  body goes in afterwards, by one patch, above the quote Graph wrote: Graph's `comment` joins a
+  multi-line text's lines with spaces on an HTML message, so paragraphs, line breaks and lists
+  would arrive as one run-on paragraph, and `message.body` replaces the quoted original. On an
+  HTML message the body goes right after the draft's `<body>` tag, where Outlook puts a reply,
+  leaving the original's markup as Graph wrote it; plain text is converted first, blank lines
+  to paragraphs, line breaks kept and `- ` or `* ` lines to a list, everything else escaped. On
+  a plain-text message the draft stays plain text, with the text above the quote. Both checked
+  against an Exchange Online mailbox. `deferred_send_datetime` works as for a new draft, set by
+  the same patch. If that patch fails, the new draft is deleted, so a failed call leaves no
+  half-made reply. The result adds `to` and `cc` as
   Graph addressed the draft. `to` and `subject` are optional in the schema now; a new draft
   still needs both and is refused without them. The tool surface grows by 138 proxy tokens.
 
