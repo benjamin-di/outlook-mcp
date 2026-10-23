@@ -69,7 +69,7 @@ Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v
 - **Calendar Write (4)** -- create, update, delete, RSVP (accept/decline/tentative)
 - **Contacts (7)** -- list, search, get, create, update, delete, delta-sync changes
 - **To Do (14)** -- task lists, tasks (list/get/create/update/complete/delete), checklist items (add/update/delete), task attachments (list/download/upload/delete)
-- **Drafts (5)** -- list, create, update, send, delete
+- **Drafts (5)** -- list, create (new, or a reply, reply-all or forward in the message's thread), update, send, delete
 - **Attachments (5)** -- list, download, send-with-attachments, attach-to-draft, remove-draft-attachment
 - **Folder Management (3)** -- create, rename, delete mail folders
 - **Threading and Batch (3)** -- list thread, copy message, batch triage
@@ -371,7 +371,7 @@ configured `timezone`; responses are always UTC.
 | Tool | Description |
 |------|-------------|
 | `outlook_list_drafts` | List draft messages with pagination. |
-| `outlook_create_draft` | Create a draft. Supports scheduled delivery via `deferred_send_datetime` (server-side, Outlook-desktop-compatible "Delay Delivery"). |
+| `outlook_create_draft` | Create a draft. With `reply_to_message_id` (`reply_all=True` for reply-all) or `forward_message_id`, the draft is created in that message's thread with the original quoted below, and nothing is sent; Graph fills a reply's recipients and subject, and a forward needs `to`. Supports scheduled delivery via `deferred_send_datetime` (server-side, Outlook-desktop-compatible "Delay Delivery"). |
 | `outlook_update_draft` | Update draft fields. Accepts `is_html=True` for HTML bodies and `deferred_send_datetime` to set or clear the scheduled delivery time. |
 | `outlook_send_draft` | Send an existing draft. |
 | `outlook_delete_draft` | Delete a draft. |
