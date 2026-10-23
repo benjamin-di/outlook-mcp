@@ -82,7 +82,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   `httpx.HTTPStatusError` (from `raise_for_status()`, rebuilt without the URL) and
   azure-identity's `ClientAuthenticationError`. A raw path guards `response.json()` with
   `unreadable_graph_reply`: its `JSONDecodeError` is a `ValueError`, reported as invalid input
-- Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 68
+- Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 69
   docstrings — a docstring is paid for on every turn by every client. A docstring stays
   self-sufficient for using *that* tool; sequencing across tools does not belong there
 - Anything taking a host filesystem path routes through `resolve_attachment_path`. Paths come
