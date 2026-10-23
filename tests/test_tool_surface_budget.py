@@ -92,7 +92,14 @@ CHARS_PER_TOKEN = 4
 # `outlook_get_contact` returned categories and notes that nothing could write
 # (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
 # raise to 13,700: ~0.8% headroom.
-TOOL_SURFACE_CEILING = 13_700
+#
+# 13,724 with reply and forward drafts on `outlook_create_draft` (#143, +138 on
+# 13,586): `reply_to_message_id`, `reply_all` and `forward_message_id` (+80), `to`
+# and `subject` made optional because Graph fills a reply's (+20), and one docstring
+# line saying so (+38). A new tool for it would have cost a whole second schema.
+# Raised to 13,900 as one ceiling for this and #168 (`is_markdown`, stacked on
+# this), which together measure ~13,820: ~0.6% headroom over the pair.
+TOOL_SURFACE_CEILING = 13_900
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
