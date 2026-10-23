@@ -63,7 +63,13 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,326 with `birthday` on `outlook_create_contact` (+31) and
+# `outlook_update_contact` (+34): the argument on each, and the words saying it is a
+# date, YYYY-MM-DD. `outlook_get_contact` already returned it; nothing could write
+# it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
+# 13,500: ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
