@@ -379,12 +379,45 @@ def _lookup_hint(status_code: int | None, error_code: str | None) -> str | None:
     return _HINT_TABLE.get((status_code, None))
 
 
-def wrap_graph_error(exc: Exception) -> GraphAPIError:
+# What a 5xx means for a write that can email someone (#131). A 5xx says Graph failed,
+# not where: the message may have gone out before the answer was lost, so the 503 row's
+# "retry" would send it twice. These calls run without kiota's replay
+# (`throttle.call_without_replay`), and the agent is told to look before sending again.
+# Any 5xx, not only the 503/504 kiota retries: a needless check costs one read, a
+# needless retry a duplicate email.
+MESSAGE_MAY_HAVE_BEEN_SENT = (
+    "Graph failed without saying whether the message went out, so it may already have "
+    "been sent. Check Sent Items before sending it again."
+)
+INVITATIONS_MAY_HAVE_BEEN_SENT = (
+    "Graph failed without saying whether the event was created, so it may already exist "
+    "and its invitations may already have been sent. Check the calendar before creating "
+    "it again."
+)
+RESPONSE_MAY_HAVE_BEEN_SENT = (
+    "Graph failed without saying whether the response went out, so the organizer may "
+    "already have it. Read the event before responding again."
+)
+UPDATE_MAY_HAVE_BEEN_SENT = (
+    "Graph failed without saying whether the change was saved, so it may already have "
+    "been made and any attendees sent the update. Read the event before updating it again."
+)
+# The same doubt for an event with no attendees, where nothing was emailed.
+EVENT_MAY_HAVE_BEEN_CREATED = (
+    "Graph failed without saying whether the event was created, so it may already exist. "
+    "Check the calendar before creating it again."
+)
+
+
+def wrap_graph_error(exc: Exception, *, outcome_unknown: str | None = None) -> GraphAPIError:
     """Convert a Graph SDK exception into a structured ``GraphAPIError``.
 
     Catches the msgraph SDK's ``ODataError`` and its parent
     ``kiota_abstractions.api_error.APIError``. Extracts status code,
     error code, and message, and attaches a recovery hint when known.
+
+    ``outcome_unknown`` replaces the hint on a 5xx, for a write whose effect a
+    server error leaves in doubt (one of the outcome-unknown hints above).
 
     Raises ``TypeError`` if ``exc`` is not a recognized Graph SDK error —
     callers should pass through non-Graph exceptions unchanged.
@@ -427,6 +460,8 @@ def wrap_graph_error(exc: Exception) -> GraphAPIError:
         message = f"Graph API error (status {status_code})"
 
     hint = _lookup_hint(status_code, error_code)
+    if outcome_unknown is not None and status_code is not None and status_code >= 500:
+        hint = outcome_unknown
 
     return GraphAPIError(
         status_code if status_code is not None else 0,
