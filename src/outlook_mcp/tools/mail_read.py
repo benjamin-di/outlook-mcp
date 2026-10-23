@@ -13,7 +13,14 @@ from outlook_mcp.folder_resolver import (
     fetch_all_top_level_folders,
     resolve_folder_id,
 )
-from outlook_mcp.pagination import apply_pagination, build_request_config, wrap_nextlink
+from outlook_mcp.pagination import (
+    apply_pagination,
+    build_request_config,
+    decode_cursor_payload,
+    encode_cursor_payload,
+    get_page,
+    wrap_nextlink,
+)
 from outlook_mcp.throttle import retry_throttled_subrequests, send_with_retry
 from outlook_mcp.validation import (
     sanitize_kql,
@@ -662,6 +669,17 @@ async def read_messages(
     }
 
 
+# Graph ends a message `$search` a little past 250 results, whatever `$top`
+# asks for, and says nothing: the last page has no @odata.nextLink, exactly
+# like the end of a complete search. Measured 2026-10-23 on an Exchange Online
+# mailbox, three queries that each matched tens of thousands of messages: 275
+# results for `$top` from 25 to 1000, 260 for 10, 255 for 5, never 250 or
+# fewer. (Graph's documentation says up to 1,000.) So a search that ends past
+# 250 is reported as possibly cut short. One that genuinely matched 251-275
+# messages reads the same, which only costs the caller a narrower search.
+SEARCH_STOPS_AFTER = 250
+
+
 async def search_mail(
     graph_client: Any,
     query: str,
@@ -674,9 +692,20 @@ async def search_mail(
 
     concise: when True, drop ``preview`` and ``categories`` from each message
     (smaller payload for triage scans). Default False preserves the existing shape.
+
+    Graph pages a ``$search`` only with ``$skiptoken``, which ``get_page``
+    sends. The cursor also counts the results served so far, so the last page
+    of a search that ends past ``SEARCH_STOPS_AFTER`` carries ``incomplete``: a
+    note saying older matches may be missing and how to reach them. A search
+    that ends at or below it has no such key.
     """
     count = _clamp(count, 1, 100)
     safe_query = sanitize_kql(query)
+
+    # Decode before any network call, so a bad cursor is refused for free.
+    served = (decode_cursor_payload(cursor) if cursor else {}).get("served", 0)
+    if not isinstance(served, int) or isinstance(served, bool) or served < 0:
+        raise ValueError("Invalid pagination cursor")
 
     query_params = apply_pagination({}, count, cursor)
     query_params["$search"] = safe_query
@@ -688,33 +717,46 @@ async def search_mail(
             messages_request_builder as folder_mrb,
         )
 
-        req_config = build_request_config(
+        response = await get_page(
+            graph_client.me.mail_folders.by_mail_folder_id(folder).messages,
             folder_mrb.MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
             query_params,
-        )
-        response = await graph_client.me.mail_folders.by_mail_folder_id(folder).messages.get(
-            request_configuration=req_config
         )
     else:
         from msgraph.generated.users.item.messages.messages_request_builder import (
             MessagesRequestBuilder as MeMessagesRequestBuilder,
         )
 
-        req_config = build_request_config(
-            MeMessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters, query_params
+        response = await get_page(
+            graph_client.me.messages,
+            MeMessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
+            query_params,
         )
-        response = await graph_client.me.messages.get(request_configuration=req_config)
 
     messages = [_format_message_summary(m) for m in (response.value or [])]
     if concise:
         messages = [_concise_summary(m) for m in messages]
+    served += len(messages)
 
-    return {
+    next_cursor = wrap_nextlink(response.odata_next_link)
+    if next_cursor is not None:
+        next_cursor = encode_cursor_payload(
+            {**decode_cursor_payload(next_cursor), "served": served}
+        )
+
+    result = {
         "messages": messages,
         "count": len(messages),
         "has_more": response.odata_next_link is not None,
-        "cursor": wrap_nextlink(response.odata_next_link),
+        "cursor": next_cursor,
     }
+    if response.odata_next_link is None and served > SEARCH_STOPS_AFTER:
+        result["incomplete"] = (
+            f"Graph ends a mail search after about 275 results and this one stopped at {served}, "
+            "so older matches may be missing. Results are newest first: add received<= and the "
+            "last message's date to the query to search further back."
+        )
+    return result
 
 
 def _folder_to_dict(f: Any) -> dict:
