@@ -48,7 +48,7 @@ from msgraph.generated.models.free_busy_status import FreeBusyStatus
 from outlook_mcp.tools.calendar_delta import list_events_delta
 from outlook_mcp.tools.calendar_read import list_events
 from outlook_mcp.tools.contacts import list_contacts, search_contacts
-from outlook_mcp.tools.mail_read import SEARCH_STOPS_AFTER, list_inbox, search_mail
+from outlook_mcp.tools.mail_read import list_inbox, search_mail
 from outlook_mcp.tools.mail_thread import list_thread
 from outlook_mcp.tools.todo import get_task, list_tasks
 
@@ -283,6 +283,8 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
     `SEARCH_STOPS_AFTER` needs its number. The 300 margin keeps a few messages
     the index has not caught up with from deciding either way.
     """
+    from outlook_mcp.tools.mail_read import SEARCH_STOPS_AFTER
+
     client = real_graph_client.sdk_client
     inbox = await client.me.mail_folders.by_mail_folder_id("inbox").get()
     total = inbox.total_item_count or 0
