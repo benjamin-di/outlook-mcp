@@ -6,12 +6,14 @@ from datetime import date
 from typing import Any
 
 from outlook_mcp.config import Config
+from outlook_mcp.errors import INVITATIONS_MAY_HAVE_BEEN_SENT, RESPONSE_MAY_HAVE_BEEN_SENT
 from outlook_mcp.permissions import (
     CATEGORY_CALENDAR_WRITE,
     check_permission,
     check_sends_mail,
     mail_send_withheld,
 )
+from outlook_mcp.throttle import call_without_replay
 from outlook_mcp.tools._recurrence import (
     build_event_recurrence,
     check_recurrence_shape,
@@ -527,7 +529,10 @@ async def create_event(
     if resolved_show_as is not None:
         event.show_as = resolved_show_as
 
-    response = await graph_client.me.events.post(event)
+    response = await call_without_replay(
+        lambda once: graph_client.me.events.post(event, request_configuration=once),
+        outcome_unknown=INVITATIONS_MAY_HAVE_BEEN_SENT,
+    )
 
     return {
         "status": "created",
@@ -975,7 +980,10 @@ async def rsvp(
         if message:
             request_body.comment = message
         request_body.send_response = True
-        await event_builder.accept.post(request_body)
+        await call_without_replay(
+            lambda once: event_builder.accept.post(request_body, request_configuration=once),
+            outcome_unknown=RESPONSE_MAY_HAVE_BEEN_SENT,
+        )
         return {"status": "accepted", "event_id": event_id}
 
     elif response == "decline":
@@ -987,7 +995,10 @@ async def rsvp(
         if message:
             request_body.comment = message
         request_body.send_response = True
-        await event_builder.decline.post(request_body)
+        await call_without_replay(
+            lambda once: event_builder.decline.post(request_body, request_configuration=once),
+            outcome_unknown=RESPONSE_MAY_HAVE_BEEN_SENT,
+        )
         return {"status": "declined", "event_id": event_id}
 
     elif response == "tentative":
@@ -1000,7 +1011,12 @@ async def rsvp(
         if message:
             request_body.comment = message
         request_body.send_response = True
-        await event_builder.tentatively_accept.post(request_body)
+        await call_without_replay(
+            lambda once: event_builder.tentatively_accept.post(
+                request_body, request_configuration=once
+            ),
+            outcome_unknown=RESPONSE_MAY_HAVE_BEEN_SENT,
+        )
         return {"status": "tentativelyAccepted", "event_id": event_id}
 
     else:
