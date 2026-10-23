@@ -155,6 +155,67 @@ async def test_list_thread_is_accepted(real_graph_client, sample):
     assert received == sorted(received), "list_thread orders oldest-first"
 
 
+# ── read_message by Message-ID: an exact $filter on internetMessageId ──
+# A filter Graph rejects is a loud 400. The quiet failure is one that finds
+# nothing: a Message-ID altered on the way, by quoting or by a `+` read as a
+# space, matches no message and reads as "not in this mailbox".
+
+
+async def test_read_message_finds_a_message_by_its_message_id(real_graph_client):
+    """The lookup must land on the message the Message-ID was read from.
+
+    Harvested with the SDK, because no tool returns `internetMessageId`. A
+    Message-ID with `+`, `/` or `=` goes first: those mean something in a URL
+    query, so finding its message shows the value reached Graph intact.
+    """
+    from msgraph.generated.users.item.messages.messages_request_builder import (
+        MessagesRequestBuilder,
+    )
+
+    from outlook_mcp.pagination import build_request_config
+    from outlook_mcp.tools.mail_read import read_message
+
+    client = real_graph_client.sdk_client
+    page = await client.me.messages.get(
+        request_configuration=build_request_config(
+            MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
+            {"$select": "id,internetMessageId", "$top": 50},
+        )
+    )
+    harvested = [m for m in page.value or [] if m.id and "@" in (m.internet_message_id or "")]
+    if not harvested:
+        pytest.skip("no message with a Message-ID among the first 50")
+    harvested.sort(key=lambda m: not any(c in m.internet_message_id for c in "+/="))
+
+    for message in harvested:
+        try:
+            result = await read_message(client, message.internet_message_id, concise=True)
+        except ValueError as exc:
+            if "matches" in str(exc):
+                continue  # this one has a copy in another folder; try the next
+            raise
+        assert result["id"] == message.id, (
+            "the Message-ID lookup returned a different message than the one it was read from"
+        )
+        return
+    pytest.skip("every harvested Message-ID belongs to more than one copy")
+
+
+async def test_an_unknown_message_id_is_not_found_rather_than_refused(real_graph_client):
+    """An apostrophe, `&`, `#`, `%` and `+` must still make a filter Graph accepts.
+
+    If the quoting or the encoding broke the literal, Graph answers 400, which
+    arrives as GraphAPIError, not NotFoundError.
+    """
+    from outlook_mcp.errors import NotFoundError
+    from outlook_mcp.tools.mail_read import read_message
+
+    with pytest.raises(NotFoundError):
+        await read_message(
+            real_graph_client.sdk_client, "<zzqqxx'nomatch&a#b%20c+d/e=f@example.invalid>"
+        )
+
+
 # ── #30: sanitize_kql stripped ':' ──
 # The dangerous mode here is silent: 200 with zero results. Assert on data.
 
