@@ -2,6 +2,19 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-22 — aiohttp-lock-refresh (Michael answered A, widened to certifi + opentelemetry-api)
+
+- No new steering on PR #122 (newest comment is the worker's reply IC_kwDOSA_0Lc8AAAABeZZcBQ; no inline comments).
+- Open Dependabot alerts on `main`: ten (aiohttp #2–4, #6–10; certifi #5 critical; opentelemetry-api #11). VERIFIED via `gh api`; both advisories read via `gh api /advisories/<ghsa>`.
+- `uv lock --upgrade-package certifi --upgrade-package aiohttp --upgrade-package opentelemetry-api`: aiohttp 3.14.5, certifi 2026.10.19, opentelemetry-api/sdk 1.45.1, semconv 0.66b1, yarl 1.25.1 — the six Michael's dry run predicted.
+- `pyproject.toml`: `certifi>=2026.10.19` with a comment naming GHSA-6q48-6c7w-9gw2 and the test.
+- TDD: `tests/test_trust_store_excludes_compromised_roots.py` (httpx default context + requests' bundle, env overrides cleared; floor present in pyproject as text, since 3.10 has no tomllib). Red before the change (3 failed). First draft matched any "emSign" and stayed red on 2026.10.19: the advisory names only `emSign ECC Root CA - G3` and 2026.10.19 restores G1/C1/ECC C3, so the test now names G3. Mutation: `uv run --with certifi==2026.7.22` → 2 failed; lock → green.
+- CHANGELOG Unreleased → Security: certifi line (users: upgrade), aiohttp + opentelemetry-api line (lock only).
+- Findings: `agent/findings/aiohttp-alerts.md` § Done.
+- live-gap-98-run not touched (behind this card on the board; still waiting on Neil).
+- Env note: plain `uv sync` drops the dev extras (pytest-cov); use `uv sync --all-extras`, as CI does.
+- Suite: 1382 passed, 89 deselected; ruff check + format clean.
+
 ## 2026-10-22 — review fix on 2ca7b62 (steering)
 
 - Addressed PR comments: IC_kwDOSA_0Lc8AAAABeZX1Cg (`[construct review]` of 2ca7b62, two findings). Both verified, both small, fixed in-session:

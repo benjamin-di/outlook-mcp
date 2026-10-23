@@ -64,3 +64,37 @@ is not actually used". Only Michael can do that.
 (multidict) was fixed automatically at 2026-10-08T02:11:44Z, after `main` moved multidict
 6.8.0 → 6.9.1 (`gh api .../dependabot/alerts`). Dismissing clears them the same day; the
 refresh clears them on merge, for good.
+
+## Done (2026-10-22, Michael answered A, widened to certifi + opentelemetry-api)
+
+Open alerts on `main` at the start of the session (VERIFIED `gh api .../dependabot/alerts?state=open`):
+ten, not five. aiohttp #2–4, #6–10 (all patched 3.14.4), certifi #5 (critical,
+GHSA-6q48-6c7w-9gw2, patched 2026.10.19), opentelemetry-api #11 (GHSA-xcq7-p3pf-p88h, patched
+1.45.1). The refresh covers all ten.
+
+`uv lock --upgrade-package certifi --upgrade-package aiohttp --upgrade-package opentelemetry-api`:
+
+```
+Updated aiohttp v3.14.3 -> v3.14.5
+Updated certifi v2026.7.22 -> v2026.10.19
+Updated opentelemetry-api v1.44.0 -> v1.45.1
+Updated opentelemetry-sdk v1.44.0 -> v1.45.1
+Updated opentelemetry-semantic-conventions v0.65b0 -> v0.66b1
+Updated yarl v1.24.5 -> v1.25.1
+```
+
+`pyproject.toml` gains `certifi>=2026.10.19` with a comment naming the advisory.
+
+**Correction to the card's wording.** The advisory (VERIFIED, `gh api /advisories/GHSA-6q48-6c7w-9gw2`)
+names one root: `emSign ECC Root CA - G3`. certifi 2026.10.18 removed every emSign root;
+2026.10.19 restored the three unaffected ones (G1, C1, ECC C3). The first draft of the test
+rejected any "emSign" subject and stayed red on the fixed bundle; it now names the one root.
+
+**Test:** `tests/test_trust_store_excludes_compromised_roots.py` loads the CA list httpx builds
+(`httpx.create_ssl_context()`) and the one requests/msal uses (`requests.utils.DEFAULT_CA_BUNDLE_PATH`),
+with the `SSL_CERT_*`/`REQUESTS_CA_BUNDLE` overrides cleared, and fails if G3 is in either; a third
+test checks the floor is in `pyproject.toml`. Red under `uv run --with certifi==2026.7.22`
+(2 failed, floor test passes), green on the new lock. The fresh-install CI jobs do not run pytest,
+so this pins the lock, not a fresh resolve; a fresh resolve already gets 2026.10.19+ from the floor.
+
+Suite on the new lock: 1382 passed, 89 deselected; ruff check + format clean.

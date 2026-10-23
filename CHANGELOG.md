@@ -67,6 +67,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   retry after a partial failure now names the release tag
   (`gh workflow run publish.yml --ref vX.Y.Z`); without it the run starts on `main` and the
   environment refuses it. RELEASING.md's appendix gives the three settings and their order.
+- **Sign-in and Graph calls stop trusting a compromised certificate authority — upgrade.**
+  msal (through requests) and httpx check Microsoft's certificates against `certifi`'s bundle,
+  and certifi before 2026.10.19 includes `emSign ECC Root CA - G3`, whose intermediate CA keys
+  were stolen (GHSA-6q48-6c7w-9gw2): someone holding one and sitting on the network path could
+  impersonate `login.microsoftonline.com` or `graph.microsoft.com`. Nothing set a minimum, so
+  upgrading this package kept whatever certifi was already installed. It now requires
+  `certifi>=2026.10.19`, and `tests/test_trust_store_excludes_compromised_roots.py` checks the
+  root is gone from what both clients load.
+- **The lock moves `aiohttp` to 3.14.5 and `opentelemetry-api` to 1.45.1** (Dependabot alerts;
+  lock only, nothing users install changes). Neither code path runs in this server: aiohttp is
+  never loaded (azure-core imports it only for async credentials, and sign-in is synchronous),
+  and the MCP SDK never parses an inbound `tracestate` header.
 
 ### Documentation
 

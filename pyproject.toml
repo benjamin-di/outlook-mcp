@@ -42,6 +42,13 @@ dependencies = [
     # /usr/share/zoneinfo, so without this every relative-date path raises
     # ZoneInfoNotFoundError for a perfectly valid zone name.
     "tzdata",
+    # Not imported here, but it is the trust store: msal (via requests) and httpx
+    # verify login.microsoftonline.com and graph.microsoft.com against certifi's
+    # bundle. Before 2026.10.19 that bundle trusts emSign ECC Root CA - G3, whose
+    # intermediate CA keys were stolen (GHSA-6q48-6c7w-9gw2). Nothing upstream
+    # sets a minimum, so without this an upgrade keeps the old bundle.
+    # tests/test_trust_store_excludes_compromised_roots.py checks what loads.
+    "certifi>=2026.10.19",
 ]
 
 [project.urls]
