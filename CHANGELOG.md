@@ -63,6 +63,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   proxy tokens, to 13,494, so the budget's ceiling is raised deliberately from 13,300 to
   13,600.
 
+- **A draft can start as a reply, a reply-all or a forward, in the message's thread** (#143).
+  `outlook_create_draft` takes `reply_to_message_id` (with `reply_all=True` for reply-all) or
+  `forward_message_id`, and creates the draft with Graph's `createReply`, `createReplyAll` or
+  `createForward`: in Drafts, in the thread, with the original quoted below, and nothing sent.
+  Until now the only way to answer in the thread was `outlook_reply` or `outlook_forward`, which
+  send at once, and a new draft with "RE:" in its subject started a new conversation. For a
+  reply Graph picks the recipients and subject, and a `to`, `cc`, `bcc`, `subject`, `reply_to` or
+  `importance` passed with it replaces Graph's; a forward needs `to`, as Graph requires. A
+  plain-text body goes in Graph's `comment`, which Graph places above the quote. `comment`
+  cannot carry markup, so an HTML body is patched into the draft's own HTML right after its
+  `<body>` tag, where Outlook puts a reply, leaving the original's markup as Graph wrote it.
+  `deferred_send_datetime` works as for a new draft. If that follow-up patch fails, the new
+  draft is deleted, so a failed call leaves no half-made reply. The result adds `to` and `cc` as
+  Graph addressed the draft. `to` and `subject` are optional in the schema now; a new draft
+  still needs both and is refused without them. The tool surface grows by 138 proxy tokens.
+
 ### Fixed
 
 - **`outlook_batch_triage` retries a throttled message instead of reporting it as failed.**

@@ -76,6 +76,13 @@ CHARS_PER_TOKEN = 4
 # `attachment_paths` on the two mail uploads (+159 in the schemas), and one short
 # sentence each (+74). Four new arguments do not fit the ~39 tokens left, so this is
 # a deliberate raise to 13,600: ~0.8% headroom, room for a wording fix again.
+#
+# 13,399 with reply and forward drafts on `outlook_create_draft` (#143, +138):
+# `reply_to_message_id`, `reply_all` and `forward_message_id` (+80), `to` and
+# `subject` made optional because Graph fills a reply's (+20), and one docstring
+# line saying so (+38). A new tool for it would have cost a whole second schema.
+# Ceiling raised to 13,450: the same ~50 tokens of room for a wording fix, not
+# for another batch.
 TOOL_SURFACE_CEILING = 13_600
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
