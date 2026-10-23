@@ -63,7 +63,13 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,351 with `add_emails` and `remove_emails` on `outlook_update_contact` (+90):
+# the two list arguments, and one line saying `email` replaces every address while
+# they change only the ones named, three at most. Without them an agent asked to
+# add a second address had to drop the first. Two arguments do not fit the ~39
+# tokens left, so this is a deliberate raise to 13,500: ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

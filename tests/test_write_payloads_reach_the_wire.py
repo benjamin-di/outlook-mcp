@@ -783,6 +783,68 @@ class TestContacts:
         assert_on_wire(builder.patch.call_args[0][0], '"businessPhones": []', '"homePhones": []')
         assert '"mobilePhone"' not in wire(builder.patch.call_args[0][0])
 
+    async def test_update_contact_merged_addresses_reach_the_wire(self):
+        """`add_emails` / `remove_emails` send the whole merged list, and nothing else.
+
+        The kept address goes back with the `name` it was read with, the added one
+        with none, and the removed one not at all. A PATCH replaces the collection,
+        so an address missing here is an address deleted.
+        """
+        stored = MagicMock(spec=["address", "name"])
+        stored.address = "sentinel.kept@example.com"
+        stored.name = "SENTINEL-NAME-b16"
+        dropped = MagicMock(spec=["address", "name"])
+        dropped.address = "sentinel.dropped@example.com"
+        dropped.name = None
+        current = MagicMock(spec=["email_addresses", "additional_data"])
+        current.email_addresses = [stored, dropped]
+        current.additional_data = {"@odata.etag": 'W/"sentinel"'}
+
+        builder = MagicMock()
+        builder.get = AsyncMock(return_value=current)
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client,
+            contact_id="AAMkAG123=",
+            add_emails=["sentinel.added@example.com"],
+            remove_emails=["sentinel.dropped@example.com"],
+            config=_CFG,
+        )
+
+        model = builder.patch.call_args[0][0]
+        assert_on_wire(
+            model,
+            '"emailAddresses": [{"address": "sentinel.kept@example.com", '
+            '"name": "SENTINEL-NAME-b16"}, {"address": "sentinel.added@example.com"}]',
+        )
+        assert "sentinel.dropped@example.com" not in wire(builder.patch.call_args[0][0])
+
+    async def test_update_contact_removing_every_address_sends_an_empty_list(self):
+        current = MagicMock(spec=["email_addresses", "additional_data"])
+        only = MagicMock(spec=["address", "name"])
+        only.address = "sentinel.only@example.com"
+        only.name = "Only"
+        current.email_addresses = [only]
+        current.additional_data = {}
+
+        builder = MagicMock()
+        builder.get = AsyncMock(return_value=current)
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client,
+            contact_id="AAMkAG123=",
+            remove_emails=["sentinel.only@example.com"],
+            config=_CFG,
+        )
+
+        assert_on_wire(builder.patch.call_args[0][0], '"emailAddresses": []')
+
     async def test_phone_type_defaults_to_mobile(self):
         """Today's behaviour stays the default: existing callers are unaffected."""
         client = MagicMock()
