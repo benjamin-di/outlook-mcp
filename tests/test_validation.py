@@ -21,6 +21,7 @@ from outlook_mcp.validation import (
     validate_event_timezone,
     validate_folder_name,
     validate_graph_id,
+    validate_internet_message_id,
     validate_phone,
 )
 
@@ -36,6 +37,32 @@ class TestGraphIdValidation:
         """`$` with `.match` also matches before one final newline."""
         with pytest.raises(ValueError):
             validate_graph_id("AAMkAG123=\n")
+
+
+class TestInternetMessageIdValidation:
+    def test_a_bracketed_message_id_is_kept_exactly(self):
+        value = "<CAF1a+b/c=d.e_f-g$h@mail.example.com>"
+        assert validate_internet_message_id(value) == value
+
+    def test_brackets_are_not_required(self):
+        """Graph stores the header as the sender wrote it, and some senders omit them."""
+        assert validate_internet_message_id("1234.5678@example.com") == "1234.5678@example.com"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "<no-at-sign.example.com>",
+            "<two words@example.com>",
+            "<tab\t@example.com>",
+            "<a@example.com>\n",
+            "<caf\u00e9@example.com>",
+            "<" + "a" * 990 + "@example.com>",
+        ],
+    )
+    def test_a_value_that_cannot_be_a_message_id_is_refused(self, value):
+        with pytest.raises(ValueError, match="Message-ID"):
+            validate_internet_message_id(value)
 
 
 class TestTrailingNewlines:
