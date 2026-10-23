@@ -10,9 +10,9 @@ import httpx
 
 from outlook_mcp.errors import graph_json
 from outlook_mcp.folder_resolver import (
-    fetch_all_child_folders,
     fetch_all_top_level_folders,
     resolve_folder_id,
+    walk_folder_tree,
 )
 from outlook_mcp.pagination import (
     apply_pagination,
@@ -819,13 +819,10 @@ async def list_folders(
 
     if recursive:
         collected: list[dict] = []
-        queue: list[Any] = await fetch_all_top_level_folders(graph_client)
-        while queue:
-            f = queue.pop(0)
-            collected.append(_folder_to_dict(f))
-            if (getattr(f, "child_folder_count", 0) or 0) > 0:
-                children = await fetch_all_child_folders(graph_client, f.id)
-                queue.extend(children)
+        top_level = await fetch_all_top_level_folders(graph_client)
+        async for f, path in walk_folder_tree(graph_client, top_level):
+            # The form resolve_folder_id takes back, "/" in a name doubled.
+            collected.append({**_folder_to_dict(f), "path": sanitize_output(path)})
 
         return {
             "folders": collected,

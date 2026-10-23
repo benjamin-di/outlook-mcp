@@ -92,6 +92,11 @@ CHARS_PER_TOKEN = 4
 # `outlook_get_contact` returned categories and notes that nothing could write
 # (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
 # raise to 13,700: ~0.8% headroom.
+#
+# 13,594 with folder paths (#144, +8 on 13,586): `outlook_list_folders` says each
+# folder carries the `path` folder arguments accept. The path rule itself went into
+# INSTRUCTIONS, which every tool that takes a folder shares and which is sent once
+# per session, not into five docstrings. No raise.
 TOOL_SURFACE_CEILING = 13_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
