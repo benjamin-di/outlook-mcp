@@ -23,6 +23,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the prefix it is. `title` keeps its name and meaning, so existing callers are unaffected.
   `outlook_update_contact` also takes `title` now, so a job already stuck in the prefix can be
   corrected in place instead of by deleting and recreating the contact.
+- **`outlook_changes_since` no longer reports an inbox's history as new on its second call.**
+  The first call took Graph's full snapshot of the inbox, kept the last `fallback_window_hours`
+  of it, and stopped after five delta calls (about 1,000 messages) without saying so. The token
+  it returned was the snapshot's continuation, and a call with a token applies no window, so on
+  any inbox over about 1,000 messages the next call reported the rest of its history as new
+  mail, and every old high-importance or flagged message in it as urgent. The first call now
+  asks Graph for the window itself (`receivedDateTime ge`, the only kind of `$filter` message
+  delta accepts, which Graph carries into the cursors it returns), so the snapshot is the window,
+  not the folder. Later rounds follow messages received since then: a change to an older message is
+  reported only when it is a delete, a move or a read-state change. Contacts were all counted as
+  new on a first call; they are now kept only when their `lastModifiedDateTime` falls in the
+  window (contacts delta takes no `$filter`). A new `has_more` beside `delta_tokens` names any
+  resource the cap stopped mid-sync. And a reply with no new cursor, which means the caller's
+  token is still good, returned `None` in its place, so a caller storing `delta_tokens` as told
+  lost its place; the token passed in now comes back.
 - **A business or home phone number can be saved as one.** `outlook_create_contact` and
   `outlook_update_contact` wrote every `phone` to `mobilePhone`, so an office number from a
   business card was saved as a mobile and had to be moved by hand (#120). A new `phone_type`
