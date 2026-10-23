@@ -92,6 +92,10 @@ CHARS_PER_TOKEN = 4
 # `outlook_get_contact` returned categories and notes that nothing could write
 # (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
 # raise to 13,700: ~0.8% headroom.
+#
+# 13,662 with include_sender_auth on the two read tools (#130, +76 on main
+# at 13,586). The existing 13,700 ceiling covers the optional authentication
+# field; guidance is in INSTRUCTIONS, paid once per session.
 TOOL_SURFACE_CEILING = 13_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
