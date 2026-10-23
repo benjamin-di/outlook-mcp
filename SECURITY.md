@@ -59,12 +59,15 @@ outlook-mcp is designed with security in mind:
   and set `read_only_consent: true` beside `read_only: true`, which makes sign-in ask for
   the read scopes and nothing else. A saved sign-in is only used with the app registration
   it was made for.
-- **HTTP transport is opt-in and closed by default.** stdio is the default. With
-  `OUTLOOK_MCP_TRANSPORT=streamable-http` the server binds `127.0.0.1` unless told otherwise,
-  and refuses to start on any other address without `OUTLOOK_MCP_HTTP_TOKEN`. With a token set,
-  every request must present it as a bearer token, compared in constant time, or gets `401`
-  before the MCP layer sees it. It speaks plain HTTP: run it behind a reverse proxy that
-  terminates TLS. A loopback bind without a token is open to every process on that machine.
+- **HTTP transport is opt-in, and never runs without a token.** Over stdio, the default, only
+  the process that launched the server can reach the mailbox. With
+  `OUTLOOK_MCP_TRANSPORT=streamable-http` one network request is enough, so the token is the
+  whole of the access control. The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN` on
+  any bind, loopback included: a loopback port with no token would let any process running as
+  that user read the mailbox. Every request must present a token, compared in constant time,
+  or gets `401` before the MCP layer sees it. It binds `127.0.0.1` unless told otherwise, and
+  speaks plain HTTP: on a bind other machines can reach, the token and everything the tools
+  return cross the network in the clear unless a reverse proxy in front terminates TLS.
 - **Input validation:** All Graph IDs, emails, dates, KQL queries, and folder names are validated before use
 - **Atomic writes:** Config files are written atomically to prevent corruption
 - **Symlink rejection:** Config loader refuses symlinked files
