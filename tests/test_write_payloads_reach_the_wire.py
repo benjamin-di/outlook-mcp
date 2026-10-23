@@ -49,6 +49,7 @@ from outlook_mcp.config import Config
 from outlook_mcp.tools import (
     calendar_write,
     contacts,
+    mail_attachments,
     mail_drafts,
     mail_write,
     todo,
@@ -521,6 +522,76 @@ class TestMailWrite:
             builder.forward.post.call_args[0][0],
             "sentinel.fwd@example.com",
             "SENTINEL-COMMENT-8e1",
+        )
+
+
+class TestInlineMailAttachments:
+    """Inline attachments (#129): the decoded file goes out as ``contentBytes``.
+
+    The needle is the file's exact base64, so a match is byte-for-byte fidelity on the
+    wire — the upload half of the round trip `test_attachments_as_content.py` checks for
+    downloads, with a PDF and a PNG whose bytes are not valid UTF-8.
+    """
+
+    async def test_attach_to_draft_inline_file_reaches_the_wire(self, tmp_path):
+        import base64 as _b64
+
+        from tests.test_attachments_as_content import PDF
+
+        client = MagicMock()
+        draft = client.me.messages.by_message_id.return_value
+        draft.get = AsyncMock(return_value=MagicMock(is_draft=True))
+        draft.attachments.post = AsyncMock(return_value=MagicMock(id="A1"))
+
+        await mail_attachments.attach_to_draft(
+            client,
+            draft_id="AAMkAG123=",
+            attachments=[
+                {
+                    "name": "SENTINEL-INLINE-b71.pdf",
+                    "content_base64": _b64.b64encode(PDF).decode(),
+                    "content_type": "application/x-sentinel-b72",
+                }
+            ],
+            config=Config(client_id="test", attachments_dir=str(tmp_path / "att")),
+        )
+
+        assert_on_wire(
+            draft.attachments.post.call_args.args[0],
+            '"@odata.type": "#microsoft.graph.fileAttachment"',
+            '"name": "SENTINEL-INLINE-b71.pdf"',
+            '"contentType": "application/x-sentinel-b72"',
+            f'"contentBytes": "{_b64.b64encode(PDF).decode()}"',
+        )
+
+    async def test_send_with_attachments_inline_file_reaches_the_wire(self, tmp_path):
+        import base64 as _b64
+
+        from tests.test_attachments_as_content import PNG
+
+        client = MagicMock()
+        client.me.send_mail.post = AsyncMock()
+
+        await mail_attachments.send_with_attachments(
+            client,
+            to=["sentinel.to@example.com"],
+            subject="SENTINEL-SUBJECT-c71",
+            body="SENTINEL-BODY-c72",
+            attachments=[
+                {"name": "SENTINEL-INLINE-c73.png", "content_base64": _b64.b64encode(PNG).decode()}
+            ],
+            config=Config(client_id="test", attachments_dir=str(tmp_path / "att")),
+        )
+
+        assert_on_wire(
+            client.me.send_mail.post.call_args.args[0],
+            "sentinel.to@example.com",
+            "SENTINEL-SUBJECT-c71",
+            "SENTINEL-BODY-c72",
+            '"@odata.type": "#microsoft.graph.fileAttachment"',
+            '"name": "SENTINEL-INLINE-c73.png"',
+            '"contentType": "image/png"',
+            f'"contentBytes": "{_b64.b64encode(PNG).decode()}"',
         )
 
 
