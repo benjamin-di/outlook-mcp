@@ -15,11 +15,15 @@ The settings are environment variables, like ``OUTLOOK_MCP_CONFIG_DIR``, which
 also keeps a token out of ``argv``. They are read and checked before anything
 binds, so a refusal exits with its reason instead of after the port is open:
 
-- loopback (``127.0.0.1``) unless ``OUTLOOK_MCP_HTTP_HOST`` says otherwise;
-- a bind other machines can reach refuses to start without
-  ``OUTLOOK_MCP_HTTP_TOKEN``;
-- with a token, every request must present one of them as
-  ``Authorization: Bearer <token>`` or gets 401 before the SDK sees it.
+- one rule for every bind: no ``OUTLOOK_MCP_HTTP_TOKEN``, no server. Loopback
+  is no exception, since a loopback port with no token lets any process running
+  as that user read the mailbox with one HTTP request;
+- every request must present one of the tokens as
+  ``Authorization: Bearer <token>`` or gets 401 before the SDK sees it;
+- loopback (``127.0.0.1``) unless ``OUTLOOK_MCP_HTTP_HOST`` says otherwise. The
+  server speaks plain HTTP, so on a bind other machines can reach the token
+  crosses the network in the clear unless a proxy in front terminates TLS, and
+  the refusal says so.
 
 Nothing here logs, and uvicorn runs without an access log at WARNING, so no
 token and no request URL reaches stderr or stdout.
@@ -82,13 +86,29 @@ def settings_from_env(environ: Mapping[str, str]) -> HttpSettings | None:
     host = environ.get(HOST_ENV, "").strip() or DEFAULT_HOST
     port = _port(environ.get(PORT_ENV, "").strip())
     tokens = _tokens(environ.get(TOKEN_ENV, ""))
-    if not tokens and not _is_loopback(host):
-        raise ValueError(
-            f"{HOST_ENV}={host} accepts connections from other machines, so {TOKEN_ENV} "
-            f"must be set; every request then needs 'Authorization: Bearer <token>'. "
-            f"Generate one with: {_TOKEN_RECIPE}. Or bind {DEFAULT_HOST}."
-        )
+    if not tokens:
+        raise ValueError(_missing_token(host))
     return HttpSettings(host=host, port=port, tokens=tokens)
+
+
+def _missing_token(host: str) -> str:
+    """The refusal, naming what this particular bind would have exposed."""
+    if _is_loopback(host):
+        exposure = (
+            "A token is required on every bind, loopback included: without one, any "
+            "process on this machine could read the mailbox with one HTTP request."
+        )
+    else:
+        exposure = (
+            f"{HOST_ENV}={host} accepts connections from other machines: without a token, "
+            f"anyone who can reach the port could read the mailbox. And this server speaks "
+            f"plain HTTP, so the token crosses the network in the clear unless a reverse "
+            f"proxy in front of it terminates TLS."
+        )
+    return (
+        f"{TOKEN_ENV} must be set. {exposure} Every request then needs "
+        f"'Authorization: Bearer <token>'. Generate one with: {_TOKEN_RECIPE}"
+    )
 
 
 def _port(value: str) -> int:
@@ -175,8 +195,10 @@ class BearerTokenMiddleware:
 
 
 def build_app(server: MCPServer, settings: HttpSettings) -> ASGIApp:
-    """The SDK's streamable-HTTP app at ``/mcp``, behind the token check when one is set.
+    """The SDK's streamable-HTTP app at ``/mcp``, always behind the token check.
 
+    There is no unguarded variant: settings without a token, which
+    ``settings_from_env`` never returns, get a gate that matches nothing.
     ``host`` goes to the SDK so that a loopback bind keeps its DNS-rebinding
     protection: a request whose ``Host`` is not a loopback name gets 421.
     """
@@ -185,9 +207,7 @@ def build_app(server: MCPServer, settings: HttpSettings) -> ASGIApp:
         json_response=True,
         host=settings.host,
     )
-    if settings.tokens:
-        return BearerTokenMiddleware(app, settings.tokens)
-    return app
+    return BearerTokenMiddleware(app, settings.tokens)
 
 
 def uvicorn_config(server: MCPServer, settings: HttpSettings) -> uvicorn.Config:
