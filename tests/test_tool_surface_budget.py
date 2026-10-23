@@ -131,9 +131,15 @@ CHARS_PER_TOKEN = 4
 # tool would pay the scaffolding every schema carries for the same rows. Over the
 # ~39 tokens left, so a deliberate raise to 13,500: ~1% headroom, as before.
 #
-# 14,461 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
-# in this order); ceiling 14,700, ~1% headroom, as before.
-TOOL_SURFACE_CEILING = 14_700
+# 13,359 with `is_markdown` on the five tools that write a mail body (#168, +98):
+# `outlook_send_message`, `outlook_reply`, `outlook_forward`, `outlook_create_draft`
+# and `outlook_update_draft`, about 20 each for the boolean's schema. No docstring
+# grew: the supported subset is one INSTRUCTIONS bullet, sent once per session.
+# Ceiling raised to 13,400, ~40 tokens of room as before.
+#
+# 14,558 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
+# in this order); ceiling 14,800, ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 14_800
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
