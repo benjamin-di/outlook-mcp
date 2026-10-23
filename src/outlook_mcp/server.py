@@ -786,6 +786,7 @@ async def outlook_create_event(
     recurrence: dict | str | None = None,
     timezone: str | None = None,
     show_as: str | None = None,
+    calendar: str | None = None,
 ) -> dict:
     """Create a calendar event with optional attendees, recurrence, busy status, online meeting.
 
@@ -808,6 +809,7 @@ async def outlook_create_event(
     America/Los_Angeles, never an abbreviation like PDT.
     `show_as` is Outlook's "Show as": "free", "tentative", "busy", "oof" (out of office),
     "workingElsewhere", or "unknown". Omitted, Graph defaults the event to busy.
+    `calendar`: name or ID; omit for the default.
     """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
@@ -824,6 +826,7 @@ async def outlook_create_event(
         recurrence,
         timezone,
         show_as,
+        calendar,
         config=config,
     )
 
