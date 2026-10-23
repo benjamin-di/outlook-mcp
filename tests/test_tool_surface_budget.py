@@ -63,7 +63,13 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,359 with `is_markdown` on the five tools that write a mail body (#168, +98):
+# `outlook_send_message`, `outlook_reply`, `outlook_forward`, `outlook_create_draft`
+# and `outlook_update_draft`, about 20 each for the boolean's schema. No docstring
+# grew: the supported subset is one INSTRUCTIONS bullet, sent once per session.
+# Ceiling raised to 13,400, ~40 tokens of room as before.
+TOOL_SURFACE_CEILING = 13_400
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

@@ -300,9 +300,11 @@ configured `timezone`; responses are always UTC.
 
 | Tool | Description |
 |------|-------------|
-| `outlook_send_message` | Send email. Supports TO/CC/BCC, HTML body, importance level. |
+| `outlook_send_message` | Send email. Supports TO/CC/BCC, HTML or Markdown body, importance level. |
 | `outlook_reply` | Reply or reply-all to a message, the text above the quoted original. Plain text keeps its paragraphs, line breaks and `- ` lists; a plain-text thread gets a plain-text reply. |
 | `outlook_forward` | Forward a message to one or more recipients with optional comment, which keeps its line breaks like a reply's text. |
+
+Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markdown=True`. Markdown is converted to HTML for a safe subset: paragraphs, line breaks, `-`/`*`/`+` and numbered lists, `**bold**`, `*italic*`, `` `code` ``, and `[text](url)` links to `https:` and `mailto:` addresses only. Everything else, raw HTML included, is shown as written. `outlook_send_message`, `outlook_reply`, `outlook_forward` (its `comment`), `outlook_create_draft` and `outlook_update_draft` take it; on a plain-text thread a Markdown reply is sent as written, as plain text.
 
 ### Mail Triage
 
@@ -371,8 +373,8 @@ configured `timezone`; responses are always UTC.
 | Tool | Description |
 |------|-------------|
 | `outlook_list_drafts` | List draft messages with pagination. |
-| `outlook_create_draft` | Create a draft. Supports scheduled delivery via `deferred_send_datetime` (server-side, Outlook-desktop-compatible "Delay Delivery"). |
-| `outlook_update_draft` | Update draft fields. Accepts `is_html=True` for HTML bodies and `deferred_send_datetime` to set or clear the scheduled delivery time. |
+| `outlook_create_draft` | Create a draft, with an HTML (`is_html=True`) or Markdown (`is_markdown=True`) body if wanted. Supports scheduled delivery via `deferred_send_datetime` (server-side, Outlook-desktop-compatible "Delay Delivery"). |
+| `outlook_update_draft` | Update draft fields. Accepts `is_html=True` for HTML bodies, `is_markdown=True` for Markdown ones, and `deferred_send_datetime` to set or clear the scheduled delivery time. |
 | `outlook_send_draft` | Send an existing draft. |
 | `outlook_delete_draft` | Delete a draft. |
 
