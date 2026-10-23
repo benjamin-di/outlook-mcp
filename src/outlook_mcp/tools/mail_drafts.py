@@ -9,6 +9,7 @@ from outlook_mcp.errors import MESSAGE_MAY_HAVE_BEEN_SENT
 from outlook_mcp.pagination import apply_pagination, build_request_config, wrap_nextlink
 from outlook_mcp.permissions import CATEGORY_MAIL_DRAFTS, CATEGORY_MAIL_SEND, check_permission
 from outlook_mcp.throttle import call_without_replay
+from outlook_mcp.tools._mail_body import check_body_format, message_body
 from outlook_mcp.tools.mail_read import SUMMARY_SELECT, _format_message_summary
 from outlook_mcp.validation import validate_datetime, validate_email, validate_graph_id
 
@@ -117,6 +118,7 @@ async def create_draft(
     importance: str = "normal",
     reply_to: list[str] | None = None,
     deferred_send_datetime: str | None = None,
+    is_markdown: bool = False,
     *,
     config: Config,
 ) -> dict:
@@ -133,6 +135,7 @@ async def create_draft(
     mechanism used by Outlook desktop and survives client offline state.
     """
     check_permission(config, CATEGORY_MAIL_DRAFTS, "outlook_create_draft")
+    check_body_format(is_html, is_markdown)
 
     # Validate all email addresses
     validated_to = [validate_email(e) for e in to]
@@ -140,10 +143,8 @@ async def create_draft(
     validated_bcc = [validate_email(e) for e in bcc] if bcc else []
     validated_reply_to = [validate_email(e) for e in reply_to] if reply_to else []
 
-    from msgraph.generated.models.body_type import BodyType
     from msgraph.generated.models.email_address import EmailAddress
     from msgraph.generated.models.importance import Importance
-    from msgraph.generated.models.item_body import ItemBody
     from msgraph.generated.models.message import Message
     from msgraph.generated.models.recipient import Recipient
 
@@ -155,9 +156,7 @@ async def create_draft(
 
     msg = Message()
     msg.subject = subject
-    msg.body = ItemBody()
-    msg.body.content = body
-    msg.body.content_type = BodyType.Html if is_html else BodyType.Text
+    msg.body = message_body(body, is_html, is_markdown)
     msg.to_recipients = [_make_recipient(e) for e in validated_to]
     if validated_cc:
         msg.cc_recipients = [_make_recipient(e) for e in validated_cc]
@@ -202,6 +201,7 @@ async def update_draft(
     reply_to: list[str] | None = None,
     is_html: bool = False,
     deferred_send_datetime: str | None = None,
+    is_markdown: bool = False,
     *,
     config: Config,
 ) -> dict:
@@ -221,6 +221,7 @@ async def update_draft(
     previously-set deferred send time.
     """
     check_permission(config, CATEGORY_MAIL_DRAFTS, "outlook_update_draft")
+    check_body_format(is_html, is_markdown)
     draft_id = validate_graph_id(draft_id)
 
     from msgraph.generated.models.message import Message
@@ -231,12 +232,7 @@ async def update_draft(
         msg.subject = subject
 
     if body is not None:
-        from msgraph.generated.models.body_type import BodyType
-        from msgraph.generated.models.item_body import ItemBody
-
-        msg.body = ItemBody()
-        msg.body.content = body
-        msg.body.content_type = BodyType.Html if is_html else BodyType.Text
+        msg.body = message_body(body, is_html, is_markdown)
 
     if to is not None:
         from msgraph.generated.models.email_address import EmailAddress

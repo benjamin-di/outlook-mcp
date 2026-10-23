@@ -89,9 +89,10 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `outlook_list_inbox_delta` — List only inbox changes since last call (massive token savings for recurring agent jobs)
 
 ### Mail — Write
-- `outlook_send_message` — Send email with recipients, CC, BCC, HTML, importance
+- `outlook_send_message` — Send email with recipients, CC, BCC, HTML or Markdown (`is_markdown=True`), importance
 - `outlook_reply` — Reply or reply-all to a message; plain text keeps its paragraphs and line breaks above the quote
 - `outlook_forward` — Forward a message
+- Bodies and comments are plain text by default; `is_markdown=True` on these, `outlook_create_draft` and `outlook_update_draft` turns paragraphs, lists, **bold**, *italic*, `code` and https/mailto links into HTML and shows anything else as written
 
 ### Mail — Triage
 - `outlook_move_message` — Move to a folder

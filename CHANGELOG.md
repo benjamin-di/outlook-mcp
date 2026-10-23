@@ -6,6 +6,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Mail bodies can be written in Markdown** (#168). `outlook_send_message`, `outlook_reply`,
+  `outlook_forward` (its `comment`), `outlook_create_draft` and `outlook_update_draft` take
+  `is_markdown=True`, beside `is_html`. Agents write Markdown, and until now it went out as text
+  with its asterisks showing, or with `is_html=True` as text that isn't HTML. A safe subset is
+  converted to HTML: paragraphs, line breaks, `-`, `*`, `+` and numbered lists, `**bold**`,
+  `*italic*`, `` `code` ``, backslash escapes, and `[text](url)` links to `https:` and `mailto:`
+  addresses only. Everything else, raw HTML included, is escaped and shown as written; headings,
+  quotes and code blocks stay text, and underscores are not emphasis (`snake_case` names are
+  common in an agent's mail). No new dependency: the converter is about 80 lines in
+  `tools/_mail_body.py`, every pattern linear in the line's length. A reply or forward puts the
+  HTML above the quote, as #167 does; on a plain-text thread the Markdown is sent as written and
+  the reply stays plain text. `is_html` and `is_markdown` together are refused. The supported
+  subset is one `INSTRUCTIONS` bullet, sent once per session, so no docstring grows; the five
+  booleans add 98 proxy tokens to the tool surface, and the ceiling moves to 13,400.
+
 ### Fixed
 
 - **Tool descriptions no longer carry the source file's indentation.** The SDK publishes each

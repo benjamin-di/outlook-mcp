@@ -619,6 +619,64 @@ class TestMailDrafts:
         )
 
 
+class TestMarkdownBodies:
+    """`is_markdown` (#168): the body reaches the wire as HTML converted from Markdown."""
+
+    _MD = "**SENTINEL-MD-b1**\n\n- [SENTINEL-MD-b2](https://example.com/b3)"
+    _HTML = (
+        "<p><strong>SENTINEL-MD-b1</strong></p>"
+        '<ul><li><a href=\\"https://example.com/b3\\">SENTINEL-MD-b2</a></li></ul>'
+    )
+
+    async def test_send_message(self):
+        client = MagicMock()
+        client.me.send_mail.post = AsyncMock()
+
+        await mail_write.send_message(
+            client, ["a@example.com"], "s", self._MD, is_markdown=True, config=_CFG
+        )
+
+        assert_on_wire(
+            client.me.send_mail.post.call_args[0][0], self._HTML, '"contentType": "html"'
+        )
+
+    async def test_create_draft(self):
+        client = MagicMock()
+        client.me.messages.post = AsyncMock(return_value=MagicMock(id="D1"))
+
+        await mail_drafts.create_draft(
+            client, ["a@example.com"], "s", self._MD, is_markdown=True, config=_CFG
+        )
+
+        assert_on_wire(client.me.messages.post.call_args[0][0], self._HTML, '"contentType": "html"')
+
+    async def test_update_draft(self):
+        builder = MagicMock()
+        builder.get = AsyncMock(return_value=MagicMock(is_draft=True))
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.messages.by_message_id.return_value = builder
+
+        await mail_drafts.update_draft(
+            client, "AAMkAG123=", body=self._MD, is_markdown=True, config=_CFG
+        )
+
+        assert_on_wire(builder.patch.call_args[0][0], self._HTML, '"contentType": "html"')
+
+    async def test_reply_and_forward(self):
+        for call in (
+            lambda c: mail_write.reply(c, "AAMkAG123=", self._MD, is_markdown=True, config=_CFG),
+            lambda c: mail_write.forward(
+                c, "AAMkAG123=", ["a@example.com"], comment=self._MD, is_markdown=True, config=_CFG
+            ),
+        ):
+            client, _, draft = TestMailWrite._thread_client()
+
+            await call(client)
+
+            assert_on_wire(draft.patch.call_args[0][0], self._HTML, '"contentType": "html"')
+
+
 # ── contacts ──────────────────────────────────────────────────────────
 
 
