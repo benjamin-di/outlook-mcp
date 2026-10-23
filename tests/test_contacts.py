@@ -942,3 +942,337 @@ async def test_title_is_described_as_the_name_prefix_where_the_model_reads_it(to
     description = tools[tool].description
     assert "name prefix" in description
     assert "not the job" in description
+
+
+#: A contact's change key in the shape Graph returns it in ``@odata.etag``.
+_CONTACT_ETAG = 'W/"EQAAABYAAAA9sMfE2cIhRb3f6CTJkTSZAAD0dvmb"'
+
+
+def _stored_addresses(*pairs):
+    """Graph ``emailAddress`` entries, as (address, name) pairs."""
+    entries = []
+    for address, name in pairs:
+        entry = MagicMock(spec=["address", "name"])
+        entry.address = address
+        entry.name = name
+        entries.append(entry)
+    return entries
+
+
+def _contact_holding(*pairs, etag=_CONTACT_ETAG):
+    """A contact read back from Graph with these addresses and this change key.
+
+    ``additional_data`` is set explicitly: ``_make_mock_contact``'s spec leaves it
+    out, and an auto-created MagicMock attribute would hand the code a change key
+    no Graph response contains.
+    """
+    contact = _make_mock_contact(email_addresses=_stored_addresses(*pairs))
+    contact.additional_data = {"@odata.etag": etag} if etag is not None else {}
+    return contact
+
+
+class TestAddAndRemoveEmails:
+    """`email` replaces every address with one; these change only the ones named.
+
+    The merge is computed from a read, so the PATCH sends back addresses this
+    call did not write. By #87's rule a write that sends back what it read pins
+    the version it read, so the patch carries `If-Match`.
+    """
+
+    @staticmethod
+    def _builder(mock_client):
+        return mock_client.me.contacts.by_contact_id.return_value
+
+    def _sent(self, mock_client):
+        """(address, name) for every address in the PATCH, in order."""
+        builder = self._builder(mock_client)
+        builder.patch.assert_called_once()
+        sent = builder.patch.call_args[0][0].email_addresses
+        return [(e.address, e.name) for e in sent]
+
+    async def test_an_added_address_keeps_the_ones_already_there(self):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        await update_contact(
+            mock_client, contact_id="contact123", add_emails=["jane@example.com"], config=_CFG
+        )
+        assert self._sent(mock_client) == [("jane@contoso.com", "Jane"), ("jane@example.com", None)]
+
+    async def test_a_removed_address_takes_only_itself_out(self):
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(
+                ("jane@contoso.com", "Jane"),
+                ("old@example.com", "old@example.com"),
+                ("jane@example.net", "Jane (home)"),
+            )
+        )
+        await update_contact(
+            mock_client, contact_id="contact123", remove_emails=["old@example.com"], config=_CFG
+        )
+        assert self._sent(mock_client) == [
+            ("jane@contoso.com", "Jane"),
+            ("jane@example.net", "Jane (home)"),
+        ]
+
+    async def test_add_and_remove_in_one_patch(self):
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(("jane@contoso.com", "Jane"), ("old@example.com", None))
+        )
+        await update_contact(
+            mock_client,
+            contact_id="contact123",
+            add_emails=["jane@example.com"],
+            remove_emails=["old@example.com"],
+            config=_CFG,
+        )
+        assert self._sent(mock_client) == [("jane@contoso.com", "Jane"), ("jane@example.com", None)]
+
+    async def test_addresses_compare_without_case(self):
+        """Mail addresses are case-insensitive in practice; a re-add in other case is
+        the same address, and a remove in other case removes it."""
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(("Jane@Contoso.com", "Jane"), ("Old@Example.com", None))
+        )
+        await update_contact(
+            mock_client,
+            contact_id="contact123",
+            add_emails=["jane@contoso.com", "NEW@example.com", "new@example.com"],
+            remove_emails=["OLD@example.COM"],
+            config=_CFG,
+        )
+        assert self._sent(mock_client) == [("Jane@Contoso.com", "Jane"), ("NEW@example.com", None)]
+
+    async def test_removing_the_last_address_sends_an_empty_list(self):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        await update_contact(
+            mock_client, contact_id="contact123", remove_emails=["jane@contoso.com"], config=_CFG
+        )
+        assert self._sent(mock_client) == []
+
+    async def test_a_remove_of_an_address_the_contact_lacks_is_refused(self):
+        """A misspelt remove would otherwise report "updated" and leave the real
+        address in place — #41's shape. The message names what is stored."""
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        with pytest.raises(ValueError, match=r"no address jnae@contoso\.com.*jane@contoso\.com"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                remove_emails=["jnae@contoso.com"],
+                config=_CFG,
+            )
+        self._builder(mock_client).patch.assert_not_called()
+
+    async def test_more_than_three_addresses_is_refused(self):
+        """Exchange keeps three email slots per contact; a fourth is refused here
+        rather than sent to a store that cannot hold it."""
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(("a@contoso.com", None), ("b@contoso.com", None))
+        )
+        with pytest.raises(ValueError, match="three"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                add_emails=["c@contoso.com", "d@contoso.com"],
+                config=_CFG,
+            )
+        self._builder(mock_client).patch.assert_not_called()
+
+    async def test_three_addresses_are_allowed(self):
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(("a@contoso.com", None), ("b@contoso.com", None))
+        )
+        await update_contact(
+            mock_client, contact_id="contact123", add_emails=["c@contoso.com"], config=_CFG
+        )
+        assert [a for a, _ in self._sent(mock_client)] == [
+            "a@contoso.com",
+            "b@contoso.com",
+            "c@contoso.com",
+        ]
+
+    async def test_a_swap_at_the_limit_is_allowed(self):
+        """The limit is on the result, not on the stored count plus the additions."""
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(
+                ("a@contoso.com", None), ("b@contoso.com", None), ("c@contoso.com", None)
+            )
+        )
+        await update_contact(
+            mock_client,
+            contact_id="contact123",
+            add_emails=["d@contoso.com"],
+            remove_emails=["a@contoso.com"],
+            config=_CFG,
+        )
+        assert [a for a, _ in self._sent(mock_client)] == [
+            "b@contoso.com",
+            "c@contoso.com",
+            "d@contoso.com",
+        ]
+
+    async def test_the_patch_is_pinned_to_the_version_it_read(self):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        await update_contact(
+            mock_client, contact_id="contact123", add_emails=["jane@example.com"], config=_CFG
+        )
+        builder = self._builder(mock_client)
+        # The header itself: a request configuration carrying nothing, or another
+        # change key, would pass a weaker assertion.
+        config_sent = builder.patch.call_args.kwargs["request_configuration"]
+        assert config_sent.headers.get("If-Match") == {_CONTACT_ETAG}
+
+    async def test_without_a_change_key_the_patch_goes_unpinned(self):
+        """#87's rule for a missing key: send unpinned, as every other write does."""
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(("jane@contoso.com", "Jane"), etag=None)
+        )
+        await update_contact(
+            mock_client, contact_id="contact123", add_emails=["jane@example.com"], config=_CFG
+        )
+        builder = self._builder(mock_client)
+        assert "request_configuration" not in builder.patch.call_args.kwargs
+        assert self._sent(mock_client)[-1] == ("jane@example.com", None)
+
+    async def test_a_patch_without_them_reads_nothing_and_is_not_pinned(self):
+        """The control: every other argument is the caller's value, last-writer-wins."""
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        await update_contact(mock_client, contact_id="contact123", first_name="Janet", config=_CFG)
+        builder = self._builder(mock_client)
+        builder.get.assert_not_called()
+        assert "request_configuration" not in builder.patch.call_args.kwargs
+        assert builder.patch.call_args[0][0].email_addresses is None
+
+    async def test_the_other_fields_travel_in_the_same_pinned_patch(self):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        await update_contact(
+            mock_client,
+            contact_id="contact123",
+            job_title="Engineer",
+            add_emails=["jane@example.com"],
+            config=_CFG,
+        )
+        builder = self._builder(mock_client)
+        assert builder.patch.call_args[0][0].job_title == "Engineer"
+        assert builder.patch.call_args.kwargs["request_configuration"].headers.get("If-Match")
+
+    @pytest.mark.parametrize(
+        "lists",
+        [
+            {"add_emails": ["jane@example.com"]},
+            {"remove_emails": ["jane@contoso.com"]},
+        ],
+    )
+    async def test_email_with_either_list_is_refused_before_anything_is_read(self, lists):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        with pytest.raises(ValueError, match="not both"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                email="jane@example.org",
+                config=_CFG,
+                **lists,
+            )
+        self._builder(mock_client).get.assert_not_called()
+        self._builder(mock_client).patch.assert_not_called()
+
+    async def test_one_address_in_both_lists_is_refused(self):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        with pytest.raises(ValueError, match="both add_emails and remove_emails"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                add_emails=["Jane@contoso.com"],
+                remove_emails=["jane@contoso.com"],
+                config=_CFG,
+            )
+        self._builder(mock_client).get.assert_not_called()
+
+    @pytest.mark.parametrize("name", ["add_emails", "remove_emails"])
+    async def test_an_empty_list_is_refused(self, name):
+        """A list naming nothing is a patch that carries nothing and says "updated"."""
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        with pytest.raises(ValueError, match=f"{name} is empty"):
+            await update_contact(mock_client, contact_id="contact123", config=_CFG, **{name: []})
+        self._builder(mock_client).get.assert_not_called()
+
+    @pytest.mark.parametrize("name", ["add_emails", "remove_emails"])
+    async def test_every_address_is_validated_before_anything_is_read(self, name):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        with pytest.raises(ValueError, match="Invalid email address"):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                config=_CFG,
+                **{name: ["jane@example.com", "not an address"]},
+            )
+        self._builder(mock_client).get.assert_not_called()
+
+    async def test_read_only_mode_refuses_before_reading(self):
+        mock_client = _make_contact_by_id_mock(_contact_holding(("jane@contoso.com", "Jane")))
+        with pytest.raises(ReadOnlyError):
+            await update_contact(
+                mock_client,
+                contact_id="contact123",
+                add_emails=["jane@example.com"],
+                config=_CFG_RO,
+            )
+        self._builder(mock_client).get.assert_not_called()
+
+    async def test_email_still_replaces_every_address(self):
+        """Today's behaviour, unchanged: one address in, the rest gone, nothing read."""
+        mock_client = _make_contact_by_id_mock(
+            _contact_holding(("jane@contoso.com", "Jane"), ("old@example.com", None))
+        )
+        await update_contact(
+            mock_client, contact_id="contact123", email="jane@example.org", config=_CFG
+        )
+        assert [a for a, _ in self._sent(mock_client)] == ["jane@example.org"]
+        self._builder(mock_client).get.assert_not_called()
+
+
+class TestAddAndRemoveEmailsThroughTheServer:
+    """`server.py` hands `update_contact` its arguments positionally, and the two
+    lists have the same type, so a swap would add what was meant to be removed.
+    These run the real handler behind the real wrapper, one list at a time."""
+
+    @staticmethod
+    async def _call(**arguments):
+        from unittest.mock import patch
+
+        from outlook_mcp import server as server_mod
+
+        sdk = _make_contact_by_id_mock(
+            _contact_holding(("jane@contoso.com", "Jane"), ("old@example.com", None))
+        )
+        client = MagicMock()
+        client.sdk_client = sdk
+        ctx = MagicMock()
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=_CFG),
+        ):
+            await server_mod.outlook_update_contact(ctx, contact_id="contact123", **arguments)
+        builder = sdk.me.contacts.by_contact_id.return_value
+        return [e.address for e in builder.patch.call_args[0][0].email_addresses]
+
+    async def test_add_emails_adds(self):
+        assert await self._call(add_emails=["jane@example.com"]) == [
+            "jane@contoso.com",
+            "old@example.com",
+            "jane@example.com",
+        ]
+
+    async def test_remove_emails_removes(self):
+        assert await self._call(remove_emails=["old@example.com"]) == ["jane@contoso.com"]
+
+
+@pytest.mark.asyncio
+async def test_update_says_email_replaces_and_the_lists_merge_where_the_model_reads_it():
+    """The replace-everything behaviour of `email` is silent data loss for a caller who
+    meant "add"; the tool description is the only text a client sees."""
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools["outlook_update_contact"].description
+    assert "add_emails" in description
+    assert "remove_emails" in description
+    assert "REPLACES" in description
