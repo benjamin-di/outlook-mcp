@@ -129,9 +129,11 @@ Working rules, each of which saves a round trip:
   to check before doing something — just call the tool you need. If a call
   does fail on authentication, its error says exactly what to run.
 - Folder and calendar parameters take display names directly ("Junk Email", "Purchases",
-  "Work"), as well as well-known folder names ("inbox", "drafts") and Graph IDs. Do not list
-  folders or calendars first to find an ID. Call outlook_list_folders / outlook_list_calendars
-  only when you genuinely need to discover what exists.
+  "Work"), as well as well-known folder names ("inbox", "drafts") and Graph IDs. A folder can
+  also be named by its path, "Inbox/Travel/Flights", which settles a name two folders share;
+  a "/" inside a folder name is written "//". Do not list folders or calendars first to find
+  an ID. Call outlook_list_folders / outlook_list_calendars only when you genuinely need to
+  discover what exists.
 - Dates accept ISO 8601 (2026-10-22, or 2026-10-22T14:30:00Z) or a relative offset: `7d` is
   seven days ago, `+7d` is seven days from now, `now` is this moment. Units: m, h, d, w.
 - Scanning mail or events? Pass concise=True — roughly ten times fewer tokens. To read several
@@ -410,8 +412,8 @@ async def outlook_list_folders(
 ) -> dict:
     """List mail folders with message counts, parent_id, and child count.
 
-    Default is top-level only; pass recursive=True to walk the full tree and resolve subfolder
-    names.
+    Default is top-level only; pass recursive=True to walk the full tree, each folder with the
+    `path` that folder arguments accept.
     """
     client = _get_graph_client(ctx)
     return await mail_read.list_folders(client.sdk_client, cursor=cursor, recursive=recursive)
@@ -1608,7 +1610,7 @@ async def outlook_create_folder(
     name: str,
     parent_folder: str | None = None,
 ) -> dict:
-    """Create a mail folder; pass `parent_folder` (name or ID) to nest under an existing folder."""
+    """Create a mail folder; pass `parent_folder` (name, path or ID) to nest it under that one."""
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
     return await mail_folders.create_folder(

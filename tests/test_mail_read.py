@@ -502,6 +502,48 @@ class TestListFolders:
         mock_client.me.mail_folders.by_mail_folder_id.assert_called_once_with("receipts_id")
 
     @pytest.mark.asyncio
+    async def test_list_folders_recursive_returns_each_folders_path(self):
+        """Each path is the one resolve_folder_id takes back, "/" in a name doubled."""
+        inbox = _make_folder("inbox_id", "Inbox", children=1)
+        travel = _make_folder("travel_id", "Travel", parent_id="inbox_id", children=1)
+        q = _make_folder("q_id", "Q1/Q2", parent_id="travel_id")
+        children = {"inbox_id": [travel], "travel_id": [q]}
+
+        def by_id(folder_id):
+            b = MagicMock()
+            b.child_folders.get = AsyncMock(
+                return_value=MagicMock(value=children[folder_id], odata_next_link=None)
+            )
+            return b
+
+        mock_client = MagicMock()
+        mock_client.me.mail_folders.get = AsyncMock(
+            return_value=MagicMock(value=[inbox], odata_next_link=None)
+        )
+        mock_client.me.mail_folders.by_mail_folder_id = MagicMock(side_effect=by_id)
+
+        result = await list_folders(mock_client, recursive=True)
+
+        assert {f["id"]: f["path"] for f in result["folders"]} == {
+            "inbox_id": "Inbox",
+            "travel_id": "Inbox/Travel",
+            "q_id": "Inbox/Travel/Q1//Q2",
+        }
+        assert {f["name"] for f in result["folders"]} == {"Inbox", "Travel", "Q1/Q2"}
+
+    @pytest.mark.asyncio
+    async def test_list_folders_top_level_is_unchanged(self):
+        """The paginated top-level listing has no `path`: the name is the path there."""
+        mock_client = MagicMock()
+        mock_client.me.mail_folders.get = AsyncMock(
+            return_value=MagicMock(value=[_make_folder("i", "Inbox")], odata_next_link=None)
+        )
+
+        result = await list_folders(mock_client)
+
+        assert "path" not in result["folders"][0]
+
+    @pytest.mark.asyncio
     async def test_list_folders_recursive_paginates_child_folders(self):
         """Child-folder listings follow odata_next_link so >10 subfolders are returned."""
         inbox = _make_folder("inbox_id", "Inbox", parent_id="root", children=15)

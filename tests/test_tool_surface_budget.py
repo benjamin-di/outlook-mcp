@@ -63,6 +63,11 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
+#
+# 13,269 with folder paths (#144, +8): `outlook_list_folders` says each folder
+# carries the `path` folder arguments accept. The path rule itself went into
+# INSTRUCTIONS, which every tool that takes a folder shares and which is sent
+# once per session, not into five docstrings. No raise.
 TOOL_SURFACE_CEILING = 13_300
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
