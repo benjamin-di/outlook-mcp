@@ -25,6 +25,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `mark_read` treated any `value` other than `"true"` as unread, and the tool describes the value
   as a status, so `"read"`, `"yes"` or `"True "` marked every message in the batch unread. It now
   takes `true`/`false` or `read`/`unread`, in any case, and refuses anything else before sending.
+- **`outlook_search_mail`'s cursor moves to the next page, and a search Graph cut short says
+  so.** Graph pages a message `$search` only with `$skiptoken` (`$search` with `$skip` is
+  `400 SearchWithSkip`), and `build_request_config` dropped the token: no typed `users/*`
+  query-parameters class has the field. So every cursor fetched page one again, with `has_more`
+  still true, and no search could get past its first page. A cursor's page now goes out
+  as the request plus Graph's `$skiptoken`, which is what Graph's own `@odata.nextLink` is.
+  Graph also ends a search a little past 250 results with no `@odata.nextLink` and no error,
+  whatever `$top` asks for (275 for pages of 25 or more, measured on an Exchange Online mailbox
+  holding tens of thousands of matches; Graph's documentation says up to 1,000), which reads exactly
+  like the end of a complete search. The cursor now counts what it has served, and the last page
+  of a search that ends past 250 carries `incomplete`: older matches may be missing, and adding
+  `received<=` with the last message's date reaches them.
 - **Tool descriptions no longer carry the source file's indentation.** The SDK publishes each
   tool's docstring as Python stores it. Python 3.13 strips a docstring's indentation when it
   compiles it; 3.10–3.12 keep it, so on those versions every client paid for about 240 proxy

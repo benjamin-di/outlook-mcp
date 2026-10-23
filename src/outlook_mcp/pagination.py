@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from kiota_abstractions.base_request_configuration import RequestConfiguration
 
@@ -154,3 +154,30 @@ def build_request_config(
         setattr(qp, attr, value)
 
     return RequestConfiguration(query_parameters=qp)
+
+
+async def get_page(builder: Any, query_params_class: type, params: dict[str, Any]) -> Any:
+    """GET one page from ``builder``, including a ``$skiptoken`` from a cursor.
+
+    ``build_request_config`` cannot carry ``$skiptoken``: no typed ``users/*``
+    query-parameters class has the field, and their URL templates stop at
+    ``$top``, so the token is dropped and a cursor from a listing Graph pages
+    by ``$skiptoken`` fetches page one again (a message ``$search`` pages no
+    other way). Graph's ``@odata.nextLink`` for such a page is the request it
+    answered plus ``$skiptoken``, so that is what is sent: the URL the builder
+    makes from the typed parameters, with the token appended as one
+    percent-encoded query value. The token can change nothing else about the
+    request: not the host, the path or another parameter.
+    """
+    params = dict(params)
+    skiptoken = params.pop("$skiptoken", None)
+    config = build_request_config(query_params_class, params)
+    if skiptoken is None:
+        return await builder.get(request_configuration=config)
+    if not isinstance(skiptoken, str) or not skiptoken:
+        raise ValueError("Invalid pagination cursor")
+    info = builder.to_get_request_information(config)
+    info.path_parameters["baseurl"] = builder.request_adapter.base_url
+    url = info.url
+    separator = "&" if "?" in url else "?"
+    return await builder.with_url(f"{url}{separator}%24skiptoken={quote(skiptoken, safe='')}").get()
