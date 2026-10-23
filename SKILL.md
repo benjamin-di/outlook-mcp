@@ -82,7 +82,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 
 ### Mail — Read
 - `outlook_list_inbox` — List messages with filters (folder, unread, sender, date, uncategorized only, Focused class)
-- `outlook_read_message` — Get full message by ID
+- `outlook_read_message` — Get full message by ID, or by its Message-ID header value (`<abc@example.com>`)
 - `outlook_read_messages` — Bulk read up to 20 messages by ID in one `$batch` round-trip (use NOT N read_message calls)
 - `outlook_search_mail` — Search mail using KQL query
 - `outlook_list_folders` — List all mail folders
