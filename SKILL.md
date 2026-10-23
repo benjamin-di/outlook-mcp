@@ -90,7 +90,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 
 ### Mail — Write
 - `outlook_send_message` — Send email with recipients, CC, BCC, HTML, importance
-- `outlook_reply` — Reply or reply-all to a message
+- `outlook_reply` — Reply or reply-all to a message; plain text keeps its paragraphs and line breaks above the quote
 - `outlook_forward` — Forward a message
 
 ### Mail — Triage

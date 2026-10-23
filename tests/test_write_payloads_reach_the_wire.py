@@ -469,11 +469,31 @@ class TestMailWrite:
             "sentinel.replyto@example.com",
         )
 
-    async def test_reply_html_body_reaches_the_wire(self):
-        builder = MagicMock()
-        builder.reply.post = AsyncMock()
+    # A reply, and a forward with a comment, go through a draft: the create call,
+    # the PATCH with the text and the send are separate payloads (#143 follow-up).
+
+    @staticmethod
+    def _thread_client():
+        from msgraph.generated.models.body_type import BodyType
+
+        created = MagicMock(id="R1")
+        created.body = MagicMock(
+            content="<html><body><div>QUOTED-ORIGINAL</div></body></html>",
+            content_type=BodyType.Html,
+        )
+        source = MagicMock()
+        for action in ("create_reply", "create_reply_all", "create_forward"):
+            getattr(source, action).post = AsyncMock(return_value=created)
+        draft = MagicMock()
+        draft.patch = AsyncMock()
+        draft.send.post = AsyncMock()
+        builders = {"AAMkAG123=": source, "R1": draft}
         client = MagicMock()
-        client.me.messages.by_message_id.return_value = builder
+        client.me.messages.by_message_id = MagicMock(side_effect=lambda i: builders[i])
+        return client, source, draft
+
+    async def test_reply_html_body_reaches_the_wire(self):
+        client, source, draft = self._thread_client()
 
         await mail_write.reply(
             client,
@@ -483,31 +503,30 @@ class TestMailWrite:
             config=_CFG,
         )
 
+        assert "SENTINEL-REPLY-7d1" not in wire(source.create_reply.post.call_args[0][0])
         assert_on_wire(
-            builder.reply.post.call_args[0][0],
-            "SENTINEL-REPLY-7d1",
+            draft.patch.call_args[0][0],
+            "<html><body><i>SENTINEL-REPLY-7d1</i><div>QUOTED-ORIGINAL</div></body></html>",
             '"contentType": "html"',
         )
 
     async def test_reply_plain_body_reaches_the_wire(self):
-        builder = MagicMock()
-        builder.reply.post = AsyncMock()
-        client = MagicMock()
-        client.me.messages.by_message_id.return_value = builder
+        client, source, draft = self._thread_client()
 
         await mail_write.reply(
-            client, message_id="AAMkAG123=", body="SENTINEL-REPLY-7d2", config=_CFG
+            client, message_id="AAMkAG123=", body="SENTINEL-REPLY-7d2\nline two", config=_CFG
         )
 
-        # kiota emits action-parameter keys in PascalCase ("Comment", "Message",
-        # "SaveToSentItems"); Graph accepts them — reply has always worked this way.
-        assert_on_wire(builder.reply.post.call_args[0][0], '"Comment": "SENTINEL-REPLY-7d2"')
+        # Not as "Comment": Graph joins its lines with spaces on an HTML message.
+        assert '"Comment"' not in wire(source.create_reply.post.call_args[0][0])
+        assert_on_wire(
+            draft.patch.call_args[0][0],
+            "<html><body><p>SENTINEL-REPLY-7d2<br>line two</p><div>QUOTED-ORIGINAL</div>",
+            '"contentType": "html"',
+        )
 
     async def test_forward_every_argument_reaches_the_wire(self):
-        builder = MagicMock()
-        builder.forward.post = AsyncMock()
-        client = MagicMock()
-        client.me.messages.by_message_id.return_value = builder
+        client, source, draft = self._thread_client()
 
         await mail_write.forward(
             client,
@@ -517,11 +536,25 @@ class TestMailWrite:
             config=_CFG,
         )
 
-        assert_on_wire(
-            builder.forward.post.call_args[0][0],
-            "sentinel.fwd@example.com",
-            "SENTINEL-COMMENT-8e1",
+        create = wire(source.create_forward.post.call_args[0][0])
+        assert (
+            '"toRecipients": [{"emailAddress": {"address": "sentinel.fwd@example.com"}}]' in create
         )
+        # On `message` only, not also the action's own ToRecipients: Graph 400s on both.
+        assert '"ToRecipients"' not in create
+        assert_on_wire(draft.patch.call_args[0][0], "<p>SENTINEL-COMMENT-8e1</p>")
+
+    async def test_forward_without_a_comment_reaches_the_wire(self):
+        builder = MagicMock()
+        builder.forward.post = AsyncMock()
+        client = MagicMock()
+        client.me.messages.by_message_id.return_value = builder
+
+        await mail_write.forward(
+            client, message_id="AAMkAG123=", to=["sentinel.fwd2@example.com"], config=_CFG
+        )
+
+        assert_on_wire(builder.forward.post.call_args[0][0], "sentinel.fwd2@example.com")
 
 
 class TestMailDrafts:
