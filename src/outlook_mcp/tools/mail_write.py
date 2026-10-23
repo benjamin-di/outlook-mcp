@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from outlook_mcp.config import Config
+from outlook_mcp.errors import MESSAGE_MAY_HAVE_BEEN_SENT
 from outlook_mcp.permissions import CATEGORY_MAIL_SEND, check_permission
+from outlook_mcp.throttle import call_without_replay
 from outlook_mcp.validation import validate_email, validate_graph_id
 
 
@@ -83,7 +85,10 @@ async def send_message(
     request_body.message = msg
     request_body.save_to_sent_items = True
 
-    await graph_client.me.send_mail.post(request_body)
+    await call_without_replay(
+        lambda once: graph_client.me.send_mail.post(request_body, request_configuration=once),
+        outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
+    )
 
     return {"status": "sent"}
 
@@ -139,11 +144,15 @@ async def reply(
     if reply_all:
         request_body = ReplyAllPostRequestBody()
         _apply_body(request_body)
-        await msg_builder.reply_all.post(request_body)
+        action = msg_builder.reply_all
     else:
         request_body = ReplyPostRequestBody()
         _apply_body(request_body)
-        await msg_builder.reply.post(request_body)
+        action = msg_builder.reply
+    await call_without_replay(
+        lambda once: action.post(request_body, request_configuration=once),
+        outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
+    )
 
     return {"status": "replied", "reply_all": reply_all}
 
@@ -178,6 +187,10 @@ async def forward(
     if comment:
         request_body.comment = comment
 
-    await graph_client.me.messages.by_message_id(message_id).forward.post(request_body)
+    forward_builder = graph_client.me.messages.by_message_id(message_id).forward
+    await call_without_replay(
+        lambda once: forward_builder.post(request_body, request_configuration=once),
+        outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
+    )
 
     return {"status": "forwarded"}

@@ -6,12 +6,19 @@ from datetime import date
 from typing import Any
 
 from outlook_mcp.config import Config
+from outlook_mcp.errors import (
+    EVENT_MAY_HAVE_BEEN_CREATED,
+    INVITATIONS_MAY_HAVE_BEEN_SENT,
+    RESPONSE_MAY_HAVE_BEEN_SENT,
+    UPDATE_MAY_HAVE_BEEN_SENT,
+)
 from outlook_mcp.permissions import (
     CATEGORY_CALENDAR_WRITE,
     check_permission,
     check_sends_mail,
     mail_send_withheld,
 )
+from outlook_mcp.throttle import call_without_replay
 from outlook_mcp.tools._recurrence import (
     build_event_recurrence,
     check_recurrence_shape,
@@ -527,7 +534,12 @@ async def create_event(
     if resolved_show_as is not None:
         event.show_as = resolved_show_as
 
-    response = await graph_client.me.events.post(event)
+    response = await call_without_replay(
+        lambda once: graph_client.me.events.post(event, request_configuration=once),
+        outcome_unknown=(
+            INVITATIONS_MAY_HAVE_BEEN_SENT if validated_attendees else EVENT_MAY_HAVE_BEEN_CREATED
+        ),
+    )
 
     return {
         "status": "created",
@@ -916,14 +928,16 @@ async def update_event(
         event.show_as = resolved_show_as
 
     request_builder = graph_client.me.events.by_event_id(event_id)
-    if if_match:
-        from kiota_abstractions.base_request_configuration import RequestConfiguration
 
-        patch_config = RequestConfiguration()
-        patch_config.headers.add("If-Match", if_match)
-        response = await request_builder.patch(event, request_configuration=patch_config)
-    else:
-        response = await request_builder.patch(event)
+    def _patch(once: Any) -> Any:
+        if if_match:
+            once.headers.try_add("If-Match", if_match)
+        return request_builder.patch(event, request_configuration=once)
+
+    # Not replayed after a 5xx either: on an event with attendees the patch is
+    # mailed to them as an update, and a pinned replay would only be refused
+    # with a 412 for the change key this very patch moved (#131).
+    response = await call_without_replay(_patch, outcome_unknown=UPDATE_MAY_HAVE_BEEN_SENT)
 
     return {
         "status": "updated",
@@ -975,7 +989,10 @@ async def rsvp(
         if message:
             request_body.comment = message
         request_body.send_response = True
-        await event_builder.accept.post(request_body)
+        await call_without_replay(
+            lambda once: event_builder.accept.post(request_body, request_configuration=once),
+            outcome_unknown=RESPONSE_MAY_HAVE_BEEN_SENT,
+        )
         return {"status": "accepted", "event_id": event_id}
 
     elif response == "decline":
@@ -987,7 +1004,10 @@ async def rsvp(
         if message:
             request_body.comment = message
         request_body.send_response = True
-        await event_builder.decline.post(request_body)
+        await call_without_replay(
+            lambda once: event_builder.decline.post(request_body, request_configuration=once),
+            outcome_unknown=RESPONSE_MAY_HAVE_BEEN_SENT,
+        )
         return {"status": "declined", "event_id": event_id}
 
     elif response == "tentative":
@@ -1000,7 +1020,12 @@ async def rsvp(
         if message:
             request_body.comment = message
         request_body.send_response = True
-        await event_builder.tentatively_accept.post(request_body)
+        await call_without_replay(
+            lambda once: event_builder.tentatively_accept.post(
+                request_body, request_configuration=once
+            ),
+            outcome_unknown=RESPONSE_MAY_HAVE_BEEN_SENT,
+        )
         return {"status": "tentativelyAccepted", "event_id": event_id}
 
     else:
