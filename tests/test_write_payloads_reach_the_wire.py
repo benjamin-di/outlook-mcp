@@ -51,6 +51,9 @@ from outlook_mcp.tools import (
     contacts,
     mail_attachments,
     mail_drafts,
+    mail_folders,
+    mail_thread,
+    mail_triage,
     mail_write,
     todo,
     todo_attachments,
@@ -761,6 +764,68 @@ class TestMailDrafts:
             '"contentType": "html"',
             "<html><body><b>SENTINEL-BODY-a41</b><div>QUOTED-ORIGINAL</div></body></html>",
         )
+
+
+# ── folder paths (#144) ───────────────────────────────────────────────
+
+
+def _folder_tree_client():
+    """Inbox/Travel/Flights, listed level by level; the move/copy/create builders
+    are shared so each test can read what was posted."""
+    travel = MagicMock(id="AAMkTravelFolder=", display_name="Travel", child_folder_count=1)
+    flights = MagicMock(id="AAMkFlightsFolder=", display_name="Flights", child_folder_count=0)
+    children = {"inbox": [travel], "AAMkTravelFolder=": [flights]}
+    builders = {}
+
+    def by_folder(folder_id):
+        if folder_id not in builders:
+            b = MagicMock()
+            b.child_folders.get = AsyncMock(
+                return_value=MagicMock(value=children.get(folder_id, []), odata_next_link=None)
+            )
+            b.child_folders.post = AsyncMock(return_value=MagicMock(id="N1", display_name="n"))
+            builders[folder_id] = b
+        return builders[folder_id]
+
+    client = MagicMock()
+    client.me.mail_folders.by_mail_folder_id = MagicMock(side_effect=by_folder)
+    message = MagicMock()
+    message.move.post = AsyncMock()
+    message.copy.post = AsyncMock()
+    client.me.messages.by_message_id.return_value = message
+    return client, message, builders
+
+
+class TestFolderPaths:
+    async def test_move_to_a_path_puts_that_folder_on_the_wire(self):
+        client, message, _ = _folder_tree_client()
+
+        await mail_triage.move_message(
+            client, message_id="AAMkAG123=", folder="Inbox/Travel/Flights", config=_CFG
+        )
+
+        # Action-parameter keys are PascalCase on the wire, as for reply.
+        assert_on_wire(message.move.post.call_args[0][0], '"DestinationId": "AAMkFlightsFolder="')
+
+    async def test_copy_to_a_path_puts_that_folder_on_the_wire(self):
+        client, message, _ = _folder_tree_client()
+
+        await mail_thread.copy_message(
+            client, message_id="AAMkAG123=", folder="Inbox/Travel", config=_CFG
+        )
+
+        assert_on_wire(message.copy.post.call_args[0][0], '"DestinationId": "AAMkTravelFolder="')
+
+    async def test_create_folder_under_a_path_posts_to_that_folder(self):
+        client, _, builders = _folder_tree_client()
+
+        await mail_folders.create_folder(
+            client, name="SENTINEL-FOLDER-c01", parent_folder="Inbox/Travel", config=_CFG
+        )
+
+        posted = builders["AAMkTravelFolder="].child_folders.post
+        posted.assert_awaited_once()
+        assert_on_wire(posted.call_args[0][0], "SENTINEL-FOLDER-c01")
 
 
 # ── contacts ──────────────────────────────────────────────────────────
