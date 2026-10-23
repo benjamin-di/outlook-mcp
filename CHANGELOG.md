@@ -16,7 +16,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   response's `id` is the Graph ID every other tool takes. The value is matched exactly, angle
   brackets included. Graph stores what the sender wrote, and a few senders leave the brackets
   out. A Message-ID shared by copies in several folders is refused with their IDs instead of
-  guessed between. It costs one sentence in one docstring (+9 proxy tokens), with no ceiling
+  guessed between. It costs one sentence in one docstring (+10 proxy tokens), with no ceiling
   change.
 
 ### Fixed
