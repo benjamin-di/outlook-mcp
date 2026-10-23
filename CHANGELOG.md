@@ -276,6 +276,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `as_content`, an attachment's text and images reach the model straight from this server, so
   the connect-time rule and SKILL.md now name attachments themselves. Where only an
   attachment's name reached the model before, a text attachment's body now does.
+- **An optional streamable-HTTP transport, for a server that cannot be a local child process**
+  (#126): one on another machine or in a container, behind a reverse proxy, or for a client
+  that only speaks HTTP. `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` through the
+  SDK's own streamable-HTTP app, stateless and answering JSON, with `OUTLOOK_MCP_HTTP_HOST` and
+  `OUTLOOK_MCP_HTTP_PORT` (default `127.0.0.1:8000`). It binds loopback unless told otherwise,
+  and a bind other machines can reach refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. With a
+  token set, every request must carry `Authorization: Bearer <token>` or gets `401`; tokens are
+  comma-separated so one can be rotated, and compared in constant time. The settings are checked
+  before anything binds, and no token or request URL is logged. stdio stays the default and is
+  unchanged: without the variable, the server makes exactly the call it made before. No new
+  dependency, since the SDK already ships the HTTP server. Meant to sit behind TLS and an
+  authenticating reverse proxy; one process still serves one account.
 
 ## [1.26.0] — 2026-10-23
 

@@ -66,6 +66,12 @@ outlook-mcp is designed with security in mind:
   parsed as RFC 8601, a pass must be aligned with the From domain, and a header
   that names another service, fails DMARC or composite authentication, states
   either twice, or cannot be parsed authenticates nothing.
+- **HTTP transport is opt-in and closed by default.** stdio is the default. With
+  `OUTLOOK_MCP_TRANSPORT=streamable-http` the server binds `127.0.0.1` unless told otherwise,
+  and refuses to start on any other address without `OUTLOOK_MCP_HTTP_TOKEN`. With a token set,
+  every request must present it as a bearer token, compared in constant time, or gets `401`
+  before the MCP layer sees it. It speaks plain HTTP: run it behind a reverse proxy that
+  terminates TLS. A loopback bind without a token is open to every process on that machine.
 - **Input validation:** All Graph IDs, emails, dates, KQL queries, and folder names are validated before use
 - **Atomic writes:** Config files are written atomically to prevent corruption
 - **Symlink rejection:** Config loader refuses symlinked files
