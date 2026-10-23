@@ -6,6 +6,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **`outlook_create_event` takes `calendar`.** An event could be read from a secondary calendar
+  (`outlook_list_events`, #62) but only ever created in the default one (#141). `calendar` is
+  resolved the way `outlook_list_events` resolves it, with the same errors: omitted, blank or
+  `"primary"` is the default calendar and costs no extra request; otherwise a display name or an
+  ID from `outlook_list_calendars`. A calendar Graph lists as read-only (`canEdit: false`, such as
+  a birthdays or holiday calendar) is refused before anything is sent, naming the calendars that
+  can be written; Graph's own answer is a 403 whose hint blames the account type. The tools that
+  take an event ID need no `calendar`: `/me/events/{id}` reaches an event on any of the user's own
+  calendars.
+
 ## [1.26.0] — 2026-10-23
 
 ### Fixed

@@ -92,7 +92,7 @@ For the population installing this from the MCP registry, not for Neo. stdio sta
 - **Shared / delegated mailboxes** — `/users/{id}/messages` path for delegated access
 - **Calendar find-meeting-times** — `/me/findMeetingTimes` for availability queries
 - **Category CRUD with colors** — first-class category management, not just assignment
-- **Calendar scope beyond reads** — `outlook_list_events` takes `calendar` (#62); `create_event`, `list_events_delta`, `changes_since` and the `morning_brief` prompt are still pinned to the default calendar, and an empty default-calendar listing gives no hint that other calendars exist. `calendar_resolver.resolve_calendar_id` is the shared piece
+- **Calendar scope beyond reads** — `outlook_list_events` (#62) and `outlook_create_event` (#141) take `calendar`; `list_events_delta`, `changes_since` and the `morning_brief` prompt are still pinned to the default calendar, and an empty default-calendar listing gives no hint that other calendars exist. `calendar_resolver.resolve_calendar_id` is the shared piece
 - **Multi-account support** — served today as one process per account (`OUTLOOK_MCP_CONFIG_DIR` moves each instance's settings directory); cross-account tool calls would be new design on top
 
 ---

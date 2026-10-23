@@ -63,6 +63,10 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
+#
+# 13,298 with `calendar` on `outlook_create_event` (#141, +37): the argument and
+# one short line; that it takes a display name is in INSTRUCTIONS already, which
+# every session gets once. No raise; 2 tokens of headroom left.
 TOOL_SURFACE_CEILING = 13_300
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

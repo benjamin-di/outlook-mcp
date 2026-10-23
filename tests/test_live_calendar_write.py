@@ -1628,3 +1628,76 @@ class TestMovingAMastersDateMovesItsOccurrences:
             self._assert_moved(
                 await _instances(sdk, event_id, monday, "UTC"), monday, time_of_day="00:00:00"
             )
+
+
+class TestCreatingInAnotherCalendar:
+    """`calendar` on create, and the claim that lets every other tool ignore it.
+
+    The tools that take an event ID go through `/me/events/{id}` whatever
+    calendar the event is on. That was checked read-only against events already
+    on four calendars of one mailbox; this proves it for an event the tool
+    created, on a calendar the test makes for itself and removes. A mailbox
+    with no writable second calendar is the common case, which is why the test
+    does not look for one.
+    """
+
+    @asynccontextmanager
+    async def _temporary_calendar(self, client):
+        from msgraph.generated.models.calendar import Calendar
+
+        created = await client.sdk_client.me.calendars.post(
+            Calendar(name=LIVE_WRITE_SUBJECT + " calendar")
+        )
+        try:
+            yield created
+        finally:
+            await client.sdk_client.me.calendars.by_calendar_id(created.id).delete()
+
+    async def test_an_event_created_there_is_reached_by_its_id_alone(
+        self, real_graph_client, live_write_config
+    ):
+        monday = _anchor_monday()
+        window = {
+            "after": f"{monday.isoformat()}T00:00:00Z",
+            "before": f"{monday.isoformat()}T23:59:00Z",
+        }
+        async with self._temporary_calendar(real_graph_client) as calendar:
+            created = await create_event(
+                real_graph_client.sdk_client,
+                subject=LIVE_WRITE_SUBJECT,
+                start=f"{monday.isoformat()}T09:00:00Z",
+                end=f"{monday.isoformat()}T09:30:00Z",
+                calendar=calendar.name,
+                config=live_write_config,
+            )
+            event_id = created["event_id"]
+            deleted = False
+            try:
+                there = await list_events(
+                    real_graph_client.sdk_client, calendar=calendar.id, **window
+                )
+                default = await list_events(real_graph_client.sdk_client, **window)
+                assert event_id in [e["id"] for e in there["events"]]
+                assert event_id not in [e["id"] for e in default["events"]]
+
+                # Every ID-based tool, with no calendar named.
+                assert (await get_event(real_graph_client.sdk_client, event_id))["id"] == event_id
+                await update_event(
+                    real_graph_client.sdk_client,
+                    event_id,
+                    subject=LIVE_WRITE_SUBJECT + " renamed",
+                    config=live_write_config,
+                )
+                detail = await get_event(real_graph_client.sdk_client, event_id)
+                assert detail["subject"].endswith(" renamed")
+                await delete_event(real_graph_client.sdk_client, event_id, config=live_write_config)
+                deleted = True
+                there = await list_events(
+                    real_graph_client.sdk_client, calendar=calendar.id, **window
+                )
+                assert event_id not in [e["id"] for e in there["events"]]
+            finally:
+                if not deleted:
+                    await delete_event(
+                        real_graph_client.sdk_client, event_id, config=live_write_config
+                    )
