@@ -51,7 +51,7 @@ The server exposes 71 discrete tools so the agent can compose its own workflow �
 - **[OpenClaw](https://openclaw.ai)** — native MCP support, available via [ClawHub](https://clawhub.ai/skills?q=outlook-mcp)
 - **[Claude Code](https://claude.com/claude-code)** — add to `~/.claude/settings.json` under `mcpServers`
 - **[Cursor](https://cursor.com)** — MCP-compatible
-- **Any MCP client** — it's a standard stdio MCP server
+- **Any MCP client** — it's a standard stdio MCP server, with an opt-in [streamable-HTTP transport](#remote--http-transport-optional--outlook_mcp_transport) for clients that cannot spawn a local process
 
 Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=mpalermiti) as `io.github.mpalermiti/outlook-mcp`.
 
@@ -509,6 +509,29 @@ One server process serves one mailbox. To work against two accounts, register **
 Then run `outlook-mcp auth` once per instance, with the same env set, to write each auth record in its own directory. Each instance reads its own `config.json` (own `client_id`, `timezone`, permissions) from its own directory.
 
 **Only move the config directory — never `HOME`.** The token cache is not in it: it stays in the OS keyring, and on macOS every azure-identity cache on the host shares one Keychain item, coordinated through a signal file — on this server, `~/.IdentityService/outlook-mcp.nocae` (azure-identity appends `.nocae` to every non-CAE cache name; a CAE cache would be a different file over the same item). Both processes must keep consulting that same signal file so their cache writes lock and merge into the one shared entry — which is exactly what moving the config directory preserves and redirecting `HOME` (or the cache location) would break: two signal files that each believe they own the Keychain item overwrite each other's token. `OUTLOOK_MCP_CONFIG_DIR` deliberately moves only where config.json, the auth record, and attachments live; unset or empty keeps the default `~/.outlook-mcp`.
+
+### Remote / HTTP transport (optional) — `OUTLOOK_MCP_TRANSPORT`
+
+stdio is the default, and every client entry above uses it. For a server that runs on another machine or in a container, or a client that cannot spawn a local process, `OUTLOOK_MCP_TRANSPORT=streamable-http` serves MCP's streamable-HTTP transport at `/mcp` instead:
+
+```bash
+export OUTLOOK_MCP_TRANSPORT=streamable-http
+export OUTLOOK_MCP_HTTP_HOST=0.0.0.0   # default 127.0.0.1
+export OUTLOOK_MCP_HTTP_PORT=8000      # default 8000
+export OUTLOOK_MCP_HTTP_TOKEN=...      # python -c "import secrets; print(secrets.token_urlsafe(32))"
+outlook-mcp serve
+```
+
+The client then connects to `https://<your proxy>/mcp` and sends `Authorization: Bearer <token>`.
+
+**This changes who can reach the mailbox.** Over stdio, only the process that started the server can. Over HTTP, one request to the port is enough for anything that holds a token, so the token is the whole of the access control:
+
+- **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let any process running as that user read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. Tokens are comma-separated, so a new one can be added before the old one is removed. Each needs at least 32 characters from `A–Z a–z 0–9 -._~+/`.
+- **Plain HTTP sends the token in the clear.** The server does not terminate TLS. On any bind other machines can reach, the token and everything the tools return cross the network readable by anything on the path, unless a reverse proxy in front of the server terminates TLS. Put it behind one, and let the proxy authenticate callers too if more than one client will reach it.
+- **It binds `127.0.0.1` by default.** The SDK also refuses a request whose `Host` is not a loopback name (421, its DNS-rebinding protection), so a reverse proxy on the same machine must send `Host: 127.0.0.1:<port>` upstream.
+- **It is stateless.** The server issues no `Mcp-Session-Id` and answers each request with JSON rather than an event stream. No tool sends anything to the client mid-call, so nothing is lost.
+- **One process still serves one account.** Pair it with `OUTLOOK_MCP_CONFIG_DIR`, as for stdio (one process, one port and one settings directory per mailbox), and run `outlook-mcp auth` where the server runs, with the same environment. A container usually has no keyring; see [Token cache stored unencrypted (Linux)](#token-cache-stored-unencrypted-linux).
+- No token, request URL or request line is logged.
 
 ### What `read_only` does and does not do
 
