@@ -88,6 +88,10 @@ CHARS_PER_TOKEN = 4
 # carries the `path` folder arguments accept. The path rule itself went into
 # INSTRUCTIONS, which every tool that takes a folder shares and which is sent
 # once per session, not into five docstrings. No raise.
+#
+# 13,298 with `calendar` on `outlook_create_event` (#141, +37): the argument and
+# one short line; that it takes a display name is in INSTRUCTIONS already, which
+# every session gets once. No raise; 2 tokens of headroom left.
 TOOL_SURFACE_CEILING = 13_600
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

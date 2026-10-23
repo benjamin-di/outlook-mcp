@@ -435,6 +435,77 @@ class TestCalendarWriteArgumentOrder:
         assert event.start.time_zone == "Europe/London"
         assert event.show_as is None
 
+    @staticmethod
+    def _sdk_with_a_second_calendar():
+        from unittest.mock import AsyncMock
+
+        cal = MagicMock()
+        cal.name, cal.id, cal.can_edit = "Kids", "KIDS77=", True
+        sdk = MagicMock()
+        sdk.me.calendars.get = AsyncMock(return_value=MagicMock(value=[cal], odata_next_link=None))
+        sdk.me.events.post = AsyncMock(return_value=MagicMock(id="E1", subject="Review"))
+        secondary = MagicMock()
+        secondary.events.post = AsyncMock(return_value=MagicMock(id="E2", subject="Review"))
+        sdk.me.calendars.by_calendar_id = MagicMock(return_value=secondary)
+        return sdk, secondary
+
+    @pytest.mark.asyncio
+    async def test_calendar_alone_is_not_read_as_show_as(self):
+        """`calendar` is appended after `show_as`, the slot a swap would put it in.
+
+        Swapped, `calendar="Kids"` raises `Invalid show_as: Kids`, and only when
+        a value is supplied.
+        """
+        from outlook_mcp import server as server_mod
+        from outlook_mcp.config import Config
+
+        sdk, secondary = self._sdk_with_a_second_calendar()
+        client = MagicMock()
+        client.sdk_client = sdk
+
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=Config(client_id="test")),
+        ):
+            await server_mod.outlook_create_event(
+                self._ctx(),
+                subject="Review",
+                start="2026-09-07T12:30:00Z",
+                end="2026-09-07T13:00:00Z",
+                calendar="Kids",
+            )
+
+        sdk.me.calendars.by_calendar_id.assert_called_once_with("KIDS77=")
+        event = secondary.events.post.call_args[0][0]
+        assert event.show_as is None
+        sdk.me.events.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_show_as_beside_calendar_is_not_read_as_a_calendar(self):
+        """The other direction: swapped, `show_as` is looked up as a calendar name."""
+        from outlook_mcp import server as server_mod
+        from outlook_mcp.config import Config
+
+        sdk, secondary = self._sdk_with_a_second_calendar()
+        client = MagicMock()
+        client.sdk_client = sdk
+
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=Config(client_id="test")),
+        ):
+            await server_mod.outlook_create_event(
+                self._ctx(),
+                subject="Review",
+                start="2026-09-07T12:30:00Z",
+                end="2026-09-07T13:00:00Z",
+                show_as="tentative",
+            )
+
+        sdk.me.calendars.get.assert_not_called()
+        event = sdk.me.events.post.call_args[0][0]
+        assert event.show_as.value == "tentative"
+
     @pytest.mark.asyncio
     async def test_update_event_arguments_land_in_the_right_slots(self):
         from unittest.mock import AsyncMock
