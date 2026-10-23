@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from outlook_mcp.config import Config
-from outlook_mcp.errors import MESSAGE_MAY_HAVE_BEEN_SENT
+from outlook_mcp.errors import DRAFT_MAY_HAVE_BEEN_SENT, MESSAGE_MAY_HAVE_BEEN_SENT, GraphAPIError
 from outlook_mcp.permissions import CATEGORY_MAIL_SEND, check_permission
 from outlook_mcp.throttle import call_without_replay
+from outlook_mcp.tools._mail_body import above_quote
 from outlook_mcp.validation import validate_email, validate_graph_id
 
 
@@ -93,6 +95,79 @@ async def send_message(
     return {"status": "sent"}
 
 
+async def _send_in_thread(
+    graph_client: Any,
+    source_id: str,
+    action: str,
+    text: str,
+    is_html: bool,
+    to: list[Any] | None = None,
+) -> None:
+    """Reply, reply-all or forward with ``text`` above the quoted original.
+
+    Graph's reply and forward actions take the text as ``comment``, which Graph
+    joins with spaces on an HTML message, so paragraphs, line breaks and lists
+    arrive as one run-on paragraph, or as ``message.body``, which replaces the
+    whole body and sends the reply without the original. So the draft is created
+    empty (createReply / createReplyAll / createForward), Graph quotes the original
+    into it, one PATCH puts the text above the quote (``_mail_body``), and the
+    draft is sent.
+
+    Nothing has gone out before the send. A failed PATCH, or a send Graph refused
+    (a 4xx), deletes the draft and raises. After a 5xx the send may have happened,
+    so the draft is left alone and the error says where to look.
+    """
+    from msgraph.generated.models.message import Message
+    from msgraph.generated.users.item.messages.item.create_forward import (
+        create_forward_post_request_body as fwd,
+    )
+    from msgraph.generated.users.item.messages.item.create_reply import (
+        create_reply_post_request_body as rep,
+    )
+    from msgraph.generated.users.item.messages.item.create_reply_all import (
+        create_reply_all_post_request_body as rep_all,
+    )
+
+    source = graph_client.me.messages.by_message_id(source_id)
+    if action == "forward":
+        request_body: Any = fwd.CreateForwardPostRequestBody()
+        # On `message` only: createForward answers 400 when both are given.
+        request_body.message = Message()
+        request_body.message.to_recipients = to
+        create = source.create_forward
+    elif action == "reply_all":
+        request_body = rep_all.CreateReplyAllPostRequestBody()
+        create = source.create_reply_all
+    else:
+        request_body = rep.CreateReplyPostRequestBody()
+        create = source.create_reply
+    draft = await create.post(request_body)
+
+    new_draft = graph_client.me.messages.by_message_id(draft.id)
+    try:
+        if text:
+            patch = Message()
+            patch.body = above_quote(draft.body, text, is_html)
+            await new_draft.patch(patch)
+    except Exception:
+        # The PATCH's error is the one to report, even if the delete fails too.
+        with contextlib.suppress(Exception):
+            await new_draft.delete()
+        raise
+
+    try:
+        await call_without_replay(
+            lambda once: new_draft.send.post(request_configuration=once),
+            outcome_unknown=DRAFT_MAY_HAVE_BEEN_SENT,
+        )
+    except GraphAPIError as exc:
+        if 400 <= exc.status_code < 500:
+            # Refused, so not sent: leave nothing behind.
+            with contextlib.suppress(Exception):
+                await new_draft.delete()
+        raise
+
+
 async def reply(
     graph_client: Any,
     message_id: str,
@@ -102,57 +177,19 @@ async def reply(
     *,
     config: Config,
 ) -> dict:
-    """Reply to a message.
+    """Reply to a message, with ``body`` above the quoted original.
 
-    Uses reply.post() or reply_all.post() based on the reply_all flag.
-
-    Graph's reply action takes ``comment`` as plain text. An HTML reply has to
-    go through the action's ``message`` field instead, as an ItemBody with
-    contentType HTML — ``comment`` alone cannot carry markup. ``is_html`` was
-    accepted and ignored here until 1.18.0, so every "HTML" reply went out as
-    plain text.
+    Goes through a draft, as ``_send_in_thread`` explains: Graph's reply action
+    would flatten plain text (``comment``) or drop the quote (``message.body``,
+    the path ``is_html`` took from 1.18.0). On a plain-text message the reply is
+    plain text too. ``is_html`` was accepted and ignored until 1.18.0, so every
+    "HTML" reply went out as plain text.
     """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_reply")
     message_id = validate_graph_id(message_id)
 
-    from msgraph.generated.users.item.messages.item.reply.reply_post_request_body import (
-        ReplyPostRequestBody,
-    )
-    from msgraph.generated.users.item.messages.item.reply_all.reply_all_post_request_body import (
-        ReplyAllPostRequestBody,
-    )
-
-    msg_builder = graph_client.me.messages.by_message_id(message_id)
-
-    def _apply_body(request_body: Any) -> None:
-        """Put the text where Graph will honour it for this content type."""
-        if not is_html:
-            request_body.comment = body
-            return
-        from msgraph.generated.models.body_type import BodyType
-        from msgraph.generated.models.item_body import ItemBody
-        from msgraph.generated.models.message import Message
-
-        # comment is plain-text only; markup must ride on message.body, and
-        # setting both would duplicate the text in the sent reply.
-        reply_message = Message()
-        reply_message.body = ItemBody()
-        reply_message.body.content = body
-        reply_message.body.content_type = BodyType.Html
-        request_body.message = reply_message
-
-    if reply_all:
-        request_body = ReplyAllPostRequestBody()
-        _apply_body(request_body)
-        action = msg_builder.reply_all
-    else:
-        request_body = ReplyPostRequestBody()
-        _apply_body(request_body)
-        action = msg_builder.reply
-    await call_without_replay(
-        lambda once: action.post(request_body, request_configuration=once),
-        outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
-    )
+    action = "reply_all" if reply_all else "reply"
+    await _send_in_thread(graph_client, message_id, action, body, is_html)
 
     return {"status": "replied", "reply_all": reply_all}
 
@@ -165,7 +202,12 @@ async def forward(
     *,
     config: Config,
 ) -> dict:
-    """Forward a message to one or more recipients."""
+    """Forward a message to one or more recipients.
+
+    With a ``comment``, through a draft like ``reply``, so the comment keeps its
+    paragraphs and line breaks above the forwarded message. Without one, one
+    forward call.
+    """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_forward")
     message_id = validate_graph_id(message_id)
     validated_to = [validate_email(e) for e in to]
@@ -182,10 +224,13 @@ async def forward(
         r.email_address.address = email
         return r
 
-    request_body = ForwardPostRequestBody()
-    request_body.to_recipients = [_make_recipient(e) for e in validated_to]
+    recipients = [_make_recipient(e) for e in validated_to]
     if comment:
-        request_body.comment = comment
+        await _send_in_thread(graph_client, message_id, "forward", comment, False, recipients)
+        return {"status": "forwarded"}
+
+    request_body = ForwardPostRequestBody()
+    request_body.to_recipients = recipients
 
     forward_builder = graph_client.me.messages.by_message_id(message_id).forward
     await call_without_replay(

@@ -377,6 +377,13 @@ MESSAGE_MAY_HAVE_BEEN_SENT = (
     "Graph failed without saying whether the message went out, so it may already have "
     "been sent. Check Sent Items before sending it again."
 )
+# The same for a reply or forward sent from the draft it was written into
+# (``mail_write._send_in_thread``): one that did not go out is still in Drafts.
+DRAFT_MAY_HAVE_BEEN_SENT = (
+    "Graph failed without saying whether the message went out, so it may already have "
+    "been sent. Check Sent Items before sending it again; if it is not there, it is still "
+    "in Drafts."
+)
 INVITATIONS_MAY_HAVE_BEEN_SENT = (
     "Graph failed without saying whether the event was created, so it may already exist "
     "and its invitations may already have been sent. Check the calendar before creating "
