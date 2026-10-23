@@ -412,7 +412,7 @@ configured `timezone`; responses are always UTC.
 |------|-------------|
 | `outlook_list_thread` | Get all messages in a conversation thread. |
 | `outlook_copy_message` | Copy a message to another folder. |
-| `outlook_batch_triage` | Batch move/flag/categorize/mark_read (max 20 per call). Single Graph `/$batch` round-trip — 10-20× faster than per-message calls for large triage. |
+| `outlook_batch_triage` | Batch move/flag/categorize/mark_read (max 20 per call). Single Graph `/$batch` round-trip — 10-20× faster than per-message calls for large triage; a message Graph throttles is re-sent after its `Retry-After` rather than reported as failed. `mark_read` takes `true`/`false` (or `read`/`unread`). |
 
 ### User and Admin
 
