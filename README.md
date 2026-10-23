@@ -301,8 +301,8 @@ configured `timezone`; responses are always UTC.
 | Tool | Description |
 |------|-------------|
 | `outlook_send_message` | Send email. Supports TO/CC/BCC, HTML body, importance level. |
-| `outlook_reply` | Reply or reply-all to a message. |
-| `outlook_forward` | Forward a message to one or more recipients with optional comment. |
+| `outlook_reply` | Reply or reply-all to a message, the text above the quoted original. Plain text keeps its paragraphs, line breaks and `- ` lists; a plain-text thread gets a plain-text reply. |
+| `outlook_forward` | Forward a message to one or more recipients with optional comment, which keeps its line breaks like a reply's text. |
 
 ### Mail Triage
 
