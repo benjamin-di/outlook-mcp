@@ -1,6 +1,6 @@
 """The tool surface is a per-turn cost, so it gets a ceiling.
 
-Every client pays for all 68 tool schemas on every turn that includes them.
+Every client pays for all 69 tool schemas on every turn that includes them.
 ROADMAP records a measured baseline of ~8,644 tokens (o200k proxy, 2026-07), and
 that number is what makes the `OUTLOOK_MCP_TOOLSETS` gating worth having — but
 nothing stopped it drifting upward one well-meant docstring at a time.
@@ -9,7 +9,7 @@ This is a budget, not a golden file. A golden snapshot of the schemas would fail
 on every wording change and be regenerated without being read, which teaches
 nobody anything. A ceiling only fires when the surface gets materially more
 expensive, and that is the moment worth a conversation: adding a tool, or adding
-a field to all 68.
+a field to all 69.
 
 Raising the ceiling is a legitimate outcome — a new tool has to go somewhere. It
 just has to be deliberate, with the new number written down next to the reason.
@@ -143,6 +143,16 @@ CHARS_PER_TOKEN = 4
 #
 # 14,204 with folder paths after rebasing onto main with the mail stack,
 # contacts pair and attachments as content; the 14,350 ceiling still holds.
+#
+# 13,802 on the 69-tool surface with event keys (#148, +208 on 13,594 with #144),
+# raised to 13,900: `outlook_find_event_by_key` is +137 on its own, nearly all of
+# it the schema every tool pays for; `key` on `outlook_create_event` (+39, the
+# argument and one line), `outlook_update_event` (+30) and the word on
+# `outlook_get_event` (+1). A `key` filter on `outlook_list_events` would have cost
+# ~30, but that listing reads a seven-day window by default and returns
+# occurrences, so the lookup before a create would miss a booking three weeks out
+# and hand back occurrence IDs for a series. The guidance on using keys is in
+# INSTRUCTIONS, paid once per session. ~0.7% headroom.
 TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
@@ -164,7 +174,7 @@ async def test_the_tool_surface_stays_within_budget():
     cost = _proxy_tokens([t.model_dump(exclude_none=True, by_alias=True) for t in tools])
 
     assert cost <= TOOL_SURFACE_CEILING, (
-        f"The 68-tool surface now costs ~{cost} proxy tokens per turn, over the "
+        f"The 69-tool surface now costs ~{cost} proxy tokens per turn, over the "
         f"{TOOL_SURFACE_CEILING} ceiling. Every client pays this on every turn. "
         f"Either trim it, or raise the ceiling deliberately and say why."
     )
