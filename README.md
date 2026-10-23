@@ -288,11 +288,11 @@ configured `timezone`; responses are always UTC.
 
 | Tool | Description |
 |------|-------------|
-| `outlook_list_inbox` | List messages in a folder. `folder` accepts display names, well-known names, or Graph IDs. Filter by read status, sender, date range, Focused Inbox classification. Pagination via `skip`. |
+| `outlook_list_inbox` | List messages in a folder. `folder` accepts display names, well-known names, paths (`Inbox/Travel/Flights`), or Graph IDs. Filter by read status, sender, date range, Focused Inbox classification. Pagination via `skip`. |
 | `outlook_read_message` | Get full message by ID. Format: `text`, `html`, or `full` (both). Pass `include_deferred_send=True` to also surface the draft's scheduled delivery time. |
 | `outlook_read_messages` | Bulk read up to 20 messages by ID via Graph `$batch` in one round-trip. Per-message shape matches `outlook_read_message` byte-for-byte for the same `(format, concise, include_deferred_send)`. Partial-failure tolerant: 404s on some IDs surface in `failures[]` without failing the whole call. Use NOT N `outlook_read_message` calls. |
-| `outlook_search_mail` | Search mail using KQL query. Optionally scope to a folder by name or ID. |
-| `outlook_list_folders` | List mail folders with counts, `parent_id`, and `child_count`. Pass `recursive=true` to walk the full folder tree (subfolders included). |
+| `outlook_search_mail` | Search mail using KQL query. Optionally scope to a folder by name, path or ID. |
+| `outlook_list_folders` | List mail folders with counts, `parent_id`, and `child_count`. Pass `recursive=true` to walk the full folder tree (subfolders included); each folder then carries its `path`, the form every folder argument accepts. |
 | `outlook_list_inbox_delta` | List only inbox changes since the last call. First call returns a full snapshot plus a `delta_token`; subsequent calls (token passed back) return only added/updated/deleted items. Deletes come back as `{id, is_deleted: True}`. Cursor is stateless — agent persists and replays. |
 | `outlook_changes_since` | One structured "since last call" digest composing mail/events/contacts deltas. Returns counts + `urgent_flagged` mail + top-5 `by_sender` + new/cancelled events. Each resource has an independent `delta_token`; stale-token recovery (HTTP 410) auto-resyncs that resource and surfaces `_meta.resync`. First-call snapshot is filtered to `fallback_window_hours` (default 24). Designed for recurring agent loops. |
 
@@ -308,7 +308,7 @@ configured `timezone`; responses are always UTC.
 
 | Tool | Description |
 |------|-------------|
-| `outlook_move_message` | Move a message to a folder by name or ID. |
+| `outlook_move_message` | Move a message to a folder by name, path or ID. |
 | `outlook_delete_message` | Delete a message. Soft delete (Deleted Items) by default. `permanent: true` for hard delete. |
 | `outlook_flag_message` | Set follow-up flag: `flagged`, `complete`, or `notFlagged`. |
 | `outlook_categorize_message` | Set categories on a message. |
@@ -402,7 +402,7 @@ configured `timezone`; responses are always UTC.
 
 | Tool | Description |
 |------|-------------|
-| `outlook_create_folder` | Create mail folder (top-level or nested). |
+| `outlook_create_folder` | Create mail folder (top-level, or nested under `parent_folder`: a name, path or ID). |
 | `outlook_rename_folder` | Rename a mail folder. |
 | `outlook_delete_folder` | Delete a mail folder (refuses well-known folders). |
 
@@ -411,7 +411,7 @@ configured `timezone`; responses are always UTC.
 | Tool | Description |
 |------|-------------|
 | `outlook_list_thread` | Get all messages in a conversation thread. |
-| `outlook_copy_message` | Copy a message to another folder. |
+| `outlook_copy_message` | Copy a message to another folder (name, path or ID). |
 | `outlook_batch_triage` | Batch move/flag/categorize/mark_read (max 20 per call). Single Graph `/$batch` round-trip — 10-20× faster than per-message calls for large triage. |
 
 ### User and Admin
