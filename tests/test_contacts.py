@@ -1276,3 +1276,110 @@ async def test_update_says_email_replaces_and_the_lists_merge_where_the_model_re
     assert "add_emails" in description
     assert "remove_emails" in description
     assert "REPLACES" in description
+
+
+_BIRTHDAY_STORED = "1990-05-01T11:59:00+00:00"
+
+
+class TestBirthday:
+    """`outlook_get_contact` has always returned `birthday`; nothing could write one."""
+
+    async def test_create_writes_the_birthday(self):
+        mock_client = MagicMock()
+        mock_client.me.contacts.post = AsyncMock(return_value=MagicMock(id="C1"))
+        await create_contact(mock_client, first_name="Jane", birthday="1990-05-01", config=_CFG)
+        posted = mock_client.me.contacts.post.call_args[0][0]
+        assert posted.birthday.isoformat() == _BIRTHDAY_STORED
+
+    async def test_update_writes_the_birthday(self):
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        await update_contact(
+            mock_client, contact_id="contact123", birthday="1990-05-01", config=_CFG
+        )
+        patched = mock_client.me.contacts.by_contact_id.return_value.patch.call_args[0][0]
+        assert patched.birthday.isoformat() == _BIRTHDAY_STORED
+
+    async def test_omitting_it_leaves_it_alone(self):
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        await update_contact(mock_client, contact_id="contact123", first_name="Jane", config=_CFG)
+        patched = mock_client.me.contacts.by_contact_id.return_value.patch.call_args[0][0]
+        assert patched.birthday is None
+
+    async def test_create_refuses_a_bad_date_before_anything_is_sent(self):
+        mock_client = MagicMock()
+        mock_client.me.contacts.post = AsyncMock()
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            await create_contact(mock_client, first_name="Jane", birthday="1 May", config=_CFG)
+        mock_client.me.contacts.post.assert_not_called()
+
+    async def test_update_refuses_a_bad_date_before_anything_is_sent(self):
+        mock_client = _make_contact_by_id_mock(_make_mock_contact())
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            await update_contact(
+                mock_client, contact_id="contact123", birthday="1990-13-01", config=_CFG
+            )
+        mock_client.me.contacts.by_contact_id.return_value.patch.assert_not_called()
+
+    def test_what_the_write_stores_the_read_returns_as_that_date(self):
+        """The read path returns Graph's instant; its date is the date written."""
+        from outlook_mcp.validation import validate_birthday
+
+        stored = validate_birthday("1990-05-01")
+        detail = _format_contact_detail(_make_mock_contact(birthday=stored))
+        assert detail["birthday"].startswith("1990-05-01")
+
+
+class TestBirthdayThroughTheServer:
+    """`server.py` passes the contact arguments positionally, so a `birthday` in its
+    neighbour's slot (`phone_type` on create, `clear_phones` on update) would be
+    refused there, or read as something else."""
+
+    async def test_create_birthday_lands_in_birthday(self):
+        from unittest.mock import patch
+
+        from outlook_mcp import server as server_mod
+
+        sdk = MagicMock()
+        sdk.me.contacts.post = AsyncMock(return_value=MagicMock(id="C1"))
+        client = MagicMock()
+        client.sdk_client = sdk
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=_CFG),
+        ):
+            await server_mod.outlook_create_contact(
+                MagicMock(), first_name="Jane", phone="+15555550100", birthday="1990-05-01"
+            )
+        posted = sdk.me.contacts.post.call_args[0][0]
+        assert posted.birthday.isoformat() == _BIRTHDAY_STORED
+        assert posted.mobile_phone == "+15555550100"
+
+    async def test_update_birthday_lands_in_birthday(self):
+        from unittest.mock import patch
+
+        from outlook_mcp import server as server_mod
+
+        sdk = _make_contact_by_id_mock(_make_mock_contact())
+        client = MagicMock()
+        client.sdk_client = sdk
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=_CFG),
+        ):
+            await server_mod.outlook_update_contact(
+                MagicMock(), contact_id="contact123", birthday="1990-05-01"
+            )
+        patched = sdk.me.contacts.by_contact_id.return_value.patch.call_args[0][0]
+        assert patched.birthday.isoformat() == _BIRTHDAY_STORED
+        assert patched.business_phones is None
+        assert patched.home_phones is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool", ["outlook_create_contact", "outlook_update_contact"])
+async def test_birthday_is_described_as_a_date_where_the_model_reads_it(tool):
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    assert "birthday" in tools[tool].input_schema["properties"]
+    assert "YYYY-MM-DD" in tools[tool].description

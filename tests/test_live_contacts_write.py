@@ -46,6 +46,7 @@ class TestCreateContactRoundTrip:
             company="LiveWriteGuard Co",
             title="Dr.",
             job_title="Probe",
+            birthday="1987-06-05",
         ) as contact_id:
             got = await get_contact(real_graph_client.sdk_client, contact_id)
 
@@ -63,6 +64,9 @@ class TestCreateContactRoundTrip:
             assert got["title"] == "Dr."
             assert got["job_title"] == "Probe"
             assert not got["display_name"].startswith("Probe")
+            # The instant exactly as sent: Graph neither moved it to another zone's
+            # midnight nor dropped the time, so the date reads the same everywhere.
+            assert got["birthday"] == "1987-06-05 11:59:00+00:00"
 
 
 class TestUpdateContactRoundTrip:
@@ -83,11 +87,13 @@ class TestUpdateContactRoundTrip:
                 email="after@example.com",
                 phone="+15555550197",
                 job_title="Probe-After",
+                birthday="1988-07-06",
                 config=live_write_config,
             )
 
             got = await get_contact(real_graph_client.sdk_client, contact_id)
             assert got["job_title"] == "Probe-After"
+            assert got["birthday"] == "1988-07-06 11:59:00+00:00"
             assert got["title"] == ""
             assert got["first_name"] == f"{LIVE_WRITE_NAME}-After"
             assert got["last_name"] == "After"
@@ -510,3 +516,37 @@ class TestEmailAddressRoundTrip:
                 f"Graph kept all four addresses ({sent.status_code}); the three-address "
                 "refusal in update_contact is no longer needed."
             )
+
+
+class TestBirthdayRoundTrip:
+    async def test_a_birthday_is_replaced_and_survives_an_unrelated_update(
+        self, real_graph_client, live_write_config
+    ):
+        """Set on create, replaced on update, and left alone by a name-only patch."""
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="Birthday",
+            birthday="2000-02-29",
+        ) as contact_id:
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["birthday"] == "2000-02-29 11:59:00+00:00"
+
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                birthday="2000-03-01",
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["birthday"] == "2000-03-01 11:59:00+00:00"
+
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                last_name="Birthday-Kept",
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["birthday"] == "2000-03-01 11:59:00+00:00"

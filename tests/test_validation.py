@@ -16,6 +16,7 @@ from outlook_mcp.validation import (
     resolve_timezone,
     sanitize_kql,
     sanitize_output,
+    validate_birthday,
     validate_datetime,
     validate_email,
     validate_event_key,
@@ -339,6 +340,48 @@ class TestPhoneValidation:
     def test_rejects_too_long(self):
         with pytest.raises(ValueError):
             validate_phone("1" * 31)
+
+
+class TestBirthdayValidation:
+    """A birthday is a date. Graph stores it as an instant, so the tool picks the time."""
+
+    def test_a_date_becomes_that_day_at_11_59_utc(self):
+        """11:59 UTC is where Outlook stores a birthday: the same calendar date from
+        UTC-11:59 to UTC+12:00, where midnight UTC is the day before everywhere west
+        of Greenwich."""
+        from datetime import datetime
+        from datetime import timezone as dt_timezone
+
+        assert validate_birthday("1990-05-01") == datetime(
+            1990, 5, 1, 11, 59, tzinfo=dt_timezone.utc
+        )
+
+    def test_a_leap_day_is_a_date(self):
+        assert validate_birthday("2000-02-29").day == 29
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "1990-5-1",
+            "1990-02-30",
+            "01/05/1990",
+            "May 1, 1990",
+            "1990-05-01T00:00:00Z",
+            "1990-05-01 11:59:00+00:00",
+            "1990-05-01\n",
+            "--05-01",
+            "19900501",
+            "1990-W18-2",
+        ],
+    )
+    def test_anything_but_a_plain_date_is_refused(self, value):
+        """A time is refused rather than dropped: the caller would otherwise be told
+        "updated" with a value other than the one sent. The ISO forms Python 3.11+
+        also parses as dates (`19900501`, week dates) are refused too, so the rule is
+        the same on every supported Python, 3.10 included."""
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            validate_birthday(value)
 
 
 class TestOutputSanitization:

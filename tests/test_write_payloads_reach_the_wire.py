@@ -962,6 +962,7 @@ class TestContacts:
             company="SENTINEL-COMPANY-b11",
             title="SENTINEL-TITLE-b12",
             job_title="SENTINEL-JOBTITLE-b13",
+            birthday="1987-06-05",
             config=_CFG,
         )
 
@@ -976,6 +977,8 @@ class TestContacts:
             # `title` is Graph's name prefix ("Dr."), `jobTitle` the job (#119).
             '"title": "SENTINEL-TITLE-b12"',
             '"jobTitle": "SENTINEL-JOBTITLE-b13"',
+            # A date in, an instant out: Graph's `birthday` is a DateTimeOffset.
+            '"birthday": "1987-06-05T11:59:00+00:00"',
         )
 
     async def test_create_contact_job_title_never_becomes_the_name_prefix(self):
@@ -1012,6 +1015,7 @@ class TestContacts:
             },
             business_address={"city": "SentinelBusinessCity2"},
             other_address={"city": "SentinelOtherCity2"},
+            birthday="1988-07-06",
             config=_CFG,
         )
 
@@ -1032,6 +1036,7 @@ class TestContacts:
             '"countryOrRegion": "SentinelCountry2"',
             '"businessAddress": {"city": "SentinelBusinessCity2"}',
             '"otherAddress": {"city": "SentinelOtherCity2"}',
+            '"birthday": "1988-07-06T11:59:00+00:00"',
         )
 
     async def test_update_contact_can_correct_the_name_prefix(self):
