@@ -94,7 +94,7 @@ def test_me_is_sent_as_me_not_as_the_placeholder():
         f"/me reached the wire as the SDK placeholder: {url}\n"
         "The msgraph-core rewrite did not fire. This is what a fresh install on "
         "kiota >= 1.13 with msgraph-core <= 1.5.1 does (#80). Check the resolved "
-        "versions against the caps in pyproject.toml."
+        "versions against the msgraph-core floor in pyproject.toml."
     )
     assert url.endswith("/v1.0/me"), url
 
