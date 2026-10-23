@@ -114,6 +114,13 @@ async def _send_with_large_attachment(sdk, tmp_path, monkeypatch):
     )
 
 
+# What createReply, createReplyAll and createForward answer: the new draft.
+_THREAD_DRAFT = (
+    201,
+    {},
+    {"id": "R1", "body": {"contentType": "html", "content": "<body>q</body>"}},
+)
+
 _LARGE_SEND_SETUP = {
     "/me/messages": [(201, {}, {"id": "D1"})],
     "/createUploadSession": [(200, {}, {"uploadUrl": "https://upload.example.com/s"})],
@@ -128,17 +135,19 @@ SENDS = [
         "Sent Items",
         id="send_message",
     ),
+    # A reply, and a forward with a comment, are sent from the draft their text was
+    # patched into (`mail_write._send_in_thread`): the draft's send is the write.
     pytest.param(
-        "/me/messages/M1/reply",
+        "/me/messages/R1/send",
         lambda sdk, *_: mail_write.reply(sdk, "M1", "b", config=_CFG),
-        {},
+        {"/createReply": [_THREAD_DRAFT], "/me/messages/R1": [(200, {}, {})]},
         "Sent Items",
         id="reply",
     ),
     pytest.param(
-        "/me/messages/M1/replyAll",
+        "/me/messages/R1/send",
         lambda sdk, *_: mail_write.reply(sdk, "M1", "b", reply_all=True, config=_CFG),
-        {},
+        {"/createReplyAll": [_THREAD_DRAFT], "/me/messages/R1": [(200, {}, {})]},
         "Sent Items",
         id="reply_all",
     ),
@@ -148,6 +157,13 @@ SENDS = [
         {},
         "Sent Items",
         id="forward",
+    ),
+    pytest.param(
+        "/me/messages/R1/send",
+        lambda sdk, *_: mail_write.forward(sdk, "M1", _TO, comment="c", config=_CFG),
+        {"/createForward": [_THREAD_DRAFT], "/me/messages/R1": [(200, {}, {})]},
+        "Sent Items",
+        id="forward_with_comment",
     ),
     pytest.param(
         "/me/messages/D1/send",

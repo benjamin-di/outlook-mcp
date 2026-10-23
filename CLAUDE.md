@@ -57,6 +57,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   - `contacts_delta.py` — Contacts delta-sync queries (`outlook_list_contacts_delta`)
   - `_delta.py` — Shared httpx-backed delta helper (raw HTTP bypasses the SDK)
   - `_recurrence.py` — Shared recurrence conversion for calendar events and To Do tasks (Graph models both identically)
+  - `_mail_body.py` — Shared mail-body conversion: plain text as HTML, and a reply's or forward's text above the quote Graph wrote
   - `digest.py` — Composed "since last call" digest (`outlook_changes_since`) wrapping the three delta tools
 
 ## Conventions
