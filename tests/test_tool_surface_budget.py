@@ -123,9 +123,17 @@ CHARS_PER_TOKEN = 4
 # it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
 # 13,500: ~1% headroom, as before.
 #
-# 14,408 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
-# in this order); ceiling 14,600, ~1% headroom, as before.
-TOOL_SURFACE_CEILING = 14_600
+# 13,314 with `phone` on `outlook_search_contacts` (+53): the argument, `query`
+# becoming optional (one of the two is required, checked in the handler), and one
+# line saying `phone` finds a number written any way. On the Exchange Online
+# mailbox checked, Graph's contact `$search` found a number only as stored, so the
+# same number without its country code found nothing. A separate find-by-phone
+# tool would pay the scaffolding every schema carries for the same rows. Over the
+# ~39 tokens left, so a deliberate raise to 13,500: ~1% headroom, as before.
+#
+# 14,461 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
+# in this order); ceiling 14,700, ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 14_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
