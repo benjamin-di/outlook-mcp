@@ -22,10 +22,12 @@ from outlook_mcp.tools._recurrence import (
     same_pattern,
     serialize_recurrence,
 )
+from outlook_mcp.tools.calendar_read import EVENT_KEY_PROPERTY_ID
 from outlook_mcp.validation import (
     resolve_config_event_timezone,
     validate_datetime,
     validate_email,
+    validate_event_key,
     validate_event_timezone,
     validate_graph_id,
 )
@@ -89,6 +91,22 @@ _ALL_DAY_ZONE_REFUSAL = (
     "To turn it into a timed event instead, pass is_all_day=False with real "
     "start and end times."
 )
+
+
+def _key_property(key: str) -> Any:
+    """The extended property that stamps an event with ``key``.
+
+    Sent in the event's own POST or PATCH; Graph upserts it by id, so an
+    update replaces the key in place. This server offers no way to clear one.
+    """
+    from msgraph.generated.models.single_value_legacy_extended_property import (
+        SingleValueLegacyExtendedProperty,
+    )
+
+    prop = SingleValueLegacyExtendedProperty()
+    prop.id = EVENT_KEY_PROPERTY_ID
+    prop.value = key
+    return prop
 
 
 def _has_attendees(event: Any) -> bool:
@@ -402,6 +420,7 @@ async def create_event(
     recurrence: dict | str | None = None,
     timezone: str | None = None,
     show_as: str | None = None,
+    key: str | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -443,7 +462,15 @@ async def create_event(
     positional argument for an external caller. ``show_as`` therefore sits
     after ``timezone``, and ``server.py``'s positional call has to agree — a
     disagreement there only misfires when a value is actually supplied, so a
-    green suite proves nothing about it.
+    green suite proves nothing about it. ``key`` is appended after ``show_as``
+    for the same reason.
+
+    ``key`` is the caller's own reference for the event — a booking number,
+    say — stored in a hidden extended property (``EVENT_KEY_PROPERTY_ID``) so
+    ``find_events_by_key`` can find the event again when a change to the same
+    booking arrives. Nothing here refuses a key another event already has:
+    looking first is the caller's step, and a check here could not stop two
+    concurrent creates anyway.
     """
     check_permission(config, CATEGORY_CALENDAR_WRITE, "outlook_create_event")
     if attendees:
@@ -481,6 +508,8 @@ async def create_event(
     # before anything is sent. `update_event` has the same ordering for a
     # sharper reason (see there); these two stay the same shape deliberately.
     resolved_show_as = _free_busy(show_as) if show_as is not None else None
+    if key is not None:
+        key = validate_event_key(key)
 
     from msgraph.generated.models.attendee import Attendee
     from msgraph.generated.models.body_type import BodyType
@@ -527,6 +556,9 @@ async def create_event(
     if resolved_show_as is not None:
         event.show_as = resolved_show_as
 
+    if key is not None:
+        event.single_value_extended_properties = [_key_property(key)]
+
     response = await graph_client.me.events.post(event)
 
     return {
@@ -550,6 +582,7 @@ async def update_event(
     is_all_day: bool | None = None,
     show_as: str | None = None,
     timezone: str | None = None,
+    key: str | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -648,6 +681,12 @@ async def update_event(
     not ``is_all_day``. Graph honours all six values on PATCH for a consumer
     mailbox, verified live. Omitting it leaves the event's current status alone;
     there is no value that clears one, because Graph has no such state.
+
+    ``key`` sets or replaces the event's key (see ``create_event``) and needs no
+    read: it is neither a time nor a pattern, so the occurrence check and the
+    pin for a series reshape do not apply. Whether Graph agrees that keying a
+    master leaves its changed occurrences alone is a live-tier question, asked
+    by ``test_keying_a_series_keeps_them``.
     """
     check_permission(config, CATEGORY_CALENDAR_WRITE, "outlook_update_event")
     if attendees:
@@ -705,6 +744,8 @@ async def update_event(
     # surface as that refusal, two reads later, instead of as the input error.
     if recurrence is not None:
         check_recurrence_shape(recurrence)
+    if key is not None:
+        key = validate_event_key(key)
 
     # The event as Graph currently holds it, fetched at most once and only when
     # something actually needs it: the zone a start/end patch must carry, the
@@ -914,6 +955,9 @@ async def update_event(
 
     if resolved_show_as is not None:
         event.show_as = resolved_show_as
+
+    if key is not None:
+        event.single_value_extended_properties = [_key_property(key)]
 
     request_builder = graph_client.me.events.by_event_id(event_id)
     if if_match:
