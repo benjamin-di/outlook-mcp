@@ -2,6 +2,15 @@
 
 Newest first. Every worker session prepends: date, task, key outcomes, files/test evidence, notes for the next worker.
 
+## 2026-10-23 — pr122-final-fixes (steering: Michael's maintainer review + checker review of c97ecde)
+
+- Addressed PR comments: IC_kwDOSA_0Lc8AAAABewh78g (`[construct review]`, two CHANGELOG findings), IC_kwDOSA_0Lc8AAAABewxvxQ (Michael, `[maintainer review]`, two README lines + "no further changes on this PR"). No inline comments.
+- All four verified before editing: httpx 0.28.1 `_config.py` reads `SSL_CERT_FILE` before `certifi.where()`; mcp `lowlevel/server.py` defaults `middleware = [OpenTelemetryMiddleware()]`, `server/_otel.py` passes `ctx.meta` to `extract_trace_context` → `opentelemetry.propagate.extract`; `src/outlook_mcp/server.py` never touches `middleware` and runs `transport="stdio"`; `_format_contact_detail` returns `job_title`; pyproject has `msgraph-core>=1.5.2` and no kiota cap.
+- CHANGELOG Unreleased → Security: certifi line adds the system-CA clause; aiohttp/opentelemetry line now gives stdio-only as the reason, not "never parses". README: `outlook_get_contact` row names `job_title`; #80 troubleshooting says 1.26.0 swaps the cap for the msgraph-core floor (Michael named the version).
+- Docs only, no test change (no behaviour moved). Suite: 1382 passed, 89 deselected; ruff check + format clean.
+- **Next worker:** see the Hold note at the top of QUEUE.md — do not push to #122; wait for it to merge, then start large-upload-checks-each-chunk on a fresh branch. #125 re-checked today: open, unassigned, no comments, no PR.
+- Env note: `uv` needs `PATH=$HOME/.local/bin:$PATH UV_CACHE_DIR=$TMPDIR/uvcache` and `--offline` in the sandbox.
+
 ## 2026-10-22 — aiohttp-lock-refresh (Michael answered A, widened to certifi + opentelemetry-api)
 
 - No new steering on PR #122 (newest comment is the worker's reply IC_kwDOSA_0Lc8AAAABeZZcBQ; no inline comments).

@@ -74,11 +74,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   impersonate `login.microsoftonline.com` or `graph.microsoft.com`. Nothing set a minimum, so
   upgrading this package kept whatever certifi was already installed. It now requires
   `certifi>=2026.10.19`, and `tests/test_trust_store_excludes_compromised_roots.py` checks the
-  root is gone from what both clients load.
+  root is gone from what both clients load. If you followed the README's Linux SSL fix and set
+  `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`, both clients read your system CA bundle instead of
+  certifi, so upgrading this package changes nothing for you: update your distribution's CA
+  package (`ca-certificates`) as well.
 - **The lock moves `aiohttp` to 3.14.5 and `opentelemetry-api` to 1.45.1** (Dependabot alerts;
-  lock only, nothing users install changes). Neither code path runs in this server: aiohttp is
-  never loaded (azure-core imports it only for async credentials, and sign-in is synchronous),
-  and the MCP SDK never parses an inbound `tracestate` header.
+  lock only, nothing users install changes). aiohttp is never loaded (azure-core imports it
+  only for async credentials, and sign-in is synchronous). The `tracestate` parsing the
+  opentelemetry-api advisory names does run: the MCP SDK's default `OpenTelemetryMiddleware`
+  extracts trace context from every request's `_meta`. But the server speaks only stdio, so the
+  only party that can send `_meta` is the client that launched it, which is why there is no
+  minimum on opentelemetry-api.
 
 ### Documentation
 

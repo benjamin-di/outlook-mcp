@@ -238,7 +238,7 @@ uv run outlook-mcp serve    # Start MCP server (default, used by OpenClaw/Claude
 
 ### `me-token-to-replace is invalid` on every call
 
-You're on 1.22.0 installed after 2026-09-18. A fresh install of that version resolves `microsoft-kiota-*` 1.13 or later, which `msgraph-core` 1.5.1 doesn't handle, so every `/me` request reaches Graph as `/users/me-token-to-replace`. Fixed in 1.22.1, which caps kiota below 1.13 ([#80](https://github.com/mpalermiti/outlook-mcp/issues/80)):
+You're on 1.22.0 installed after 2026-09-18. A fresh install of that version resolves `microsoft-kiota-*` 1.13 or later, which `msgraph-core` 1.5.1 doesn't handle, so every `/me` request reaches Graph as `/users/me-token-to-replace`. Fixed in 1.22.1, which caps kiota below 1.13 ([#80](https://github.com/mpalermiti/outlook-mcp/issues/80)). In 1.26.0 that cap is replaced by a `msgraph-core>=1.5.2` floor, which carries the fix and works with kiota 1.13+:
 
 ```bash
 uv tool upgrade outlook-graph-mcp
@@ -341,7 +341,7 @@ configured `timezone`; responses are always UTC.
 |------|-------------|
 | `outlook_list_contacts` | List contacts with cursor pagination. Summaries carry `categories`; `outlook_search_contacts` omits the key because Graph's `$search` does not return it. |
 | `outlook_search_contacts` | Search contacts by name or email. |
-| `outlook_get_contact` | Get full contact details by ID, including home/business/other addresses, categories and personal notes. |
+| `outlook_get_contact` | Get full contact details by ID, including `job_title`, home/business/other addresses, categories and personal notes. |
 | `outlook_create_contact` | Create a new contact. `title` is the name prefix ("Dr.", "Ms."), which Outlook shows in the display name; the job goes in `job_title`. `phone_type` (`mobile`, the default, `business` or `home`) says which kind of number `phone` is. |
 | `outlook_update_contact` | Update contact fields, including `title` and `job_title`. `phone_type` works as on create; a `business` or `home` number **replaces** that list of numbers with the one given. `clear_phones` empties the types it names, so `phone_type="business", clear_phones=["mobile"]` moves a number saved as mobile to business in one update. `home_address`, `business_address` and `other_address` take the shape `outlook_get_contact` returns — any subset of `street`, `city`, `state`, `postal_code`, `country_or_region` — and **replace** that whole address, so pass back every part you want to keep. Omit one to leave it untouched. |
 | `outlook_delete_contact` | Delete a contact. |
