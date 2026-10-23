@@ -83,6 +83,11 @@ CHARS_PER_TOKEN = 4
 # line saying so (+38). A new tool for it would have cost a whole second schema.
 # Ceiling raised to 13,450: the same ~50 tokens of room for a wording fix, not
 # for another batch.
+#
+# 13,269 with folder paths (#144, +8): `outlook_list_folders` says each folder
+# carries the `path` folder arguments accept. The path rule itself went into
+# INSTRUCTIONS, which every tool that takes a folder shares and which is sent
+# once per session, not into five docstrings. No raise.
 TOOL_SURFACE_CEILING = 13_600
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
