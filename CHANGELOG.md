@@ -38,6 +38,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the first attempt had gone through, the retry is the one refused — so an agent reported a
   change that landed as a failure (#96). The hint now says the change may already have been
   applied and to re-read the item before trying again. Retry behaviour is unchanged.
+- **Failures outside the Graph SDK reach the model with their text and a remedy.** Only SDK
+  errors were translated, so three others arrived as a bare `Error executing tool <name>`. A
+  stale cursor on a standalone delta tool (`410`, `syncStateNotFound`) now says to discard it and
+  sync again with no `delta_token`; the server log no longer carries that cursor either, which the
+  crash's traceback did. A failed `$batch` in `outlook_read_messages` carries Graph's own message
+  and the usual hint (back-off on `429`). A sign-in that lapses mid-session (a revoked or
+  idle-expired refresh token) gets the remedy startup would give: run `outlook-mcp auth`, or log
+  in again for `AADSTS70000`. And a reply that is not a JSON object is reported as an unreadable
+  Graph reply instead of as invalid input. `outlook_changes_since` still resyncs a stale token on
+  its own.
 
 ### Changed
 
