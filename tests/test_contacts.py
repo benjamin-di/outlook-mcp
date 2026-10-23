@@ -1395,3 +1395,237 @@ async def test_update_says_email_replaces_and_the_lists_merge_where_the_model_re
     assert "add_emails" in description
     assert "remove_emails" in description
     assert "REPLACES" in description
+
+
+_NEXT_PAGE = "https://graph.microsoft.com/v1.0/me/contacts?$top=1000&$select=id&$skip=1000"
+
+
+def _with_phones(display_name, mobile="", business=(), home=()):
+    return _make_mock_contact(
+        id=f"id-{display_name}",
+        display_name=display_name,
+        mobile_phone=mobile,
+        business_phones=list(business),
+        home_phones=list(home),
+    )
+
+
+def _paged_contacts_mock(*pages):
+    """A contacts listing that pages: each page but the last carries a nextLink,
+    followed through `with_url` as the other nextLink walks here do."""
+    responses = [
+        MagicMock(value=list(page), odata_next_link=_NEXT_PAGE if i < len(pages) - 1 else None)
+        for i, page in enumerate(pages)
+    ]
+    client = MagicMock()
+    client.me.contacts.get = AsyncMock(return_value=responses[0])
+    follow = MagicMock()
+    follow.get = AsyncMock(side_effect=responses[1:] or [None])
+    client.me.contacts.with_url = MagicMock(return_value=follow)
+    return client
+
+
+class TestPhoneSearch:
+    """Graph's contact `$search` finds a number only as it is stored.
+
+    Checked against an Exchange Online mailbox: a whole number as stored is found,
+    the same number without its country code is not, and neither is a part of one.
+    Graph documents no contact property for `$search` and lets `$filter` reach only
+    `emailAddresses/any(a:a/address eq ...)`. So `phone` reads the listing and
+    compares digits: a number matches when the digits of the shorter of the two end
+    the longer's, as written or without leading zeros (a `00` prefix, a trunk 0),
+    and the shorter has at least seven.
+    """
+
+    @staticmethod
+    def _found(result):
+        return [c["display_name"] for c in result["contacts"]]
+
+    async def test_a_number_without_its_country_code_finds_the_international_one(self):
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+44 7700 900123")])
+        result = await search_contacts(client, phone="07700 900123")
+        assert self._found(result) == ["Jane"]
+
+    async def test_an_international_number_finds_a_national_one_with_a_trunk_zero(self):
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="020 7946 0018")])
+        result = await search_contacts(client, phone="+44 20 7946 0018")
+        assert self._found(result) == ["Jane"]
+
+    async def test_a_00_prefix_is_the_same_as_a_plus(self):
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+1 (555) 010-0199")])
+        result = await search_contacts(client, phone="001 555 010 0199")
+        assert self._found(result) == ["Jane"]
+
+    async def test_business_and_home_numbers_are_compared_too(self):
+        client = _paged_contacts_mock(
+            [
+                _with_phones("Office", business=["+1 555 010 0100", "+1 555 010 0101"]),
+                _with_phones("Home", home=["+1 555 010 0102"]),
+                _with_phones("Other", mobile="+1 555 010 0103"),
+            ]
+        )
+        assert self._found(await search_contacts(client, phone="5550100101")) == ["Office"]
+        client = _paged_contacts_mock([_with_phones("Home", home=["+1 555 010 0102"])])
+        assert self._found(await search_contacts(client, phone="555-010-0102")) == ["Home"]
+
+    async def test_a_different_number_is_not_found(self):
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+44 7700 900123")])
+        result = await search_contacts(client, phone="07700 900124")
+        assert result["contacts"] == []
+        assert result["count"] == 0
+        assert result["has_more"] is False
+
+    async def test_digits_inside_a_number_do_not_match(self):
+        """Only the end of a number identifies it; seven digits from its middle are
+        the end of nobody's number."""
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+1 555 010 0199")])
+        result = await search_contacts(client, phone="555 0100")
+        assert result["contacts"] == []
+
+    async def test_a_short_stored_number_never_matches(self):
+        """An extension or a short code ends many long numbers; seven digits is the floor."""
+        client = _paged_contacts_mock([_with_phones("Desk", business=["4567"])])
+        result = await search_contacts(client, phone="+1 555 010 4567")
+        assert result["contacts"] == []
+
+    async def test_seven_digits_match_and_six_are_refused(self):
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+1 555 123 4567")])
+        assert self._found(await search_contacts(client, phone="123 4567")) == ["Jane"]
+        with pytest.raises(ValueError, match="at least 7 digits"):
+            await search_contacts(client, phone="23 4567")
+
+    async def test_a_short_number_is_refused_before_anything_is_read(self):
+        client = _paged_contacts_mock([])
+        with pytest.raises(ValueError, match="at least 7 digits"):
+            await search_contacts(client, phone="+1 23 45")
+        client.me.contacts.get.assert_not_called()
+
+    async def test_the_last_digits_find_a_number_even_when_they_start_with_zero(self):
+        """Leading zeros are ignored only as a second try: stripped first, `010 0199`
+        would be six digits and refused, though it ends the stored number."""
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+1 555 010 0199")])
+        result = await search_contacts(client, phone="010 0199")
+        assert self._found(result) == ["Jane"]
+
+    async def test_a_number_with_other_characters_is_refused(self):
+        client = _paged_contacts_mock([])
+        with pytest.raises(ValueError, match="Invalid phone number"):
+            await search_contacts(client, phone="call 555 010 0199")
+        client.me.contacts.get.assert_not_called()
+
+    async def test_query_and_phone_together_are_refused(self):
+        client = _paged_contacts_mock([])
+        with pytest.raises(ValueError, match="query or phone"):
+            await search_contacts(client, query="Jane", phone="+1 555 010 0199")
+        client.me.contacts.get.assert_not_called()
+
+    async def test_neither_is_refused(self):
+        client = _paged_contacts_mock([])
+        with pytest.raises(ValueError, match="query or phone"):
+            await search_contacts(client)
+        client.me.contacts.get.assert_not_called()
+
+    async def test_the_listing_is_read_without_search_in_large_pages(self):
+        client = _paged_contacts_mock([])
+        await search_contacts(client, phone="+1 555 010 0199")
+        qp = client.me.contacts.get.call_args.kwargs["request_configuration"].query_parameters
+        assert qp.search is None
+        assert qp.top == 1000
+        assert ",".join(qp.select) == _SUMMARY_SELECT
+
+    async def test_every_page_is_followed_by_its_next_link(self):
+        client = _paged_contacts_mock(
+            [_with_phones("First", mobile="+1 555 010 0100")],
+            [_with_phones("Second", mobile="+1 555 010 0199")],
+        )
+        result = await search_contacts(client, phone="5550100199")
+        assert self._found(result) == ["Second"]
+        client.me.contacts.with_url.assert_called_once_with(_NEXT_PAGE)
+        assert result["has_more"] is False
+
+    async def test_the_scan_stops_at_its_cap_and_says_the_rest_was_not_read(self):
+        from outlook_mcp.tools import contacts as contacts_mod
+
+        endless = MagicMock(value=[_with_phones("Jane", mobile="+1 555 010 0199")])
+        endless.odata_next_link = _NEXT_PAGE
+        client = MagicMock()
+        client.me.contacts.get = AsyncMock(return_value=endless)
+        follow = MagicMock()
+        follow.get = AsyncMock(return_value=endless)
+        client.me.contacts.with_url = MagicMock(return_value=follow)
+
+        result = await search_contacts(client, phone="5550100199", count=100)
+
+        assert follow.get.await_count == contacts_mod._PHONE_SCAN_PAGES - 1
+        assert result["count"] == contacts_mod._PHONE_SCAN_PAGES
+        # No cursor to hand back, so `has_more` alone says the scan was cut short.
+        assert result["has_more"] is True
+        assert result["cursor"] is None
+
+    async def test_count_caps_the_matches_returned(self):
+        client = _paged_contacts_mock(
+            [
+                _with_phones("A", mobile="+1 555 010 0199"),
+                _with_phones("B", business=["555 010 0199"]),
+                _with_phones("C", home=["15550100199"]),
+            ]
+        )
+        result = await search_contacts(client, phone="+1 555 010 0199", count=2)
+        assert self._found(result) == ["A", "B"]
+        assert result["count"] == 2
+        assert result["has_more"] is True
+        assert result["cursor"] is None
+
+    async def test_matches_have_the_search_shape(self):
+        """The same rows a `query` search returns: no `categories`, since the
+        search path never claims to know them."""
+        client = _paged_contacts_mock([_with_phones("Jane", mobile="+44 7700 900123")])
+        result = await search_contacts(client, phone="7700900123")
+        assert set(result["contacts"][0]) == {"id", "display_name", "email", "phone", "company"}
+
+    async def test_a_query_search_is_unchanged(self):
+        client = _make_contacts_mock([_make_mock_contact()])
+        result = await search_contacts(client, query="John")
+        qp = client.me.contacts.get.call_args.kwargs["request_configuration"].query_parameters
+        assert qp.search == '"John"'
+        assert result["count"] == 1
+
+
+class TestPhoneSearchThroughTheServer:
+    """`server.py` passes `query`, `count` and `phone` positionally."""
+
+    async def test_phone_reaches_the_phone_search(self):
+        from unittest.mock import patch
+
+        from outlook_mcp import server as server_mod
+
+        sdk = _paged_contacts_mock([_with_phones("Jane", mobile="+44 7700 900123")])
+        client = MagicMock()
+        client.sdk_client = sdk
+        with patch.object(server_mod, "_get_graph_client", return_value=client):
+            result = await server_mod.outlook_search_contacts(MagicMock(), phone="07700 900123")
+        assert [c["display_name"] for c in result["contacts"]] == ["Jane"]
+
+    async def test_count_still_reaches_count(self):
+        from unittest.mock import patch
+
+        from outlook_mcp import server as server_mod
+
+        sdk = _make_contacts_mock([])
+        client = MagicMock()
+        client.sdk_client = sdk
+        with patch.object(server_mod, "_get_graph_client", return_value=client):
+            await server_mod.outlook_search_contacts(MagicMock(), query="John", count=7)
+        qp = sdk.me.contacts.get.call_args.kwargs["request_configuration"].query_parameters
+        assert qp.top == 7
+
+
+@pytest.mark.asyncio
+async def test_phone_search_is_described_where_the_model_reads_it():
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    tool = tools["outlook_search_contacts"]
+    assert "phone" in tool.input_schema["properties"]
+    assert "query" not in tool.input_schema.get("required", [])
+    assert "phone" in tool.description

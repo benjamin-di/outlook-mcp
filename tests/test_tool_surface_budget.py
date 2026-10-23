@@ -96,7 +96,13 @@ CHARS_PER_TOKEN = 4
 # 13,676 with add_emails and remove_emails on outlook_update_contact (#161):
 # two list arguments and the line distinguishing them from email, which replaces
 # the whole list (+90 on main at 13,586). The 13,700 ceiling still holds.
-TOOL_SURFACE_CEILING = 13_700
+#
+# 13,729 with phone on outlook_search_contacts (#165, +53 on #162 at 13,676):
+# the optional query argument and phone matching description. The contacts stack
+# includes birthday, company, categories, notes and middle name now on main;
+# its combined surface needs a 13,900 ceiling (~1% headroom), rather than the
+# 13,600 discussed before those fields landed.
+TOOL_SURFACE_CEILING = 13_900
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
