@@ -11,12 +11,14 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
+import httpx
+from azure.core.exceptions import ClientAuthenticationError
 from mcp.server.caching import CacheHint
 from mcp.server.mcpserver import Context, MCPServer
 from pydantic import ValidationError
 
 from outlook_mcp import __version__, toolsets
-from outlook_mcp.auth import AuthManager
+from outlook_mcp.auth import AuthManager, error_for_failed_refresh
 from outlook_mcp.config import (
     DEFAULT_CONFIG_DIR,
     Config,
@@ -29,6 +31,7 @@ from outlook_mcp.errors import (
     ToolInputError,
     UnencryptedTokenCacheError,
     wrap_graph_error,
+    wrap_http_status_error,
 )
 from outlook_mcp.graph import GraphClient
 from outlook_mcp.tools import (
@@ -215,6 +218,11 @@ def _wrap_tool_errors(func: Callable[..., Any]) -> Callable[..., Any]:
     - Convert Graph SDK errors (``ODataError`` / ``APIError``) into
       ``GraphAPIError`` via :func:`wrap_graph_error` so agents see
       ``{code, message, action}`` instead of raw SDK exception text.
+    - Convert the two failures that reach Graph without the SDK the same way:
+      an ``httpx.HTTPStatusError`` from the raw delta and ``$batch`` paths
+      (:func:`wrap_http_status_error`), and a token refresh azure-identity
+      refused mid-session (:func:`error_for_failed_refresh`), which gets the
+      remedy startup would have given.
     - Re-raise anything else unchanged: a crash is not something we saw coming,
       and its text stays on the server.
 
@@ -228,6 +236,10 @@ def _wrap_tool_errors(func: Callable[..., Any]) -> Callable[..., Any]:
             return await func(*args, **kwargs)
         except OutlookMCPError:
             raise
+        except httpx.HTTPStatusError as exc:
+            raise wrap_http_status_error(exc) from exc
+        except ClientAuthenticationError as exc:
+            raise error_for_failed_refresh(exc) from exc
         except ValueError as exc:
             raise ToolInputError(str(exc)) from exc
         except Exception as exc:
