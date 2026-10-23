@@ -59,6 +59,13 @@ outlook-mcp is designed with security in mind:
   and set `read_only_consent: true` beside `read_only: true`, which makes sign-in ask for
   the read scopes and nothing else. A saved sign-in is only used with the app registration
   it was made for.
+- **Sender authentication:** `include_sender_auth=True` on the read tools reports
+  Microsoft's verdict on a message's From domain. Only the topmost
+  `Authentication-Results` header counts: a sender can write that header into a
+  message, and Microsoft adds its own above everything the sender wrote. It is
+  parsed as RFC 8601, a pass must be aligned with the From domain, and a header
+  that names another service, fails DMARC or composite authentication, states
+  either twice, or cannot be parsed authenticates nothing.
 - **Input validation:** All Graph IDs, emails, dates, KQL queries, and folder names are validated before use
 - **Atomic writes:** Config files are written atomically to prevent corruption
 - **Symlink rejection:** Config loader refuses symlinked files
