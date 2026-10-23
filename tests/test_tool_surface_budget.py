@@ -135,6 +135,10 @@ CHARS_PER_TOKEN = 4
 # 14,197 once #129 (downloads returned as content, inline uploads, +233) merged onto
 # the contacts pair (13,964): over both the 14,100 set for the pair and the 14,000
 # #129 set on its own base. Raised at merge time to 14,350: ~1% headroom.
+#
+# 13,662 with include_sender_auth on the two read tools (#130, +76 on main
+# at 13,586). The existing 13,700 ceiling covers the optional authentication
+# field; guidance is in INSTRUCTIONS, paid once per session.
 TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
