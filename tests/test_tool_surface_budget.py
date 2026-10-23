@@ -117,9 +117,15 @@ CHARS_PER_TOKEN = 4
 # add a second address had to drop the first. Two arguments do not fit the ~39
 # tokens left, so this is a deliberate raise to 13,500: ~1% headroom, as before.
 #
-# 14,344 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
-# in this order); ceiling 14,500, ~1% headroom, as before.
-TOOL_SURFACE_CEILING = 14_500
+# 13,326 with `birthday` on `outlook_create_contact` (+31) and
+# `outlook_update_contact` (+34): the argument on each, and the words saying it is a
+# date, YYYY-MM-DD. `outlook_get_contact` already returned it; nothing could write
+# it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
+# 13,500: ~1% headroom, as before.
+#
+# 14,408 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
+# in this order); ceiling 14,600, ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 14_600
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
