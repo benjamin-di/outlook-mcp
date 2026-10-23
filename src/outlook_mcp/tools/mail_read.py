@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 import httpx
 
+from outlook_mcp.errors import unreadable_graph_reply
 from outlook_mcp.folder_resolver import (
     fetch_all_child_folders,
     fetch_all_top_level_folders,
@@ -565,7 +566,8 @@ async def read_messages(
         ``{id, status, code, message}`` for sub-requests that didn't
         return 2xx. Input-validation errors raise ``ValueError``;
         transport-level errors raise ``httpx.HTTPStatusError`` (a 5xx on
-        the whole batch is *not* a partial failure).
+        the whole batch is *not* a partial failure), and a reply that is
+        not a JSON object raises ``GraphAPIError``.
     """
     if not message_ids:
         raise ValueError("message_ids must not be empty")
@@ -610,7 +612,13 @@ async def read_messages(
                 content=json.dumps({"requests": reqs}),
             )
             resp.raise_for_status()
-            return resp.json()
+            try:
+                payload = resp.json()
+            except ValueError:  # JSONDecodeError, or a body that is not UTF-8
+                payload = None
+            if not isinstance(payload, dict):
+                raise unreadable_graph_reply(resp.status_code)
+            return payload
 
         # $batch returns HTTP 200 even when individual sub-requests are
         # throttled (429/503). retry_throttled_subrequests re-issues just the

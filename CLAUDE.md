@@ -76,7 +76,11 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   `Error executing tool <name>` with the message withheld. That is not a detail: it silently
   suppressed the entire hierarchy from 1.14.0 to 1.19.0 while every type assertion stayed green.
   A new error type inherits from `OutlookMCPError`, and `__str__` carries the `action` hint
-  because that string is what the agent reads. Guarded by `test_error_text_reaches_client.py`
+  because that string is what the agent reads. Guarded by `test_error_text_reaches_client.py`.
+  `_wrap_tool_errors` also converts the two non-SDK failures every raw-httpx path can raise:
+  `httpx.HTTPStatusError` (from `raise_for_status()`, rebuilt without the URL) and
+  azure-identity's `ClientAuthenticationError`. A raw path guards `response.json()` with
+  `unreadable_graph_reply`: its `JSONDecodeError` is a `ValueError`, reported as invalid input
 - Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 68
   docstrings — a docstring is paid for on every turn by every client. A docstring stays
   self-sufficient for using *that* tool; sequencing across tools does not belong there

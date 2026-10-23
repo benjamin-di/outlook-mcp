@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from outlook_mcp.errors import ForeignCursorError, UntrustedURLError
+from outlook_mcp.errors import ForeignCursorError, UntrustedURLError, unreadable_graph_reply
 from outlook_mcp.graph import GRAPH_HOST  # the only host that may receive a Graph token
 from outlook_mcp.throttle import send_with_retry
 
@@ -239,7 +239,12 @@ async def fetch_delta_pages(
             # SDK's kiota RetryHandler, so it must honor Retry-After itself).
             r = await send_with_retry(client, "GET", url, headers=base_headers)
             r.raise_for_status()
-            body = r.json()
+            try:
+                body = r.json()
+            except ValueError:  # JSONDecodeError, or a body that is not UTF-8
+                body = None
+            if not isinstance(body, dict):
+                raise unreadable_graph_reply(r.status_code)
 
             page_items = body.get("value") or []
             collected.extend(page_items)
