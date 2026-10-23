@@ -98,6 +98,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `tests/test_docs_match_the_surface.py` pins tool lists, per-section and total counts,
   toolset groups, the concise list, the category set and the prompts to the code.
 
+- **A send answered 503 or 504 is no longer sent again.** Every SDK request passes through
+  kiota's `RetryHandler`, which re-sends a request answered 429, 503 or 504, and POST is among
+  the methods it retries. A 503 or 504 does not say the write failed, only that its answer did
+  not arrive, so a message, an invitation or an RSVP could go out up to four times, and a draft
+  that had already gone out could be reported as a failed send (#131). `outlook_send_message`, `outlook_reply`,
+  `outlook_forward`, `outlook_send_draft`, `outlook_send_with_attachments`,
+  `outlook_create_event` and `outlook_rsvp` now make that write with kiota's retry off. A 429
+  is still sent again after `Retry-After`, as before: Graph fails a throttled request and asks
+  for it again. On a 5xx the error now says the message, invitation or response may already
+  have gone and where to check (Sent Items, the calendar, the event), instead of "Retry after a
+  short delay". Every other call keeps kiota's retries.
+
 ## [1.25.1] — 2026-10-07
 
 A patch release. The last two code items from the 1.24.0 security review, a calendar fix from a
