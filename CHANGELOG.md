@@ -8,6 +8,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **`outlook_batch_triage` retries a throttled message instead of reporting it as failed.**
+  Graph answers a `$batch` with 200 even when it throttled some of the requests inside it, and
+  documents that the SDK's retry handler does not retry those; each comes back 429 with its own
+  `Retry-After`. `outlook_read_messages` has re-sent them since 1.12.0. The write batch goes
+  through the SDK adapter, whose retry handler covers the whole request, so it looked covered and
+  was not: a throttled move, flag or category change was returned as a per-message error. It now
+  re-sends just the throttled ones through the same `retry_throttled_subrequests`, up to three
+  times. If a re-send itself fails, only the re-sent messages are reported as failed, so the ones
+  an earlier round changed are not hidden behind an error. A batch Graph refused as a whole came
+  back as a successful call with every message marked `no response from batch` and Graph's reason
+  dropped; it is now one tool error in Graph's words, raised as every SDK call raises it. A reply
+  that is not JSON is reported as such, saying the outcome is unknown, rather than as invalid
+  input.
+- **`outlook_batch_triage` no longer marks messages unread when asked to mark them read.**
+  `mark_read` treated any `value` other than `"true"` as unread, and the tool describes the value
+  as a status, so `"read"`, `"yes"` or `"True "` marked every message in the batch unread. It now
+  takes `true`/`false` or `read`/`unread`, in any case, and refuses anything else before sending.
 - **Tool descriptions no longer carry the source file's indentation.** The SDK publishes each
   tool's docstring as Python stores it. Python 3.13 strips a docstring's indentation when it
   compiles it; 3.10–3.12 keep it, so on those versions every client paid for about 240 proxy
