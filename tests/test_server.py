@@ -40,6 +40,8 @@ EXPECTED_TOOLS = [
     "outlook_update_event",
     "outlook_delete_event",
     "outlook_rsvp",
+    "outlook_attach_to_event",
+    "outlook_remove_event_attachment",
     # ── Tier 2 ──────────────────────────────────────────
     # Contacts (7)
     "outlook_list_contacts",
@@ -97,9 +99,9 @@ EXPECTED_TOOLS = [
 
 
 def test_tool_count():
-    """All 68 tools are registered (auth is CLI-only now)."""
+    """All 70 tools are registered (auth is CLI-only now)."""
     registered = set(mcp._tool_manager._tools.keys())
-    assert len(registered) == 68
+    assert len(registered) == 70
 
 
 def test_all_tools_registered():
