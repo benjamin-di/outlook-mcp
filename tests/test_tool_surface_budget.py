@@ -92,6 +92,10 @@ CHARS_PER_TOKEN = 4
 # `outlook_get_contact` returned categories and notes that nothing could write
 # (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
 # raise to 13,700: ~0.8% headroom.
+#
+# 13,676 with add_emails and remove_emails on outlook_update_contact (#161):
+# two list arguments and the line distinguishing them from email, which replaces
+# the whole list (+90 on main at 13,586). The 13,700 ceiling still holds.
 TOOL_SURFACE_CEILING = 13_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

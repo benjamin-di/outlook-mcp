@@ -84,6 +84,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   leaves them alone. The update description says so, since adding one category with a one-item
   list would drop the rest.
 
+- **A contact's email addresses can be added and removed one at a time** (#161).
+  `outlook_update_contact`'s `email` replaces every address with the one given, so an agent
+  asked to add someone's second address had to drop the first. `add_emails` and
+  `remove_emails` change only the addresses they name: the contact is read, the change is
+  merged into the addresses it holds (kept ones go back as read, display name included), and
+  the update is pinned to that read with `If-Match`, so an edit made in between is refused with
+  `412` instead of being overwritten (#87). Refused before anything is written: `email` together
+  with either list, the same address in both, an empty list, removing an address the contact
+  doesn't have, and a result of more than three addresses, the number of email slots Exchange
+  keeps per contact. `email` is unchanged.
+
 ## [1.26.0] — 2026-10-23
 
 ### Fixed
