@@ -111,9 +111,15 @@ CHARS_PER_TOKEN = 4
 # third tool, at the cost of a second request only for an event that has files.
 # ~1% headroom, as before.
 #
-# 14,254 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
-# in this order); ceiling 14,400, ~1% headroom, as before.
-TOOL_SURFACE_CEILING = 14_400
+# 13,351 with `add_emails` and `remove_emails` on `outlook_update_contact` (+90):
+# the two list arguments, and one line saying `email` replaces every address while
+# they change only the ones named, three at most. Without them an agent asked to
+# add a second address had to drop the first. Two arguments do not fit the ~39
+# tokens left, so this is a deliberate raise to 13,500: ~1% headroom, as before.
+#
+# 14,344 on the combined 71-tool `fleet` tree (upstream main plus each PR above, merged
+# in this order); ceiling 14,500, ~1% headroom, as before.
+TOOL_SURFACE_CEILING = 14_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

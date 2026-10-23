@@ -201,6 +201,74 @@ def _clear_phones(contact: Any, clear_phones: list[str]) -> None:
         contact.home_phones = []
 
 
+# Exchange keeps a contact's addresses in three fixed slots (EmailAddress1 to
+# EmailAddress3 in MS-OXWSCONT), so a merge that comes to more is refused here
+# rather than sent to a store that cannot hold it. Whether Graph would refuse a
+# fourth or drop it is not known offline; the live_write tier asks.
+_MAX_EMAILS = 3
+
+
+def _email_list(name: str, values: list[str] | None) -> list[str] | None:
+    """Validated, de-duplicated addresses from ``add_emails`` / ``remove_emails``.
+
+    Compared without case, as mail addresses are in practice; the first spelling
+    given is the one kept. An empty list is refused rather than read as "nothing
+    to do": a patch that carries nothing and answers "updated" is #41's shape.
+    """
+    if values is None:
+        return None
+    if not values:
+        raise ValueError(f"{name} is empty. Omit it to leave the addresses unchanged.")
+    seen: dict[str, str] = {}
+    for value in values:
+        validate_email(value)
+        seen.setdefault(value.lower(), value)
+    return list(seen.values())
+
+
+def _merged_emails(current: Any, adding: list[str], removing: list[str]) -> list[Any]:
+    """The contact's addresses with ``removing`` taken out and ``adding`` appended.
+
+    Kept addresses go back as they were read, ``name`` included, in their stored
+    order; an added one goes on the end with no name, as ``email`` writes it. The
+    entries are new models built field by field, not the ones the read returned,
+    so what is sent is exactly what is listed here.
+    """
+    from msgraph.generated.models.email_address import EmailAddress
+
+    stored = [
+        (address, getattr(entry, "name", None))
+        for entry in (getattr(current, "email_addresses", None) or [])
+        if (address := getattr(entry, "address", None))
+    ]
+    held = {address.lower() for address, _ in stored}
+    absent = [address for address in removing if address.lower() not in held]
+    if absent:
+        raise ValueError(
+            f"The contact has no address {', '.join(absent)}, so nothing was changed. "
+            f"Its addresses are: {', '.join(a for a, _ in stored) or 'none'}."
+        )
+
+    dropped = {address.lower() for address in removing}
+    kept = [(address, name) for address, name in stored if address.lower() not in dropped]
+    present = {address.lower() for address, _ in kept}
+    merged = kept + [(address, None) for address in adding if address.lower() not in present]
+    if len(merged) > _MAX_EMAILS:
+        raise ValueError(
+            f"A contact holds at most three email addresses, and this would leave "
+            f"{len(merged)}. Nothing was changed. Remove one in the same call to make room."
+        )
+
+    entries = []
+    for address, name in merged:
+        entry = EmailAddress()
+        entry.address = address
+        if name:
+            entry.name = name
+        entries.append(entry)
+    return entries
+
+
 def _primary_phone(contact: Any) -> str:
     """Pick the most representative phone from the consumer-Graph contact fields.
 
@@ -442,6 +510,8 @@ async def update_contact(
     business_address: dict | None = None,
     other_address: dict | None = None,
     clear_phones: list[str] | None = None,
+    add_emails: list[str] | None = None,
+    remove_emails: list[str] | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -459,6 +529,16 @@ async def update_contact(
     the named types, so a number filed as mobile moves to business in one patch.
     ``title`` is the name prefix, here so a job that landed in it can be
     corrected in place (#119).
+
+    ``email`` replaces every address with the one given. ``add_emails`` and
+    ``remove_emails`` change only the addresses they name, so they are merged
+    into the addresses the contact has now: the contact is read, the merge is
+    computed from that read, and the PATCH is pinned to it with ``If-Match``.
+    That is #87's rule for a write that sends back something it read: an edit
+    made in between is refused with ``412`` rather than overwritten, and a read
+    with no change key goes out unpinned. Every argument is checked before the
+    read; the checks that need the stored addresses (a remove the contact does
+    not have, more than three in all) come after it and before any write.
     """
     check_permission(config, CATEGORY_CONTACTS_WRITE, "outlook_update_contact")
     contact_id = validate_graph_id(contact_id)
@@ -473,6 +553,18 @@ async def update_contact(
     _check_phone_type(phone, phone_type)
     if clear_phones is not None:
         _check_clear_phones(clear_phones, phone, phone_type)
+    if email is not None and (add_emails is not None or remove_emails is not None):
+        raise ValueError(
+            "Pass email to replace every address, or add_emails / remove_emails to "
+            "change only the ones named — not both."
+        )
+    adding = _email_list("add_emails", add_emails)
+    removing = _email_list("remove_emails", remove_emails)
+    both = sorted({a.lower() for a in adding or []} & {a.lower() for a in removing or []})
+    if both:
+        raise ValueError(
+            f"{', '.join(both)} is in both add_emails and remove_emails. Name each address once."
+        )
 
     from msgraph.generated.models.contact import Contact
     from msgraph.generated.models.email_address import EmailAddress
@@ -502,7 +594,23 @@ async def update_contact(
     if other_address is not None:
         patch_body.other_address = _build_address("other", other_address)
 
-    await graph_client.me.contacts.by_contact_id(contact_id).patch(patch_body)
+    request_builder = graph_client.me.contacts.by_contact_id(contact_id)
+    if_match: str | None = None
+    if adding is not None or removing is not None:
+        # Last, so every check above has run before anything is read. No
+        # $select, as in get_contact: the whole contact, change key included.
+        current = await request_builder.get()
+        patch_body.email_addresses = _merged_emails(current, adding or [], removing or [])
+        if_match = (getattr(current, "additional_data", None) or {}).get("@odata.etag")
+
+    if if_match:
+        from kiota_abstractions.base_request_configuration import RequestConfiguration
+
+        patch_config = RequestConfiguration()
+        patch_config.headers.add("If-Match", if_match)
+        await request_builder.patch(patch_body, request_configuration=patch_config)
+    else:
+        await request_builder.patch(patch_body)
 
     return {"status": "updated"}
 
