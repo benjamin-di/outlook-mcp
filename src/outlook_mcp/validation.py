@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
@@ -465,6 +465,31 @@ def validate_phone(value: str) -> str:
     if not _PHONE_RE.fullmatch(value):
         raise ValueError(f"Invalid phone number: {value[:30]}")
     return value
+
+
+_BIRTHDAY_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def validate_birthday(value: str) -> datetime:
+    """A contact's birthday, ``YYYY-MM-DD``, as the instant Graph stores: 11:59 UTC.
+
+    Graph's ``birthday`` is a DateTimeOffset, so a date needs a time, and the time
+    decides which day a client in another zone sees. Every birthday on the
+    Exchange Online mailbox this was checked against is stored at 11:59 UTC, which
+    is the same calendar date in every zone from UTC-11 to UTC+12. Midnight UTC,
+    the obvious choice, is the day before everywhere west of Greenwich.
+
+    Only a plain date is accepted. A time would be thrown away here, and the
+    caller told "updated" with a value other than the one it sent.
+    """
+    refusal = f"Invalid birthday: {str(value)[:30]!r}. Use a date, YYYY-MM-DD (1990-05-01)."
+    if not isinstance(value, str) or not _BIRTHDAY_RE.fullmatch(value):
+        raise ValueError(refusal)
+    try:
+        day = date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(refusal) from None
+    return datetime(day.year, day.month, day.day, 11, 59, tzinfo=timezone.utc)
 
 
 def sanitize_output(text: str, multiline: bool = False) -> str:

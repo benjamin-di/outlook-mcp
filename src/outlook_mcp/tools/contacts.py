@@ -10,6 +10,7 @@ from outlook_mcp.permissions import CATEGORY_CONTACTS_WRITE, check_permission
 from outlook_mcp.validation import (
     sanitize_kql,
     sanitize_output,
+    validate_birthday,
     validate_email,
     validate_graph_id,
     validate_phone,
@@ -381,6 +382,7 @@ async def create_contact(
     title: str | None = None,
     job_title: str | None = None,
     phone_type: str = "mobile",
+    birthday: str | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -390,6 +392,8 @@ async def create_contact(
     display name; the job goes in ``job_title``. The two used to be one argument
     in practice — a model filling in a business card put the job in ``title``
     and got "Engineer Jane Doe" back (#119).
+
+    ``birthday`` is a date, stored at 11:59 UTC (see ``validate_birthday``).
     """
     check_permission(config, CATEGORY_CONTACTS_WRITE, "outlook_create_contact")
 
@@ -398,6 +402,7 @@ async def create_contact(
     if phone:
         validate_phone(phone)
     _check_phone_type(phone, phone_type)
+    born = validate_birthday(birthday) if birthday is not None else None
 
     from msgraph.generated.models.contact import Contact
     from msgraph.generated.models.email_address import EmailAddress
@@ -419,6 +424,8 @@ async def create_contact(
         new_contact.title = title
     if job_title:
         new_contact.job_title = job_title
+    if born is not None:
+        new_contact.birthday = born
 
     created = await graph_client.me.contacts.post(new_contact)
 
@@ -442,6 +449,7 @@ async def update_contact(
     business_address: dict | None = None,
     other_address: dict | None = None,
     clear_phones: list[str] | None = None,
+    birthday: str | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -458,7 +466,8 @@ async def update_contact(
     or home write replaces that list with ``[phone]``. ``clear_phones`` empties
     the named types, so a number filed as mobile moves to business in one patch.
     ``title`` is the name prefix, here so a job that landed in it can be
-    corrected in place (#119).
+    corrected in place (#119). ``birthday`` sets or replaces the date; there is
+    no clearing it.
     """
     check_permission(config, CATEGORY_CONTACTS_WRITE, "outlook_update_contact")
     contact_id = validate_graph_id(contact_id)
@@ -473,6 +482,7 @@ async def update_contact(
     _check_phone_type(phone, phone_type)
     if clear_phones is not None:
         _check_clear_phones(clear_phones, phone, phone_type)
+    born = validate_birthday(birthday) if birthday is not None else None
 
     from msgraph.generated.models.contact import Contact
     from msgraph.generated.models.email_address import EmailAddress
@@ -494,6 +504,8 @@ async def update_contact(
         patch_body.title = title
     if job_title is not None:
         patch_body.job_title = job_title
+    if born is not None:
+        patch_body.birthday = born
 
     if home_address is not None:
         patch_body.home_address = _build_address("home", home_address)
