@@ -1,6 +1,6 @@
 ---
 name: outlook-mcp
-description: Production-grade MCP server for personal Outlook (Outlook.com / Hotmail / Live). 68 typed Graph tools across mail, calendar, contacts, to-do, drafts, attachments, folders, threading, batch ops, delta-sync. Granular permissions, OS-keyring auth, /$batch-optimized triage and bulk read. Built for agents that need real Outlook coverage, not a CLI wrapper. BYO Azure app; zero telemetry.
+description: Production-grade MCP server for personal Outlook (Outlook.com / Hotmail / Live). 69 typed Graph tools across mail, calendar, contacts, to-do, drafts, attachments, folders, threading, batch ops, delta-sync. Granular permissions, OS-keyring auth, /$batch-optimized triage and bulk read. Built for agents that need real Outlook coverage, not a CLI wrapper. BYO Azure app; zero telemetry.
 homepage: https://github.com/mpalermiti/outlook-mcp
 metadata:
   openclaw:
@@ -75,7 +75,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `triage_folder(folder="inbox", count=50)` — one scan, sorted, applied in a single batch call
 - `catch_up(since="24h")` — what changed, via the delta path
 
-## Tools (68)
+## Tools (69)
 
 ### Auth
 - `outlook_auth_status` — Check authentication status and read-only mode
@@ -105,11 +105,12 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `outlook_delete_inbox_override` — Delete an override by ID
 
 ### Calendar
-- `outlook_list_events` — List events in date range (expands recurring); each carries `type` (`occurrence`/`exception` for a series instance vs `singleInstance`; a `seriesMaster` never appears on a listing — use `outlook_get_event`) and `show_as` (the free/busy status); `calendar` reads a secondary calendar by name or ID (default calendar when omitted); a cursor continues the same calendar. `concise=True` drops `type` and `show_as`
-- `outlook_get_event` — Get event details, incl. `recurrence`, `type` (`seriesMaster` etc.), `show_as`, and `original_start_time_zone` (the zone the event is anchored in; `start`/`end` are UTC)
-- `outlook_list_events_delta` — List only event changes since last call within a window (massive token savings for recurring agent jobs); each changed event carries every field the *default* `outlook_list_events` listing returns (not `concise=True`'s narrower shape), `type` and `show_as` included, plus `is_deleted` (`True` on a tombstone, which carries only `id`); unlike the listing this one **does** return `seriesMaster` items
-- `outlook_create_event` — Create event with attendees, online meeting; `recurrence` (shorthand or Graph object) creates a series; `timezone` (IANA name) anchors it, defaulting to the config timezone; `show_as` sets Outlook's "Show as" (`free`/`tentative`/`busy`/`oof`/`workingElsewhere`/`unknown`, Graph defaults to `busy`)
-- `outlook_update_event` — Update event fields incl. attendees (replaces the list, sends invites), all-day and `show_as`; `recurrence` converts a single event into a series, `remove_recurrence=True` converts it back; patching a time keeps the zone the event is anchored in, and `timezone` (with start and end) re-anchors it elsewhere; a `start`, `end` or `recurrence` patch to a series with edited or deleted occurrences is refused, because Graph would discard them
+- `outlook_list_events` — List events in date range (expands recurring); each carries `type` (`occurrence`/`exception` for a series instance vs `singleInstance`; a `seriesMaster` never appears on a listing — use `outlook_get_event`) and `show_as` (the free/busy status); `calendar` reads a secondary calendar by name or ID (default calendar when omitted); a cursor continues the same calendar; an event with a `key` carries it. `concise=True` drops `type`, `show_as` and `key`
+- `outlook_get_event` — Get event details, incl. `recurrence`, `type` (`seriesMaster` etc.), `show_as`, `original_start_time_zone` (the zone the event is anchored in; `start`/`end` are UTC) and `key` (`null` when unset)
+- `outlook_find_event_by_key` — Find events by the `key` set on create or update, with no date window; default calendar or `calendar`; returns single events and series masters (never occurrences), `[]` when none
+- `outlook_list_events_delta` — List only event changes since last call within a window (massive token savings for recurring agent jobs); each changed event carries every field the *default* `outlook_list_events` listing returns except `key` (not `concise=True`'s narrower shape), `type` and `show_as` included, plus `is_deleted` (`True` on a tombstone, which carries only `id`); unlike the listing this one **does** return `seriesMaster` items
+- `outlook_create_event` — Create event with attendees, online meeting; `recurrence` (shorthand or Graph object) creates a series; `timezone` (IANA name) anchors it, defaulting to the config timezone; `show_as` sets Outlook's "Show as" (`free`/`tentative`/`busy`/`oof`/`workingElsewhere`/`unknown`, Graph defaults to `busy`); `key` stores your own reference (e.g. a booking number) for `outlook_find_event_by_key`
+- `outlook_update_event` — Update event fields incl. attendees (replaces the list, sends invites), all-day and `show_as`; `recurrence` converts a single event into a series, `remove_recurrence=True` converts it back; patching a time keeps the zone the event is anchored in, and `timezone` (with start and end) re-anchors it elsewhere; a `start`, `end` or `recurrence` patch to a series with edited or deleted occurrences is refused, because Graph would discard them; `key` sets or replaces the event's key
 - `outlook_delete_event` — Delete event
 - `outlook_rsvp` — Accept, decline, or tentatively accept
 
@@ -186,5 +187,5 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - Mail search uses KQL syntax
 - Start with `read_only: true`, flip when comfortable
 - **Granular permissions:** For finer control, set `allow_categories` in config (e.g., `["calendar_write"]` to allow only calendar writes). See README for the 7 categories and example policies.
-- **Toolset selection:** Set `OUTLOOK_MCP_TOOLSETS` (e.g. `mail,calendar,digest,delta`) to load only the tool groups you use and cut per-turn context; unset loads all 68. Tools carry read-only / destructive annotations so clients can auto-approve reads.
+- **Toolset selection:** Set `OUTLOOK_MCP_TOOLSETS` (e.g. `mail,calendar,digest,delta`) to load only the tool groups you use and cut per-turn context; unset loads all 69. Tools carry read-only / destructive annotations so clients can auto-approve reads.
 - **Two accounts:** One server serves one mailbox. Register a second server entry with its own `OUTLOOK_MCP_CONFIG_DIR` (e.g. `~/.outlook-mcp-work`) and run `outlook-mcp auth` once with that variable set. Move only the config directory, never `HOME` — see README "Two accounts, two instances".

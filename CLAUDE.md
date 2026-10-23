@@ -77,7 +77,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   suppressed the entire hierarchy from 1.14.0 to 1.19.0 while every type assertion stayed green.
   A new error type inherits from `OutlookMCPError`, and `__str__` carries the `action` hint
   because that string is what the agent reads. Guarded by `test_error_text_reaches_client.py`
-- Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 68
+- Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 69
   docstrings — a docstring is paid for on every turn by every client. A docstring stays
   self-sufficient for using *that* tool; sequencing across tools does not belong there
 - Anything taking a host filesystem path routes through `resolve_attachment_path`. Paths come
