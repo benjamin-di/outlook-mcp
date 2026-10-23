@@ -616,6 +616,46 @@ async def test_the_event_key_expand_is_accepted_on_a_listing_and_a_read(real_gra
     assert detail["key"] == listed.get("key")
 
 
+async def test_an_events_attachments_are_listed_without_their_bytes(real_graph_client):
+    """`get_event` lists attachments with a `$select` on `/events/{id}/attachments`.
+
+    Without that `$select` Graph sends every file's `contentBytes`. A shape Graph
+    refused would fail every read of an event with files; one it ignored would
+    pass the offline suite while pulling whole files into each read. So the raw
+    response is checked for `contentBytes` too. Read-only: reads at most 20
+    events, and skips when none has a file.
+    """
+    from msgraph.generated.users.item.events.item.attachments.attachments_request_builder import (
+        AttachmentsRequestBuilder,
+    )
+
+    from outlook_mcp.pagination import build_request_config
+    from outlook_mcp.tools.calendar_read import _ATTACHMENT_SELECT, get_event
+
+    sdk = real_graph_client.sdk_client
+    after, before = _wide_window()
+    page = await list_events(sdk, after=after, before=before, count=20)
+    for listed in page["events"]:
+        detail = await get_event(sdk, listed["id"])
+        if detail["attachments"]:
+            break
+    else:
+        pytest.skip("No event with attachments among the first 20 in the window")
+
+    for attachment in detail["attachments"]:
+        assert attachment["id"] and attachment["name"]
+        assert isinstance(attachment["size"], int) and attachment["size"] > 0
+        assert isinstance(attachment["is_inline"], bool)
+
+    raw = await sdk.me.events.by_event_id(detail["id"]).attachments.get(
+        request_configuration=build_request_config(
+            AttachmentsRequestBuilder.AttachmentsRequestBuilderGetQueryParameters,
+            {"$select": _ATTACHMENT_SELECT},
+        )
+    )
+    assert raw.value and all(getattr(a, "content_bytes", None) is None for a in raw.value)
+
+
 async def test_the_event_listing_returns_the_show_as_it_selects(event_walk):
     """`showAs` is in `list_events`' $select, so it must come back populated.
 

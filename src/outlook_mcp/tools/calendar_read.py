@@ -42,6 +42,10 @@ _SUMMARY_SELECT = (
     "id,subject,start,end,location,isAllDay,organizer,responseStatus,isOnlineMeeting,showAs,type"
 )
 
+# An event's attachments as `get_event` lists them: what each one is, never its
+# bytes. Without the `$select`, `contentBytes` of every file comes back, base64.
+_ATTACHMENT_SELECT = "id,name,contentType,size,isInline"
+
 # Concise mode needs `attendees` and `isOrganizer` to compute its two derived
 # fields, and nothing else — keep it tight so a day-at-a-glance scan never pulls
 # event bodies.
@@ -371,11 +375,46 @@ async def list_events(
     }
 
 
+def _format_event_attachment(attachment: Any) -> dict:
+    """One attachment as ``get_event`` lists it; the name is the sender's text."""
+    content_type = attachment.content_type
+    return {
+        "id": attachment.id,
+        "name": sanitize_output(attachment.name or ""),
+        "size": attachment.size,
+        "content_type": sanitize_output(content_type) if content_type else None,
+        "is_inline": bool(attachment.is_inline),
+    }
+
+
+async def _event_attachments(builder: Any) -> list[dict]:
+    """Every attachment on the event ``builder`` addresses, following ``@odata.nextLink``."""
+    from msgraph.generated.users.item.events.item.attachments.attachments_request_builder import (  # noqa: E501
+        AttachmentsRequestBuilder,
+    )
+
+    config = build_request_config(
+        AttachmentsRequestBuilder.AttachmentsRequestBuilderGetQueryParameters,
+        {"$select": _ATTACHMENT_SELECT},
+    )
+    response = await builder.attachments.get(request_configuration=config)
+    found = list(response.value or []) if response else []
+    while isinstance(getattr(response, "odata_next_link", None), str) and response.odata_next_link:
+        response = await builder.attachments.with_url(response.odata_next_link).get()
+        found.extend((response.value or []) if response else [])
+    return [_format_event_attachment(a) for a in found]
+
+
 async def get_event(
     graph_client: Any,
     event_id: str,
 ) -> dict:
-    """Get full details for a single event, with its ``key`` (``None`` when unset)."""
+    """Get full details for a single event, with its ``key`` (``None`` when unset)
+    and its attachments listed.
+
+    The attachments are a second request, made only when Graph reports
+    ``hasAttachments``, so an event without files costs what it always did.
+    """
     event_id = validate_graph_id(event_id)
 
     from msgraph.generated.users.item.events.item.event_item_request_builder import (
@@ -386,9 +425,11 @@ async def get_event(
         EventItemRequestBuilder.EventItemRequestBuilderGetQueryParameters,
         {"$expand": _EVENT_KEY_EXPAND},
     )
-    event = await graph_client.me.events.by_event_id(event_id).get(request_configuration=config)
+    builder = graph_client.me.events.by_event_id(event_id)
+    event = await builder.get(request_configuration=config)
+    attachments = await _event_attachments(builder) if event.has_attachments is True else []
 
-    return {**_format_event_detail(event), "key": event_key(event)}
+    return {**_format_event_detail(event), "key": event_key(event), "attachments": attachments}
 
 
 async def find_events_by_key(

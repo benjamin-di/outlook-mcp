@@ -70,6 +70,8 @@ TOOL_GROUPS: dict[str, str] = {
     "outlook_update_event": "calendar",
     "outlook_delete_event": "calendar",
     "outlook_rsvp": "calendar",
+    "outlook_attach_to_event": "calendar",
+    "outlook_remove_event_attachment": "calendar",
     "outlook_list_calendars": "calendar",
     # contacts
     "outlook_list_contacts": "contacts",
@@ -171,6 +173,8 @@ DESTRUCTIVE: set[str] = {
     "outlook_delete_folder",
     "outlook_delete_inbox_override",
     "outlook_remove_draft_attachment",
+    "outlook_attach_to_event",
+    "outlook_remove_event_attachment",
 }
 
 
