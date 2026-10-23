@@ -85,6 +85,12 @@ _PAIRS = [
         calendar_read._CONCISE_SELECT,
         "calendar_read._CONCISE_SELECT",
     ),
+    (
+        "event attachment",
+        calendar_read._format_event_attachment,
+        calendar_read._ATTACHMENT_SELECT,
+        "calendar_read._ATTACHMENT_SELECT",
+    ),
 ]
 
 # The SDK renames exactly one field to dodge the Python keyword.
