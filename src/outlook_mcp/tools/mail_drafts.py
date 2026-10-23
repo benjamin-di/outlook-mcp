@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import re
-from html import escape
 from typing import Any
 
 from outlook_mcp.config import Config
@@ -12,6 +10,7 @@ from outlook_mcp.errors import MESSAGE_MAY_HAVE_BEEN_SENT
 from outlook_mcp.pagination import apply_pagination, build_request_config, wrap_nextlink
 from outlook_mcp.permissions import CATEGORY_MAIL_DRAFTS, CATEGORY_MAIL_SEND, check_permission
 from outlook_mcp.throttle import call_without_replay
+from outlook_mcp.tools._mail_body import above_quote
 from outlook_mcp.tools.mail_read import SUMMARY_SELECT, _format_message_summary
 from outlook_mcp.validation import validate_datetime, validate_email, validate_graph_id
 
@@ -109,48 +108,18 @@ async def list_drafts(
     }
 
 
-# The opening tag of a draft's HTML body, whatever its case and attributes.
-_BODY_OPEN_TAG = re.compile(r"<body\b[^>]*>", re.IGNORECASE)
-
-
-def _insert_above_quote(draft_body: Any, html: str) -> str:
-    """The draft's body with ``html`` as the first thing inside ``<body>``.
-
-    That is where Outlook puts a reply: createReply, createReplyAll and
-    createForward return the draft with the original already quoted below an
-    ``<hr>`` and Outlook's header block, so inserting here puts the new text
-    above both and leaves the original's markup as Graph wrote it.
-
-    Graph documents the draft these actions create as HTML. A plain-text one
-    keeps its text, escaped, with its line breaks.
-    """
-    from msgraph.generated.models.body_type import BodyType
-
-    content = getattr(draft_body, "content", None) or ""
-    if getattr(draft_body, "content_type", None) != BodyType.Html:
-        quoted = escape(content).replace("\r\n", "\n").replace("\n", "<br>")
-        return f"{html}<br>{quoted}" if quoted else html
-    match = _BODY_OPEN_TAG.search(content)
-    if match is None:
-        return html + content
-    return content[: match.end()] + html + content[match.end() :]
-
-
 async def _create_in_thread(
     graph_client: Any,
     source_id: str,
     fields: Any,
-    body: str,
-    is_html: bool,
     action: str,
 ) -> Any:
     """POST createReply / createReplyAll / createForward and return the draft.
 
     ``fields`` (recipients, subject, importance) ride on the action's
-    ``message``. A plain-text body goes in ``comment``, which Graph places
-    above the quoted original. ``comment`` cannot carry markup and Graph
-    refuses it together with ``message.body``, so an HTML body is left out
-    here and patched in by the caller.
+    ``message``. The body is left out: ``comment`` loses its line breaks on an
+    HTML message and ``message.body`` replaces the quoted original
+    (``_mail_body``), so the caller patches it in above the quote.
     """
     from msgraph.generated.users.item.messages.item.create_forward import (
         create_forward_post_request_body as fwd,
@@ -173,8 +142,6 @@ async def _create_in_thread(
         request_body = rep.CreateReplyPostRequestBody()
         builder = source.create_reply
     request_body.message = fields
-    if not is_html:
-        request_body.comment = body
     return await builder.post(request_body)
 
 
@@ -296,18 +263,16 @@ async def create_draft(
             action = "reply_all"
         else:
             action = "reply"
-        created = await _create_in_thread(graph_client, source_id, msg, body, is_html, action)
+        created = await _create_in_thread(graph_client, source_id, msg, action)
 
-        # What the create call could not carry: markup (comment is plain text)
-        # and the deferred-send property, set the way update_draft sets it.
+        # What the create call does not carry: the body, above the quote Graph
+        # wrote, and the deferred-send property, set the way update_draft sets it.
         patch = Message()
-        if is_html:
-            patch.body = ItemBody()
-            patch.body.content = _insert_above_quote(created.body, body)
-            patch.body.content_type = BodyType.Html
+        if body:
+            patch.body = above_quote(created.body, body, is_html)
         if deferred_prop is not None:
             patch.single_value_extended_properties = [deferred_prop]
-        if is_html or deferred_prop is not None:
+        if body or deferred_prop is not None:
             new_draft = graph_client.me.messages.by_message_id(created.id)
             try:
                 await new_draft.patch(patch)

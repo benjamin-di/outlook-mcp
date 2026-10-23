@@ -640,7 +640,9 @@ def _thread_client(draft=None):
 
 
 class TestCreateDraftInThread:
-    async def test_reply_creates_the_draft_with_create_reply_and_the_body_as_comment(self):
+    async def test_reply_creates_the_draft_with_create_reply_then_patches_the_body(self):
+        from msgraph.generated.models.body_type import BodyType
+
         client, source, new_draft = _thread_client()
 
         result = await create_draft(
@@ -654,13 +656,20 @@ class TestCreateDraftInThread:
 
         sent = source.create_reply.post.call_args.args[0]
         assert isinstance(sent, rep.CreateReplyPostRequestBody)
-        assert sent.comment == "Thanks, see you then."
-        # The body rides on `comment` alone: Graph refuses comment + message.body.
+        # Neither channel: `comment` loses the text's line breaks on an HTML
+        # message, and `message.body` replaces the quoted original.
+        assert sent.comment is None
         assert sent.message.body is None
         source.create_reply_all.post.assert_not_called()
         source.create_forward.post.assert_not_called()
         client.me.messages.post.assert_not_called()
-        new_draft.patch.assert_not_called()
+        new_draft.patch.assert_called_once()
+        patched = new_draft.patch.call_args.args[0]
+        assert patched.body.content_type == BodyType.Html
+        assert patched.body.content == _QUOTED_DRAFT_HTML.replace(
+            '<body dir="ltr">', '<body dir="ltr"><p>Thanks, see you then.</p>'
+        )
+        new_draft.delete.assert_not_called()
         assert result == {
             "status": "created",
             "draft_id": "AAMkThreadDraft=",
@@ -687,11 +696,11 @@ class TestCreateDraftInThread:
         assert isinstance(
             source.create_reply_all.post.call_args.args[0], rep_all.CreateReplyAllPostRequestBody
         )
-        assert source.create_reply_all.post.call_args.args[0].comment == "Agreed."
+        assert source.create_reply_all.post.call_args.args[0].comment is None
         assert result["cc"] == ["other@example.com"]
 
     async def test_forward_uses_create_forward_with_the_recipients(self):
-        client, source, _ = _thread_client(_thread_draft(to=("fwd@example.com",)))
+        client, source, new_draft = _thread_client(_thread_draft(to=("fwd@example.com",)))
 
         result = await create_draft(
             client,
@@ -705,7 +714,8 @@ class TestCreateDraftInThread:
         sent = source.create_forward.post.call_args.args[0]
         assert isinstance(sent, fwd.CreateForwardPostRequestBody)
         assert [r.email_address.address for r in sent.message.to_recipients] == ["fwd@example.com"]
-        assert sent.comment == "FYI"
+        assert sent.comment is None
+        assert "<p>FYI</p>" in new_draft.patch.call_args.args[0].body.content
         source.create_reply.post.assert_not_called()
         assert result["to"] == ["fwd@example.com"]
 
@@ -896,38 +906,72 @@ class TestHtmlReplyDraft:
         content = new_draft.patch.call_args.args[0].body.content
         assert content.startswith('<html><head><meta charset="utf-8"></head><body dir="ltr"><p>FYI')
 
-    def test_the_body_tag_is_found_whatever_its_case_and_attributes(self):
-        from outlook_mcp.tools.mail_drafts import _insert_above_quote
 
-        draft = _thread_draft(content='<HTML><BODY class="x" lang=en>quoted</BODY></HTML>')
+class TestPlainTextReplyDraft:
+    """Plain text in a reply or forward draft keeps its paragraphs, line breaks and
+    lists. Graph's `comment` would join its lines with spaces on an HTML message."""
 
-        assert _insert_above_quote(draft.body, "<p>new</p>") == (
-            '<HTML><BODY class="x" lang=en><p>new</p>quoted</BODY></HTML>'
+    _TEXT = (
+        "First paragraph line one.\nFirst paragraph line two.\n\nSecond paragraph.\n\n"
+        "- bullet one\n- bullet two"
+    )
+
+    async def test_on_an_html_original_it_is_patched_in_as_html_above_the_quote(self):
+        from msgraph.generated.models.body_type import BodyType
+
+        client, source, new_draft = _thread_client()
+
+        await create_draft(
+            client,
+            to=None,
+            subject=None,
+            body=self._TEXT,
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
         )
 
-    def test_a_draft_with_no_body_tag_gets_the_html_in_front(self):
-        from outlook_mcp.tools.mail_drafts import _insert_above_quote
-
-        draft = _thread_draft(content="<div>quoted</div>")
-
-        assert _insert_above_quote(draft.body, "<p>new</p>") == "<p>new</p><div>quoted</div>"
-
-    def test_a_plain_text_draft_keeps_its_quote_as_escaped_text(self):
-        from outlook_mcp.tools.mail_drafts import _insert_above_quote
-
-        draft = _thread_draft(content="From: a <a@example.com>\r\nquoted line", html=False)
-
-        assert _insert_above_quote(draft.body, "<p>new</p>") == (
-            "<p>new</p><br>From: a &lt;a@example.com&gt;<br>quoted line"
+        assert source.create_reply.post.call_args.args[0].comment is None
+        patched = new_draft.patch.call_args.args[0]
+        assert patched.body.content_type == BodyType.Html
+        assert patched.body.content == _QUOTED_DRAFT_HTML.replace(
+            '<body dir="ltr">',
+            '<body dir="ltr"><p>First paragraph line one.<br>First paragraph line two.</p>'
+            "<p>Second paragraph.</p><ul><li>bullet one</li><li>bullet two</li></ul>",
         )
 
-    def test_an_empty_draft_body_is_just_the_new_html(self):
-        from outlook_mcp.tools.mail_drafts import _insert_above_quote
+    async def test_on_a_plain_text_original_it_stays_text_above_the_quote(self):
+        from msgraph.generated.models.body_type import BodyType
 
-        assert _insert_above_quote(None, "<p>new</p>") == "<p>new</p>"
-        assert _insert_above_quote(_thread_draft(content="", html=False).body, "<p>n</p>") == (
-            "<p>n</p>"
+        quote = "\r\n________________\r\nFrom: Sender <sender@example.com>\r\n\r\nOriginal.\r\n"
+        client, _, new_draft = _thread_client(_thread_draft(content=quote, html=False))
+
+        await create_draft(
+            client,
+            to=None,
+            subject=None,
+            body=self._TEXT,
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
         )
+
+        patched = new_draft.patch.call_args.args[0]
+        assert patched.body.content_type == BodyType.Text
+        assert patched.body.content == self._TEXT.replace("\n", "\r\n") + "\r\n" + quote
+
+    async def test_an_empty_body_patches_nothing(self):
+        client, source, new_draft = _thread_client()
+
+        await create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="",
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        source.create_reply.post.assert_called_once()
+        new_draft.patch.assert_not_called()
 
 
 class TestDeferredReplyDraft:
@@ -950,8 +994,9 @@ class TestDeferredReplyDraft:
             source.create_reply.post.call_args.args[0].message.single_value_extended_properties
             is None
         )
+        new_draft.patch.assert_called_once()
         patched = new_draft.patch.call_args.args[0]
-        assert patched.body is None
+        assert "<p>x</p>" in patched.body.content
         (prop,) = patched.single_value_extended_properties
         assert prop.id == "SystemTime 0x3FEF"
         assert prop.value == "2026-12-01T09:00:00Z"
