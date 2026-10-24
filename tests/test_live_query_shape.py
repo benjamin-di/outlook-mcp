@@ -239,6 +239,38 @@ async def test_search_rejects_query_that_sanitizes_to_empty(real_graph_client):
         await search_mail(real_graph_client.sdk_client, query="*", count=5)
 
 
+# ── $search paging: Graph pages a search by $skiptoken ──
+# The failure is silent. No typed request builder has a `$skiptoken` field, so
+# a cursor that loses the token fetches page one again with has_more still true.
+
+# Matches every message, so the result size is the folder's size.
+_SEARCH_EVERYTHING = "received>=2000-01-01"
+
+
+@pytest.mark.parametrize("folder", [None, "inbox"])
+async def test_search_cursor_moves_to_the_next_page(real_graph_client, folder):
+    """Page two of a search must not be page one again, in all mail or in one folder.
+
+    Until the cursor went out through `get_page`, it did: `build_request_config`
+    dropped the `$skiptoken`, so every page was the first, with has_more true.
+    Page two of a folder search goes to the folder the cursor carries.
+    """
+    client = real_graph_client.sdk_client
+    first = await search_mail(client, query=_SEARCH_EVERYTHING, count=25, folder=folder)
+    if not first["has_more"]:
+        pytest.skip(f"the search fits on one page ({first['count']} messages)")
+
+    second = await search_mail(client, query=_SEARCH_EVERYTHING, count=25, cursor=first["cursor"])
+
+    assert second["count"] > 0, "Graph said there was more, and page two came back empty"
+    seen = {m["id"] for m in first["messages"]}
+    repeated = [m["id"] for m in second["messages"] if m["id"] in seen]
+    assert not repeated, (
+        f"page two repeated {len(repeated)} of page one's {len(seen)} messages: the "
+        "$skiptoken did not reach Graph"
+    )
+
+
 # ── contacts: what $select actually brings back ──
 # A $select is the same class of string as a $filter — the mocked suite can only
 # assert we sent it. Whether Graph honours it, and on which endpoint, is a live

@@ -33,6 +33,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `mark_read` treated any `value` other than `"true"` as unread, and the tool describes the value
   as a status, so `"read"`, `"yes"` or `"True "` marked every message in the batch unread. It now
   takes `true`/`false` or `read`/`unread`, in any case, and refuses anything else before sending.
+- **`outlook_search_mail`'s cursor moves to the next page.** Graph pages a message `$search`
+  only with `$skiptoken` (`$search` with `$skip` is `400 SearchWithSkip`), and
+  `build_request_config` dropped the token: no typed `users/*` query-parameters class has the
+  field. So every cursor fetched page one again, with `has_more` still true, and no search could
+  get past its first page. A cursor's page now goes out as the request plus Graph's
+  `$skiptoken`, which is what Graph's own `@odata.nextLink` is. The cursor also carries the
+  folder the search ran in, as `outlook_list_events`'s carries its calendar, so a later page
+  stays in that folder whatever `folder` it is passed.
 
 ## [1.26.0] — 2026-10-23
 

@@ -14,7 +14,14 @@ from outlook_mcp.folder_resolver import (
     fetch_all_top_level_folders,
     resolve_folder_id,
 )
-from outlook_mcp.pagination import apply_pagination, build_request_config, wrap_nextlink
+from outlook_mcp.pagination import (
+    apply_pagination,
+    build_request_config,
+    decode_cursor_payload,
+    encode_cursor_payload,
+    get_page,
+    wrap_nextlink,
+)
 from outlook_mcp.throttle import retry_throttled_subrequests, send_with_retry
 from outlook_mcp.validation import (
     sanitize_kql,
@@ -676,46 +683,72 @@ async def search_mail(
 
     concise: when True, drop ``preview`` and ``categories`` from each message
     (smaller payload for triage scans). Default False preserves the existing shape.
+
+    Graph pages a ``$search`` only with ``$skiptoken``, which ``get_page``
+    sends. A cursor continues the search it came from: the folder is stored in
+    it, so a later page neither re-resolves the name nor drifts to another
+    folder (or to all mail) when the argument is omitted or changed.
     """
     count = _clamp(count, 1, 100)
     safe_query = sanitize_kql(query)
 
+    # Decode before any network call, so a bad cursor is refused for free:
+    # `apply_pagination` refuses a `skiptoken` that is not a non-empty string.
+    payload = decode_cursor_payload(cursor) if cursor else {}
     query_params = apply_pagination({}, count, cursor)
     query_params["$search"] = safe_query
     query_params["$select"] = SUMMARY_SELECT
 
-    if folder:
-        folder = await resolve_folder_id(graph_client, folder)
+    if "folder" in payload:
+        # Caller-held state that goes into a URL path: validate, never trust.
+        folder_id = payload["folder"]
+        if folder_id is not None:
+            if not isinstance(folder_id, str):
+                raise ValueError("Invalid pagination cursor")
+            folder_id = validate_graph_id(folder_id)
+    elif folder:
+        folder_id = await resolve_folder_id(graph_client, folder)
+    else:
+        folder_id = None
+
+    if folder_id is not None:
         from msgraph.generated.users.item.mail_folders.item.messages import (
             messages_request_builder as folder_mrb,
         )
 
-        req_config = build_request_config(
+        response = await get_page(
+            graph_client.me.mail_folders.by_mail_folder_id(folder_id).messages,
             folder_mrb.MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
             query_params,
-        )
-        response = await graph_client.me.mail_folders.by_mail_folder_id(folder).messages.get(
-            request_configuration=req_config
         )
     else:
         from msgraph.generated.users.item.messages.messages_request_builder import (
             MessagesRequestBuilder as MeMessagesRequestBuilder,
         )
 
-        req_config = build_request_config(
-            MeMessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters, query_params
+        response = await get_page(
+            graph_client.me.messages,
+            MeMessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
+            query_params,
         )
-        response = await graph_client.me.messages.get(request_configuration=req_config)
 
     messages = [_format_message_summary(m) for m in (response.value or [])]
     if concise:
         messages = [_concise_summary(m) for m in messages]
 
+    next_cursor = wrap_nextlink(response.odata_next_link)
+    if next_cursor is not None:
+        # Pin the folder into the cursor (None = all mail), so the next page is
+        # unambiguously a continuation of this search.
+        next_cursor = encode_cursor_payload(
+            {**decode_cursor_payload(next_cursor), "folder": folder_id}
+        )
+
     return {
         "messages": messages,
         "count": len(messages),
         "has_more": response.odata_next_link is not None,
-        "cursor": wrap_nextlink(response.odata_next_link),
+        "cursor": next_cursor,
     }
 
 
