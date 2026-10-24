@@ -344,8 +344,8 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
     folder beyond that page. No mailbox writes or fixtures are needed.
 
     The folder's `totalItemCount` is the answer key: Graph counts it without
-    searching. On an Exchange Online mailbox Graph stopped every search at 275
-    (255-275 by page size), so a folder past 300 messages always ends short and
+    searching. Exchange Online and Outlook.com have been observed stopping at 275
+    (255-275 by page size), so a populated folder can end short and
     the last page must say so. The other direction is a claim about the
     constant: if Graph returns all of a folder past 300 and the tool still says
     `incomplete`, this account type's limit is not just past 250, and
@@ -360,6 +360,7 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
         folder_id = await resolve_folder_id(client, requested)
         folder = await client.me.mail_folders.by_mail_folder_id(folder_id).get()
         total = folder.total_item_count or 0
+        folder_label = getattr(folder, "display_name", None) or requested
     else:
         listing = await list_folders(client)
         folders = listing["folders"]
@@ -369,9 +370,11 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
             )
         folder = max(folders, key=lambda item: item["total"])
         folder_id, total = folder["id"], folder["total"]
+        folder_label = folder.get("name") or folder_id
     if total <= 300:
         pytest.skip(
-            f"the selected folder holds {total} messages, too few to reach Graph's search limit; "
+            f"folder {folder_label!r} holds {total} messages, "
+            "too few to reach Graph's search limit; "
             "set OUTLOOK_MCP_LIVE_SEARCH_FOLDER to a folder holding more than 300"
         )
 
@@ -387,17 +390,24 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
         if cursor is None:
             break
     else:
-        pytest.skip(f"Graph was still paging after {walked} results: no limit to observe here")
+        pytest.skip(
+            f"folder {folder_label!r}: Graph was still paging after {walked} results; "
+            "no limit to observe here"
+        )
 
-    assert len(ids) == walked, f"the walk returned {walked} results but only {len(ids)} ids"
+    assert len(ids) == walked, (
+        f"folder {folder_label!r}: the walk returned {walked} results but only {len(ids)} ids"
+    )
     if walked < total:
         assert "incomplete" in page, (
-            f"Graph ended the search at {walked} of the selected folder's {total} messages and the "
+            f"Graph ended the search in folder {folder_label!r} at {walked} of {total} messages "
+            "and the "
             "tool said nothing, so a caller takes the result as complete"
         )
     else:
         assert "incomplete" not in page, (
-            f"Graph returned all {total} selected-folder messages and the tool still called the "
+            f"Graph returned all {total} messages in folder {folder_label!r} "
+            "and the tool still called the "
             f"search incomplete: this account type's limit is not just past "
             f"{SEARCH_STOPS_AFTER}, so SEARCH_STOPS_AFTER needs its number"
         )
