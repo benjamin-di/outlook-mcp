@@ -11,6 +11,9 @@ inherit that behavior. These helpers restore it:
   individual sub-responses are 429/503, so a naive reader records those as
   permanent failures. This re-issues a smaller ``$batch`` of just the
   throttled sub-requests, honoring each sub-response's ``Retry-After``.
+  The SDK path needs it too: ``batch.batch_triage`` sends its ``$batch``
+  through the kiota adapter, whose ``RetryHandler`` retries the envelope
+  but never sees a sub-response.
 
 Graph also enforces a global 130,000-requests / 10-seconds app-wide ceiling on
 top of per-mailbox limits, so direct callers must back off on their own.
