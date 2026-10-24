@@ -599,9 +599,12 @@ def validate_inline_attachment(item: object, where: str) -> tuple[str, str | Non
     encoded = item.get("content_base64")
     if not isinstance(encoded, str):
         raise ValueError(f"{where} needs content_base64: the file's bytes, base64-encoded.")
+    # Whitespace is dropped first, so line-wrapped (MIME-style) base64 decodes too.
+    compact = "".join(encoded.split())
+    if not compact:
+        raise ValueError(f"{where} ({name}): content_base64 must not be empty.")
     try:
-        # Whitespace is dropped first, so line-wrapped (MIME-style) base64 decodes too.
-        content = base64.b64decode("".join(encoded.split()), validate=True)
+        content = base64.b64decode(compact, validate=True)
     except binascii.Error:
         raise ValueError(f"{where} ({name}): content_base64 is not valid base64.") from None
     return name, content_type, content

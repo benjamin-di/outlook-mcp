@@ -7,6 +7,7 @@ import json
 import mimetypes
 import ntpath
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,8 @@ from outlook_mcp.validation import (
 # 3MB threshold — files above this use upload sessions. Also the cap on an inline
 # attachment (`attachments`), which never takes the upload-session path.
 _LARGE_FILE_THRESHOLD = 3 * 1024 * 1024
+# Bound normalization too; allow twice the encoded cap for MIME whitespace.
+_INLINE_BASE64_MAX = 2 * 4 * ((_LARGE_FILE_THRESHOLD + 2) // 3)
 # Chunk size for upload sessions (320 KiB aligned, as required by Graph)
 _UPLOAD_CHUNK_SIZE = 320 * 1024 * 10  # 3.2 MB chunks
 
@@ -216,6 +219,14 @@ def _inline_attachments(items: list[dict] | None) -> list[Any]:
         where = f"attachments[{index}]"
         encoded = item.get("content_base64") if isinstance(item, dict) else None
         if isinstance(encoded, str):
+            if len(encoded) > _INLINE_BASE64_MAX:
+                name = item.get("name")
+                label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
+                raise ValueError(
+                    f"{where} ({label}) has too much base64 input, including whitespace, "
+                    "for the 3 MiB inline limit. For a larger file, use attachments_dir "
+                    "and pass its path in attachment_paths."
+                )
             # Use decoded length, including padding, without allocating the bytes.
             # Ignore MIME whitespace as the decoder does; invalid excess padding
             # must not reduce a large input below the cap.
@@ -223,6 +234,8 @@ def _inline_attachments(items: list[dict] | None) -> list[Any]:
             padding = min(2, len(compact) - len(compact.rstrip("=")))
             size = len(compact) // 4 * 3 - padding
             if size > _LARGE_FILE_THRESHOLD:
+                if len(compact) % 4 or re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", compact) is None:
+                    raise ValueError(f"{where}: content_base64 is not valid base64.")
                 name = item.get("name")
                 label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
                 raise _over_the_inline_cap(where, label, str(size))
