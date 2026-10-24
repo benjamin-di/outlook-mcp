@@ -463,8 +463,8 @@ async def changes_since(
     events_token = tokens.get("events")
     contacts_token = tokens.get("contacts")
     mail_bootstrap_from = None
-    if mail_token is not None and "mail_bootstrap_from" in tokens:
-        value = tokens["mail_bootstrap_from"]
+    value = tokens.get("mail_bootstrap_from")
+    if mail_token is not None and value is not None:
         mail_bootstrap_from = parse_graph_datetime(value) if isinstance(value, str) else None
         if mail_bootstrap_from is None:
             raise ValueError("mail_bootstrap_from must be the timestamp returned in delta_tokens.")
@@ -533,7 +533,11 @@ async def changes_since(
             "contacts": contacts_has_more,
         },
         "window": {
-            "from": bootstrap_start_iso,
+            "from": (
+                mail_bootstrap_from
+                if mail_bootstrap_from is not None and not mail_resynced
+                else window_start
+            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "to": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
     }
@@ -547,8 +551,8 @@ async def changes_since(
     if mail_filter_ignored:
         result.setdefault("_meta", {})["mail_window_fallback"] = (
             "Graph ignored the receivedDateTime filter; mail was bounded client-side. "
-            "If has_more.mail is true, pass the whole delta_tokens dict back to finish "
-            "the snapshot with the same bound."
+            "Replace the stored delta_tokens dict with this one; never merge them. "
+            "If has_more.mail is true, pass it back to finish the snapshot with the same bound."
         )
 
     return result

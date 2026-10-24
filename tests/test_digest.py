@@ -827,6 +827,7 @@ async def test_ignored_mail_filter_keeps_its_bound_across_the_cap_and_then_relea
             _mock_graph_client(), delta_tokens=first["delta_tokens"], fallback_window_hours=0
         )
         assert second["mail"]["new_count"] == 1
+        assert second["window"]["from"] == first["window"]["from"]
         assert [m["id"] for m in second["mail"]["urgent_flagged"]] == ["recent"]
         assert second["has_more"]["mail"] is False
         assert "mail_bootstrap_from" not in second["delta_tokens"]
@@ -869,7 +870,7 @@ async def test_mail_resync_reports_both_the_resync_and_the_ignored_filter():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bound", ["bad", 123, None])
+@pytest.mark.parametrize("bound", ["bad", 123])
 async def test_invalid_mail_bootstrap_context_is_refused_before_graph(bound):
     mail = AsyncMock()
     with patch.object(digest, "list_inbox_delta", new=mail):
@@ -878,3 +879,46 @@ async def test_invalid_mail_bootstrap_context_is_refused_before_graph(bound):
                 _mock_graph_client(), delta_tokens={"mail": "next", "mail_bootstrap_from": bound}
             )
     mail.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_null_mail_bootstrap_bound_is_absent_on_an_ordinary_round():
+    historical = _mail_item(received="2000-01-01T00:00:00Z", importance="high")
+    mail = AsyncMock(return_value=_mail_response([historical], token="next"))
+    with (
+        patch.object(digest, "list_inbox_delta", new=mail),
+        patch.object(digest, "list_events_delta", new=AsyncMock(return_value=_events_response([]))),
+        patch.object(
+            digest, "list_contacts_delta", new=AsyncMock(return_value=_contacts_response([]))
+        ),
+    ):
+        result = await changes_since(
+            _mock_graph_client(), delta_tokens={"mail": "current", "mail_bootstrap_from": None}
+        )
+    assert result["mail"]["new_count"] == 1
+    assert len(result["mail"]["urgent_flagged"]) == 1
+    assert mail.call_args.kwargs["received_since"] is None
+    assert "mail_window_fallback" not in result.get("_meta", {})
+    assert "mail_bootstrap_from" not in result["delta_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_a_resync_window_reports_its_new_bound_instead_of_the_stale_bootstrap_bound():
+    response = httpx.Response(410, request=httpx.Request("GET", "https://graph.microsoft.com"))
+    error = httpx.HTTPStatusError("stale", request=response.request, response=response)
+    mail = AsyncMock(side_effect=[error, _mail_response([], token="fresh")])
+    with (
+        patch.object(digest, "list_inbox_delta", new=mail),
+        patch.object(digest, "list_events_delta", new=AsyncMock(return_value=_events_response([]))),
+        patch.object(
+            digest, "list_contacts_delta", new=AsyncMock(return_value=_contacts_response([]))
+        ),
+    ):
+        result = await changes_since(
+            _mock_graph_client(),
+            delta_tokens={"mail": "stale", "mail_bootstrap_from": "2000-01-01T00:00:00Z"},
+        )
+    assert result["window"]["from"] == mail.call_args.kwargs["received_since"].strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    assert result["_meta"]["resync"] == ["mail"]
