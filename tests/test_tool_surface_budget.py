@@ -87,7 +87,13 @@ CHARS_PER_TOKEN = 4
 # guidance on when to use it is in INSTRUCTIONS, paid once per session. That is
 # 37 over 13,300, so the ceiling rises to 13,400: deliberate, for a security
 # field, and ~63 tokens of headroom.
-TOOL_SURFACE_CEILING = 13_500
+#
+# 13,605 with attachments as content (#129, +233 on today's main, 13,372):
+# `as_content` and an optional `save_path` on the two downloads, inline
+# `attachments` and an optional `attachment_paths` on the two mail uploads (+159 in
+# the schemas), and one short sentence each (+74). Four new arguments do not fit the
+# ~128 tokens left, so this is a deliberate raise to 13,750: ~1% headroom.
+TOOL_SURFACE_CEILING = 13_750
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

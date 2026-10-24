@@ -1,5 +1,7 @@
 """Input validation — patterns ported from olkcli (MIT)."""
 
+import base64
+import binascii
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -521,3 +523,66 @@ def sanitize_output(text: str, multiline: bool = False) -> str:
     else:
         text = text.replace("\t", " ")
     return text
+
+
+def has_control_characters(text: str) -> bool:
+    """True if ``text`` holds a character ``sanitize_output`` strips. Tab, CR and LF are allowed."""
+    return _CONTROL_CHARS.search(text) is not None
+
+
+def _one_line(text: str) -> bool:
+    return not has_control_characters(text) and not any(c in text for c in "\r\n\t")
+
+
+_INLINE_ATTACHMENT_KEYS = frozenset({"name", "content_base64", "content_type"})
+
+
+def validate_inline_attachment(item: object, where: str) -> tuple[str, str | None, bytes]:
+    """Validate one inline attachment, ``{name, content_base64, content_type?}``, and decode it.
+
+    Returns ``(name, content_type or None, bytes)``. The size cap is the caller's, because it
+    is a Graph limit rather than a shape. Unknown keys are refused, not ignored, so a misspelt
+    ``content`` cannot send an attachment with nothing in it. A name that is a path is refused
+    too: it reads no file, and a model that thinks it does should be told where paths go.
+    """
+    if not isinstance(item, dict):
+        raise ValueError(f"{where} must be an object with name and content_base64.")
+    unknown = sorted(set(item) - _INLINE_ATTACHMENT_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{where} has unknown key(s) {unknown}; it takes name, content_base64 and, "
+            "optionally, content_type."
+        )
+    name = item.get("name")
+    if not isinstance(name, str) or not name.strip() or not _one_line(name):
+        raise ValueError(
+            f"{where} needs a name: a non-empty file name on one line, without control characters."
+        )
+    name = name.strip()
+    if name in {".", ".."}:
+        raise ValueError(f"{where} name {name!r} is not a file name.")
+    if len(name) > 255:
+        raise ValueError(
+            f"{where} name is {len(name)} characters long; a file name takes at most 255."
+        )
+    if "/" in name or "\\" in name:
+        raise ValueError(
+            f"{where} name {name!r} is a path. It is only the attachment's file name and reads "
+            "no file; a file in attachments_dir goes in attachment_paths."
+        )
+    content_type = item.get("content_type")
+    if content_type is not None and (
+        not isinstance(content_type, str) or not content_type.strip() or not _one_line(content_type)
+    ):
+        raise ValueError(
+            f"{where} content_type must be a MIME type such as application/pdf, or left out."
+        )
+    encoded = item.get("content_base64")
+    if not isinstance(encoded, str):
+        raise ValueError(f"{where} needs content_base64: the file's bytes, base64-encoded.")
+    try:
+        # Whitespace is dropped first, so line-wrapped (MIME-style) base64 decodes too.
+        content = base64.b64decode("".join(encoded.split()), validate=True)
+    except binascii.Error:
+        raise ValueError(f"{where} ({name}): content_base64 is not valid base64.") from None
+    return name, content_type, content

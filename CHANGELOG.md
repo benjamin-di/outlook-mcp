@@ -129,6 +129,35 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   are not returned. The instructions every client receives say to use it before acting on a
   message because of who sent it. The tool surface grows by 76 proxy tokens, to 13,337, so
   the ceiling rises from 13,300 to 13,400.
+- **Attachments as content, for clients that can't see the server's disk** (#129). The
+  attachment tools moved files only through `attachments_dir`, so a remote or sandboxed client
+  could neither read an attachment nor attach a file, and a local one needed a second tool call
+  to look at a PDF or image it had just downloaded. Both directions can now carry the bytes in
+  the call instead, opt-in, and nothing is read from or written to disk:
+  - `outlook_download_attachment` and `outlook_download_task_attachment` take `as_content=True`
+    in place of `save_path`, which becomes optional; a call passes exactly one of the two. The
+    result is a JSON block with `name`, `size` and `content_type`, then the attachment: PNG,
+    JPEG, GIF and WebP up to 5 MB as an image, text up to 100,000 characters as text, and
+    anything else, PDFs included, as an embedded resource holding the base64 bytes and their
+    type. Text that does not decode cleanly, or carries control characters, goes out whole as
+    a resource rather than altered. Over 10 MB is refused, pointing to `save_path`.
+  - `outlook_send_with_attachments` and `outlook_attach_to_draft` take inline files in
+    `attachments`, `[{name, content_base64, content_type?}]`, beside `attachment_paths`, which
+    becomes optional. Each is limited to 3 MB, Graph's simple-attachment size, so no inline file
+    takes the upload-session path. A malformed item, a name that is a path and an unknown key
+    are refused before anything is sent. A call with neither `attachment_paths` nor
+    `attachments` is refused too: the server ignores an unknown argument, so a misspelt one
+    would otherwise send the mail, or report "attached", with no file. An `attach_to_draft` with
+    an empty list used to succeed with nothing attached; it is refused the same way.
+  - An image comes back as an image only when its bytes open as one, by their signature: a
+    sender can name anything `chart.png`, and some model APIs reject a whole result whose image
+    does not decode. A real image labelled as another image type goes out as what it is.
+
+  The fence is unchanged: `resolve_attachment_path` still governs every path argument. An
+  inline file is bytes the agent already holds and could already put in a message body, so it
+  widens nothing; the caps are there for the model's context. The tool surface grows by 233
+  proxy tokens, to 13,605 on top of the other contributions this release, so the budget's
+  ceiling is raised deliberately from 13,500 to 13,750.
 
 ### Changed
 
@@ -138,6 +167,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   out of the inbox and read/unread changes. A flag or category set on mail received before the
   window is no longer reported. A token stored by an earlier version keeps following the whole
   inbox until the digest starts over (no token, or a 410 resync).
+
+### Security
+
+- **The agent is told attachments are written by other people, not only their names.** With
+  `as_content`, an attachment's text and images reach the model straight from this server, so
+  the connect-time rule and SKILL.md now name attachments themselves. Where only an
+  attachment's name reached the model before, a text attachment's body now does.
 
 ## [1.26.0] — 2026-10-23
 
