@@ -184,7 +184,10 @@ CHARS_PER_TOKEN = 4
 #
 # 14,701 with event attachments on the rebased folder-path/event-key stack.
 # The 14,600 parent ceiling no longer covers it; 14,850 gives about 1% headroom.
-TOOL_SURFACE_CEILING = 14_850
+#
+# 14,790 on the combined 71-tool tree (main 1.27.0 plus the eight open pull
+# requests above, merged in order); 15,000 gives about 1.4% headroom.
+TOOL_SURFACE_CEILING = 15_000
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
