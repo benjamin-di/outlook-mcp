@@ -504,3 +504,49 @@ def test_uvicorn_does_not_enable_access_logging_or_forwarded_headers(monkeypatch
     assert config.access_log is False
     assert config.proxy_headers is False
     assert config.server_header is False
+
+
+def test_owner_only_token_file_is_accepted_and_never_represented(tmp_path):
+    path = tmp_path / "token"
+    path.write_text(TOKEN + "\n")
+    path.chmod(0o600)
+    settings = settings_from_env({**HTTP, http_transport.TOKEN_FILE_ENV: str(path)})
+    assert settings.token == TOKEN
+    assert TOKEN not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "case", ["both", "missing", "empty", "large", "bad", "directory", "permissions", "symlink"]
+)
+def test_unusable_token_file_refuses_without_echoing_path_or_content(tmp_path, case):
+    path = tmp_path / "private-file-name"
+    path.write_text(TOKEN)
+    path.chmod(0o600)
+    env = {**HTTP, http_transport.TOKEN_FILE_ENV: str(path)}
+    if case == "both":
+        env[TOKEN_ENV] = TOKEN
+    elif case == "missing":
+        path.unlink()
+    elif case == "empty":
+        path.write_text("")
+    elif case == "large":
+        path.write_text("X" * 4097)
+    elif case == "bad":
+        path.write_bytes(b"\xff")
+    elif case == "directory":
+        path.unlink()
+        path.mkdir()
+    elif case == "permissions":
+        if os.name == "nt":
+            pytest.skip("POSIX mode check; Windows requires operator-managed ACLs")
+        path.chmod(0o640)
+    elif case == "symlink":
+        target = tmp_path / "target"
+        path.rename(target)
+        try:
+            path.symlink_to(target)
+        except OSError:
+            pytest.skip("symlink privilege unavailable")
+    with pytest.raises(ValueError, match="OUTLOOK_MCP_HTTP_TOKEN") as exc:
+        settings_from_env(env)
+    assert str(path) not in str(exc.value) and TOKEN not in str(exc.value)

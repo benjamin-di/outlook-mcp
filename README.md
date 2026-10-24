@@ -529,6 +529,8 @@ The client then connects to `https://<your proxy>/mcp` and sends `Authorization:
 For a container, explicitly set `OUTLOOK_MCP_HTTP_HOST=0.0.0.0` and `OUTLOOK_MCP_HTTP_ALLOWED_HOSTS=mcp.example.com` for the public hostname your proxy forwards. Every public bind prints a plain-HTTP warning before it starts. The token protects against other OS users and browser pages; code running as your OS user can read the client configuration or launch the server itself. Forwarded headers are not trusted.
 
 
+A secret file can replace the environment token: set `OUTLOOK_MCP_HTTP_TOKEN_FILE` to a regular file containing only the token (an ending newline is fine), and unset `OUTLOOK_MCP_HTTP_TOKEN`. Both set is refused. On POSIX the file must belong to the server user with no group or other permissions (`chmod 600`); symlinks are refused. On Windows, restrict the file ACL to the server account yourself; the server does not validate Windows ACLs. File contents and paths are never included in token-file errors.
+
 **This changes who can reach the mailbox.** Over stdio, only the process that started the server can. Over HTTP, one request to the port is enough for anything that holds a token, so the token is the whole of the access control:
 
 - **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let other OS users or browser pages read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. The token is one value of at least 32 characters from `A–Z a–z 0–9 -._~+/`; to change it, restart the server with the new one.

@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import os
+import stat
 import re
 import sys
 from collections.abc import Mapping
@@ -50,6 +52,7 @@ TRANSPORT_ENV = "OUTLOOK_MCP_TRANSPORT"
 HOST_ENV = "OUTLOOK_MCP_HTTP_HOST"
 PORT_ENV = "OUTLOOK_MCP_HTTP_PORT"
 TOKEN_ENV = "OUTLOOK_MCP_HTTP_TOKEN"
+TOKEN_FILE_ENV = "OUTLOOK_MCP_HTTP_TOKEN_FILE"
 ALLOWED_HOSTS_ENV = "OUTLOOK_MCP_HTTP_ALLOWED_HOSTS"
 
 STDIO = "stdio"
@@ -90,7 +93,7 @@ def settings_from_env(environ: Mapping[str, str]) -> HttpSettings | None:
 
     host = environ.get(HOST_ENV, "").strip() or DEFAULT_HOST
     port = _port(environ.get(PORT_ENV, "").strip())
-    token = _token(environ.get(TOKEN_ENV, ""))
+    token = _token_source(environ)
     if not token:
         raise ValueError(_missing_token(host))
     return HttpSettings(host=host, port=port, token=token, allowed_hosts=_allowed_hosts(environ))
@@ -175,6 +178,45 @@ def _token(value: str) -> str:
             f"{_TOKEN_RECIPE}"
         )
     return token
+
+
+def _token_source(environ: Mapping[str, str]) -> str:
+    filename = environ.get(TOKEN_FILE_ENV, "")
+    if not filename:
+        return _token(environ.get(TOKEN_ENV, ""))
+    if environ.get(TOKEN_ENV):
+        raise ValueError(f"Set only one of {TOKEN_ENV} and {TOKEN_FILE_ENV}.")
+    fd = None
+    try:
+        # Refuse symlinks and inspect the opened descriptor to avoid a pathname race.
+        if stat.S_ISLNK(os.lstat(filename).st_mode):
+            raise ValueError
+        fd = os.open(
+            filename, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        )
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError
+        if os.name != "nt" and (info.st_mode & 0o077 or info.st_uid != os.getuid()):
+            raise ValueError
+        if info.st_size > 4096:
+            raise ValueError
+        raw = os.read(fd, 4097)
+        if len(raw) > 4096:
+            raise ValueError
+        token = _token(raw.decode("ascii"))
+        if not token:
+            raise ValueError
+        return token
+    except (OSError, ValueError):
+        raise ValueError(
+            f"{TOKEN_FILE_ENV} must name a regular, nonempty token file (at most 4096 bytes). "
+            "On POSIX it must be owned by this user and inaccessible to group and others. "
+            "Generate a token with: " + _TOKEN_RECIPE
+        ) from None
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def _is_loopback(host: str) -> bool:
