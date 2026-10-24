@@ -355,3 +355,19 @@ def test_no_from_domain_is_not_authenticated(sender):
 
 def test_the_from_domain_is_the_part_after_the_last_at():
     assert auth(MS_PASS, sender='"a@b"@contoso.com')["authenticated"] is True
+
+
+def test_a_large_hostile_clause_never_slices_the_remaining_tokens():
+    from outlook_mcp.sender_auth import _parse_result
+
+    class NoSlices(list):
+        def __getitem__(self, index):
+            assert not isinstance(index, slice), (
+                "copying the remaining tokens makes parsing quadratic"
+            )
+            return super().__getitem__(index)
+
+    tokens = NoSlices(["dkim", "=", "pass"] + ["header.d", "=", "contoso.com"] * 16_384)
+    result = _parse_result(tokens)
+    assert result.result == "pass"
+    assert result.props["header.d"] == ("contoso.com",) * 16_384
