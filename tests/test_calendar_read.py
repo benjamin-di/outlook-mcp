@@ -902,6 +902,17 @@ class TestFindEventsByKey:
         assert params.select == [f.strip() for f in _SUMMARY_SELECT.split(",")]
         assert params.top == 25
 
+    async def test_a_quote_in_the_key_is_doubled_in_the_literal(self, monkeypatch):
+        """The validator refuses a quote today; the filter must not rely on it."""
+        from outlook_mcp.tools import calendar_read
+
+        monkeypatch.setattr(calendar_read, "validate_event_key", lambda key: key)
+        client = self._client([])
+
+        await calendar_read.find_events_by_key(client, "o'brien:1")
+
+        assert _query_params(client.me.events.get).filter.endswith("and ep/value eq 'o''brien:1')")
+
     async def test_matches_come_back_in_the_listing_shape_with_their_key(self):
         from outlook_mcp.tools.calendar_read import find_events_by_key
 

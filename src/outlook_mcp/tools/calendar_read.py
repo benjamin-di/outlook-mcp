@@ -414,12 +414,14 @@ async def find_events_by_key(
 
     from msgraph.generated.users.item.events.events_request_builder import EventsRequestBuilder
 
-    # The key is validated to characters that need no escaping, so it can sit
-    # inside the literal as written.
+    # The key is validated to characters that need no escaping. Its quotes are
+    # doubled all the same, as mail_read does for its literals, so the literal
+    # stays closed if that alphabet ever grows.
+    literal = key.replace("'", "''")
     query = {
         "$filter": (
             f"singleValueExtendedProperties/Any(ep: ep/id eq '{EVENT_KEY_PROPERTY_ID}' "
-            f"and ep/value eq '{key}')"
+            f"and ep/value eq '{literal}')"
         ),
         "$expand": _EVENT_KEY_EXPAND,
         "$select": _SUMMARY_SELECT,
