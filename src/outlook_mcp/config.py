@@ -74,7 +74,7 @@ _LEGACY_KEYS = {
 # is normally accepted with a warning (a newer release's config must still boot
 # an older one), but a misspelling of one of these is refused instead — ignoring
 # `"readOnly": true` ran a writable server its operator believed was read-only.
-_SAFETY_KEYS = ("read_only", "allow_categories", "read_only_consent")
+_SAFETY_KEYS = ("read_only", "allow_categories", "read_only_consent", "expected_username")
 
 
 def _squash(key: str) -> str:
@@ -86,7 +86,7 @@ def _misspelt_safety_key(key: str) -> str | None:
     """The safety key an unknown `key` plainly means, or None.
 
     A different spelling of the same words, or a one-or-two-letter slip
-    (`difflib` ratio 0.8 or better). Deliberately narrow: only these three keys,
+    (`difflib` ratio 0.8 or better). Deliberately narrow: only these keys,
     so every other unknown key keeps loading with a warning.
     """
     for safety_key in _SAFETY_KEYS:
@@ -101,6 +101,13 @@ class Config(BaseModel):
 
     client_id: str | None = Field(default=None, description="Azure AD app client ID (BYOID)")
     tenant_id: str = Field(default=DEFAULT_TENANT_ID)
+    expected_username: str | None = Field(
+        default=None,
+        description=(
+            "Optional sign-in username for this instance. Refuse a saved or new "
+            "sign-in for another username; case-insensitive, without alias resolution."
+        ),
+    )
     read_only: bool = Field(default=False)
     read_only_consent: bool = Field(
         default=False,
@@ -202,6 +209,16 @@ class Config(BaseModel):
                 "`outlook-mcp auth` again to consent the write scopes."
             )
         return self
+
+    @field_validator("expected_username")
+    @classmethod
+    def _validate_expected_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("expected_username must be a non-empty sign-in username on one line.")
+        return value
 
     @field_validator("allow_categories")
     @classmethod
