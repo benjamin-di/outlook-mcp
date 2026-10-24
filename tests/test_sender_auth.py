@@ -371,3 +371,9 @@ def test_a_large_hostile_clause_never_slices_the_remaining_tokens():
     result = _parse_result(tokens)
     assert result.result == "pass"
     assert result.props["header.d"] == ("contoso.com",) * 16_384
+
+
+def test_a_lookalike_domain_can_authenticate_only_itself():
+    result = auth("dkim=pass header.d=rnicrosoft.com", sender="alice@rnicrosoft.com")
+    assert result["authenticated"] is True
+    assert result["from_domain"] == "rnicrosoft.com"
