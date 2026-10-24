@@ -77,12 +77,14 @@ class _FakeCredential:
         return AccessToken("not-a-real-token", 9_999_999_999)
 
 
-def _read_through_the_real_sdk(**kwargs) -> tuple[str, dict]:
+def _read_through_the_real_sdk(message_id: str = MESSAGE_ID, **kwargs) -> tuple[str, dict]:
     """``read_message`` against the real msgraph client; (URL sent, result)."""
     sent: list[str] = []
 
     async def transport(request: httpx.Request) -> httpx.Response:
         sent.append(str(request.url))
+        if "$filter" in request.url.params:
+            return httpx.Response(200, json={"value": [{"id": MESSAGE_ID}]})
         return httpx.Response(200, json=_graph_message())
 
     http_client = GraphClientFactory.create_with_default_middleware(
@@ -93,9 +95,9 @@ def _read_through_the_real_sdk(**kwargs) -> tuple[str, dict]:
         _FakeCredential(), scopes=["https://graph.microsoft.com/.default"]
     )
     client = GraphServiceClient(request_adapter=_gra.GraphRequestAdapter(auth, http_client))
-    result = asyncio.run(mail_read.read_message(client, MESSAGE_ID, **kwargs))
-    assert len(sent) == 1
-    return sent[0], result
+    result = asyncio.run(mail_read.read_message(client, message_id, **kwargs))
+    assert len(sent) == (2 if "@" in message_id else 1)
+    return sent[-1], result
 
 
 def _query(url: str) -> dict[str, str]:
@@ -283,3 +285,9 @@ async def test_outlook_read_messages_delivers_the_verdict_to_the_client(batch_po
 
     assert result["messages"][0]["sender_authentication"]["reason"] == "dmarc=fail"
     assert "internetMessageHeaders" in _selected(_subrequest_url(batch_post))
+
+
+def test_the_message_id_read_selects_sender_authentication_headers():
+    url, result = _read_through_the_real_sdk("<invoice@example.com>", include_sender_auth=True)
+    assert "internetMessageHeaders" in _selected(url)
+    assert result["sender_authentication"]["authenticated"] is True
