@@ -150,6 +150,10 @@ Working rules, each of which saves a round trip:
 - Putting a booking (a flight, a stay, an appointment) on the calendar? Give the event a `key`
   from its reference, and call outlook_find_event_by_key first: when a change to the same
   booking arrives, update the event it finds instead of creating a second one.
+- Writing mail in Markdown? Pass is_markdown=True to the tools that take a body or comment:
+  paragraphs, line breaks, - and 1. lists, **bold**, *italic*, `code` and [text](https://…)
+  or mailto: links become HTML; anything else is shown as written. Without it a body is plain
+  text, and a reply keeps its paragraphs and line breaks either way.
 - Polling on a schedule? The delta tools (outlook_list_inbox_delta and friends) return only what
   changed since the token they handed you last time, and outlook_changes_since composes all
   three into one digest.
@@ -481,6 +485,7 @@ async def outlook_send_message(
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
     is_html: bool = False,
+    is_markdown: bool = False,
     importance: str = "normal",
     request_read_receipt: bool = False,
     reply_to: list[str] | None = None,
@@ -504,6 +509,7 @@ async def outlook_send_message(
         importance,
         request_read_receipt=request_read_receipt,
         reply_to=reply_to,
+        is_markdown=is_markdown,
         config=config,
     )
 
@@ -516,6 +522,7 @@ async def outlook_reply(
     body: str,
     reply_all: bool = False,
     is_html: bool = False,
+    is_markdown: bool = False,
 ) -> dict:
     """Reply (or reply-all) to an email message.
 
@@ -524,7 +531,13 @@ async def outlook_reply(
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
     return await mail_write.reply(
-        client.sdk_client, message_id, body, reply_all, is_html, config=config
+        client.sdk_client,
+        message_id,
+        body,
+        reply_all,
+        is_html,
+        is_markdown=is_markdown,
+        config=config,
     )
 
 
@@ -535,11 +548,14 @@ async def outlook_forward(
     message_id: str,
     to: list[str],
     comment: str | None = None,
+    is_markdown: bool = False,
 ) -> dict:
     """Forward an existing message to new recipients, with optional comment."""
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
-    return await mail_write.forward(client.sdk_client, message_id, to, comment, config=config)
+    return await mail_write.forward(
+        client.sdk_client, message_id, to, comment, is_markdown=is_markdown, config=config
+    )
 
 
 # ── Mail Triage Tools ───────────────────────────────────
@@ -1519,6 +1535,7 @@ async def outlook_create_draft(
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
     is_html: bool = False,
+    is_markdown: bool = False,
     importance: str = "normal",
     reply_to: list[str] | None = None,
     deferred_send_datetime: str | None = None,
@@ -1552,6 +1569,7 @@ async def outlook_create_draft(
         reply_to_message_id=reply_to_message_id,
         reply_all=reply_all,
         forward_message_id=forward_message_id,
+        is_markdown=is_markdown,
         config=config,
     )
 
@@ -1567,6 +1585,7 @@ async def outlook_update_draft(
     cc: list[str] | None = None,
     reply_to: list[str] | None = None,
     is_html: bool = False,
+    is_markdown: bool = False,
     deferred_send_datetime: str | None = None,
 ) -> dict:
     """Update an existing draft (partial patch).
@@ -1588,6 +1607,7 @@ async def outlook_update_draft(
         reply_to=reply_to,
         is_html=is_html,
         deferred_send_datetime=deferred_send_datetime,
+        is_markdown=is_markdown,
         config=config,
     )
 
