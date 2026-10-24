@@ -149,6 +149,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   left in Drafts and the error says to check Sent Items first and gives the draft's id. A
   forward without a comment is still one call. The tool surface is unchanged.
 
+- **`outlook_changes_since` no longer reports an inbox's history as new on its second call.**
+  On an inbox of more than about 1,000 messages, the first call stopped partway through Graph's
+  snapshot without saying so, and the next call reported the rest of the mailbox as new mail,
+  with every old high-importance or flagged message in `urgent_flagged`. The first call now asks
+  Graph for the last `fallback_window_hours` only. It also no longer counts every contact as new,
+  only those modified inside the window. Consumer mailboxes that ignore the mail filter
+  fall back to the client-side bound and report `_meta.mail_window_fallback`. An unfinished
+  mail bootstrap carries `mail_bootstrap_from` inside `delta_tokens`, so continuation
+  cannot count old snapshot items as new; pass the entire dictionary back. A new `has_more`
+  beside `delta_tokens` names any resource
+  the per-call cap stopped mid-sync, and a reply with no new cursor hands back the token passed
+  in instead of `None`.
+
 ### Added
 
 - **`outlook_read_message` takes a Message-ID.** An agent often holds a message's Message-ID
@@ -270,19 +283,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   proxy tokens, to 14,197 with the rest of this release, and the budget's ceiling is raised
   deliberately to 14,350.
 
-- **`outlook_changes_since` no longer reports an inbox's history as new on its second call.**
-  On an inbox of more than about 1,000 messages, the first call stopped partway through Graph's
-  snapshot without saying so, and the next call reported the rest of the mailbox as new mail,
-  with every old high-importance or flagged message in `urgent_flagged`. The first call now asks
-  Graph for the last `fallback_window_hours` only. It also no longer counts every contact as new,
-  only those modified inside the window. A new `has_more` beside `delta_tokens` names any resource
-  the per-call cap stopped mid-sync, and a reply with no new cursor hands back the token passed
-  in instead of `None`.
-
 ### Changed
 
-- **`outlook_changes_since` follows mail received since its first call's window.** Graph keeps
-  that call's `receivedDateTime` filter in every later cursor, so later rounds report new mail
+- **Where Graph honours the filter, `outlook_changes_since` follows mail received since its
+  first call's window.** Graph keeps that call's `receivedDateTime` filter in later cursors,
+  so later rounds on those accounts report new mail
   and, for older messages, only what Graph's message delta still sends for them: deletes, moves
   out of the inbox and read/unread changes. A flag or category set on mail received before the
   window is no longer reported. A token stored by an earlier version keeps following the whole

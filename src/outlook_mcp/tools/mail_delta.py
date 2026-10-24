@@ -89,9 +89,10 @@ async def list_inbox_delta(
         page_size: Items per Graph page (1-100). Mapped to ``$top``.
         delta_token: Opaque cursor from a previous call. ``None`` on the
             first call.
-        received_since: First call only: sync only messages received at or
-            after this instant. Ignored with ``delta_token`` — a cursor carries
-            the filter of the call that started its sync.
+        received_since: First call only: request messages received at or after
+            this instant. Some consumer mailboxes ignore the filter; the digest
+            enforces its own bound and reports that fallback. Ignored with
+            ``delta_token`` — a cursor carries the filter of the call that started its sync.
             ``outlook_changes_since`` bootstraps with it; the tool itself does
             not take it.
 

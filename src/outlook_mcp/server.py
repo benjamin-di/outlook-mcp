@@ -1192,7 +1192,8 @@ async def outlook_changes_since(
     outlook_changes_since(delta_tokens=<delta_tokens from prior response>).
     First call covers the last `fallback_window_hours` (default 24); later calls (tokens
     passed back) return only what changed. `has_more` true: that resource stopped early,
-    call again with its token. Each resource's token is independent — drop
+    pass back the whole delta_tokens dict, including any mail_bootstrap_from.
+    Each resource's token is independent — drop
     one stale token without re-syncing the others. If Graph 410s on a token
     (`syncStateNotFound`), that resource auto-resyncs and `_meta.resync` lists which one.
     `urgent_flagged` = high-importance OR flagged mail. `by_sender` = top 5 senders.
