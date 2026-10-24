@@ -63,6 +63,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   can be written; Graph's own answer is a 403 whose hint blames the account type. The tools that
   take an event ID need no `calendar`: `/me/events/{id}` reaches an event on any of the user's own
   calendars.
+- **A contact's birthday can be set** (#163). `outlook_get_contact` returned `birthday`, but
+  neither write tool could set one. `outlook_create_contact` and `outlook_update_contact` take
+  `birthday`, a date (`YYYY-MM-DD`). Graph stores a birthday as an instant, so it is sent as
+  that date at 11:59 UTC: the same calendar date in every time zone from UTC−11 to UTC+12,
+  where midnight UTC would be the day before everywhere west of Greenwich, and the time the
+  birthdays already in a mailbox are stored at. Anything but a plain date is refused before
+  anything is sent. There is no clearing a birthday yet.
 
 ## [1.26.0] — 2026-10-23
 

@@ -30,6 +30,7 @@ from outlook_mcp.server import mcp
 CHARS_PER_TOKEN = 4
 
 # Ceiling for the full tool surface. Measured at 11,206 on 1.20.0 with a
+#
 # 12,000 ceiling; raised to 13,500 for the eight To Do detail tools
 # (get_task, checklist-item CRUD, task attachments), then to 13,650 after
 # the attachment rewrite (measured 12,855 at the time) — each a deliberate
@@ -73,6 +74,12 @@ CHARS_PER_TOKEN = 4
 # the pair did not. Raised to 13,500 at merge time — a deliberate step for the
 # contributor batch reviewed that day, several of which carry their own raise to
 # the same number. The ~1% convention resumes from whatever the batch measures.
+#
+# 13,326 with `birthday` on `outlook_create_contact` (+31) and
+# `outlook_update_contact` (+34): the argument on each, and the words saying it is a
+# date, YYYY-MM-DD. `outlook_get_contact` already returned it; nothing could write
+# it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
+# 13,500: ~1% headroom, as before.
 TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
