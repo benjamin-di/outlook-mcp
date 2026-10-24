@@ -135,6 +135,9 @@ CHARS_PER_TOKEN = 4
 # 14,197 once #129 (downloads returned as content, inline uploads, +233) merged onto
 # the contacts pair (13,964): over both the 14,100 set for the pair and the 14,000
 # #129 set on its own base. Raised at merge time to 14,350: ~1% headroom.
+# 13,594 after the digest describes has_more and preserving the whole token
+# dictionary (#156, +8 on main at 13,586). The ignored-filter fallback and
+# bootstrap context add response metadata, not schema fields. No ceiling raise.
 TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

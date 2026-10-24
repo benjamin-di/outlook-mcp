@@ -747,41 +747,76 @@ async def test_the_event_delta_carries_type_without_a_select(real_graph_client):
 
 
 async def test_the_mail_delta_window_filter_is_accepted_and_applied(real_graph_client):
-    """`receivedDateTime ge` on message delta: accepted, applied, and cursor-safe.
+    """Prove the digest's bound on accounts that honour or ignore Graph's filter.
 
-    Message delta accepts only `receivedDateTime ge|gt` as a `$filter`. A 400
-    here means the digest's first call fails outright; a 200 that ignored the
-    filter is the silent case — the snapshot would be the whole folder again,
-    and the digest's client-side window the only thing between an old inbox
-    and a page of "new" mail. So this needs a message older than the bound to
-    exist, and asserts none came back. The cursor must also survive the URL
-    guard: Graph re-encodes the filter into it.
+    Read-only. Every observed live message outside the bound must be absent
+    from the digest, and ignored filters must be reported explicitly.
     """
+    from unittest.mock import patch
+
+    from outlook_mcp.tools import digest
+
     bound = datetime.now(dt_timezone.utc).replace(microsecond=0) - timedelta(days=7)
     older = await list_inbox(
         real_graph_client.sdk_client, before=bound.strftime("%Y-%m-%dT%H:%M:%SZ"), count=1
     )
     if not older["messages"]:
-        pytest.skip("No inbox message older than the bound — the filter has nothing to exclude")
+        pytest.skip("No inbox message older than the bound — nothing to exclude")
 
-    page = await list_inbox_delta(
-        real_graph_client, folder="inbox", page_size=50, received_since=bound
-    )
+    observed = []
 
-    token = page["delta_token"]
+    async def read_page(*args, **kwargs):
+        page = await list_inbox_delta(*args, **kwargs)
+        observed.extend(page["messages"])
+        return page
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return bound + timedelta(days=7)
+
+    from unittest.mock import AsyncMock
+
+    with (
+        patch.object(digest, "datetime", FrozenDatetime),
+        patch.object(digest, "list_inbox_delta", new=read_page),
+        patch.object(
+            digest,
+            "list_events_delta",
+            new=AsyncMock(return_value={"events": [], "delta_token": None, "has_more": False}),
+        ),
+        patch.object(
+            digest,
+            "list_contacts_delta",
+            new=AsyncMock(return_value={"contacts": [], "delta_token": None, "has_more": False}),
+        ),
+    ):
+        result = await digest.changes_since(real_graph_client, fallback_window_hours=7 * 24)
+    token = result["delta_tokens"]["mail"]
     assert token, "Graph returned no cursor for a filtered first sync"
     assert require_graph_url(token, source="live-check", resource="mail") == token
-
-    early = [
-        m
-        for m in page["messages"]
-        if not m["is_deleted"] and (parse_graph_datetime(m["received"]) or bound) < bound
+    live = [item for item in observed if not item.get("is_deleted")]
+    recent = [
+        item
+        for item in live
+        if (
+            parse_graph_datetime(item.get("received") or "")
+            or datetime.min.replace(tzinfo=dt_timezone.utc)
+        )
+        >= bound
     ]
-    assert not early, (
-        f"{len(early)} message(s) received before {bound:%Y-%m-%dT%H:%M:%SZ} came back from a "
-        f"delta filtered on receivedDateTime ge that instant, e.g. {early[0]['received']}. "
-        f"Graph is not applying the filter on the first sync, so the digest is pulling the "
-        f"whole folder again."
+    assert result["mail"]["new_count"] == len(recent)
+    assert all(
+        parse_graph_datetime(item["received_at"]) >= bound
+        for item in result["mail"]["urgent_flagged"]
+    )
+    ignored = any(
+        (stamp := parse_graph_datetime(item.get("received") or "")) is not None and stamp < bound
+        for item in live
+    )
+    assert ("mail_window_fallback" in result.get("_meta", {})) is ignored
+    assert result["delta_tokens"].get("mail_bootstrap_from") == (
+        bound.strftime("%Y-%m-%dT%H:%M:%SZ") if result["has_more"]["mail"] else None
     )
 
 
