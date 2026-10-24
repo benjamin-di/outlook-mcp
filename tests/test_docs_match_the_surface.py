@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 from mcp.client import Client
 
-from outlook_mcp import toolsets
+from outlook_mcp import server, toolsets
 from outlook_mcp.permissions import VALID_CATEGORIES
 from outlook_mcp.server import mcp
 
@@ -28,7 +28,15 @@ ROOT = Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-REGISTERED = set(mcp._tool_manager._tools)
+DEFAULT_REGISTERED = set(mcp._tool_manager._tools)
+REGISTERED = {
+    name for name in vars(server) if name.startswith("outlook_") and callable(getattr(server, name))
+}
+
+
+def test_default_surface_omits_only_optional_groups():
+    assert DEFAULT_REGISTERED == toolsets.select_kept_tools(list(REGISTERED), None)
+
 
 # The README's "Features" list names its categories in words; their counts are
 # only checkable against its own "Tool Reference" tables, which carry the names.

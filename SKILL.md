@@ -155,7 +155,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 ### Attachments
 - `outlook_list_attachments` — List on a message
 - `outlook_download_attachment` — Download and save decoded bytes into `attachments_dir`, or return them with `as_content=True` (≤10 MB)
-- `outlook_read_attachment` — Read PDF pages, XLSX cells/formulas/saved results, or UTF-8 text without a server-side file; follow `next_offset` until null. PDF/XLSX need the `documents` extra; no OCR or formula recalculation
+- `outlook_read_attachment` — Read PDF pages, XLSX cells/formulas/saved results, or text in its declared charset without a server-side file; follow `next_offset` until null. Opt-in `documents` group; PDF/XLSX need the `documents` extra; no OCR or formula recalculation
 - `outlook_send_with_attachments` — Send with files read from `attachments_dir` (auto upload session for >3MB) or passed inline in `attachments` (≤3MB each)
 - `outlook_attach_to_draft` — Add attachments to an existing draft, from `attachments_dir` (auto upload session for >3MB) or inline in `attachments` (≤3MB each)
 - `outlook_remove_draft_attachment` — Remove a single attachment from a draft
@@ -191,6 +191,6 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - Mail search uses KQL syntax
 - Start with `read_only: true`, flip when comfortable
 - **Granular permissions:** For finer control, set `allow_categories` in config (e.g., `["calendar_write"]` to allow only calendar writes). See README for the 7 categories and example policies.
-- **Toolset selection:** Set `OUTLOOK_MCP_TOOLSETS` (e.g. `mail,calendar,digest,delta`) to load only the tool groups you use and cut per-turn context; unset loads all 72. Tools carry read-only / destructive annotations so clients can auto-approve reads.
+- **Toolset selection:** Set `OUTLOOK_MCP_TOOLSETS` (e.g. `mail,calendar,digest,delta`) to load only the tool groups you use and cut per-turn context; unset loads the 71 default schemas; the `documents` group is off until explicitly named. Tools carry read-only / destructive annotations so clients can auto-approve reads.
 - **Two accounts:** One server serves one mailbox. Register a second server entry with its own `OUTLOOK_MCP_CONFIG_DIR` (e.g. `~/.outlook-mcp-work`) and run `outlook-mcp auth` once with that variable set. Move only the config directory, never `HOME` — see README "Two accounts, two instances".
 - **Remote / HTTP:** stdio is the default. `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` over HTTP for a client that cannot spawn a local process. It never starts without `OUTLOOK_MCP_HTTP_TOKEN`, loopback included, and every request sends it as `Authorization: Bearer <token>`. It binds loopback by default, and plain HTTP sends the token in the clear, so put a TLS-terminating proxy in front of any other bind — see README "Remote / HTTP transport".

@@ -163,9 +163,7 @@ Working rules, each of which saves a round trip:
   return them. Never report a searched contact as uncategorised; read it back if you need to
   know. Addresses are on outlook_get_contact only, and writing one replaces it wholesale, so
   giving a new contact an address is create, then read, then update with every part.
-- To read a document attachment, use outlook_read_attachment (PDF/XLSX/UTF-8 text).
-  Download's save_path is on the server, which a remote client may not be able to open.
-  as_content=True returns the original bytes; document reading returns extracted text.
+- If enabled, outlook_read_attachment extracts PDF/XLSX/text; downloads preserve original bytes.
 """
 
 # SEP-2549: tell the client how long `tools/list` stays fresh, so it can stop
@@ -1682,7 +1680,7 @@ async def outlook_read_attachment(
     offset: int = 0,
     max_chars: int = 20_000,
 ) -> dict:
-    """Read PDF pages, XLSX cells/formulas/saved results, or UTF-8 text; no file is saved.
+    """Read PDF/XLSX or text in its declared charset; no file is saved.
 
     Up to 10 MiB; next_offset continues the text. max_chars: 1-50000. PDF/XLSX
     need the documents extra. Scans need OCR; formulas are never recalculated.

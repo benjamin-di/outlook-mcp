@@ -1,9 +1,9 @@
-"""Bounded PDF/XLSX/text extraction, run as a separate process without server credentials.
+"""Bounded PDF/XLSX extraction, run as a separate process without server credentials.
 
 No OCR or formula evaluation: absent text and formula caches are reported explicitly.
-No server package is imported when this file runs as a script. POSIX resource
-limits supplement the parent's wall timeout; Windows uses the wall timeout and
-input, expansion, page, cell and output caps.
+A clean-environment subprocess for crash and resource containment, not a sandbox.
+No server package is imported when this file runs as a script. The parent enforces
+RSS and wall limits on every platform; OS resource limits are best-effort extras.
 """
 
 from __future__ import annotations
@@ -18,10 +18,29 @@ MAX_CHARS = 1_000_000
 MAX_CELLS = 100_000
 
 
+class RefusalError(Exception):
+    """Only controlled, document-independent refusal text may cross the process boundary."""
+
+
+def resource_limits() -> None:
+    try:
+        import resource
+    except ImportError:
+        return
+    limits = [(resource.RLIMIT_CPU, 20)]
+    if sys.platform != "darwin":
+        limits.append((resource.RLIMIT_AS, 256 * 2**20))
+    for kind, value in limits:
+        try:
+            resource.setrlimit(kind, (value, value))
+        except (ValueError, OSError):
+            pass  # The parent's RSS watchdog and wall timeout remain mandatory.
+
+
 def append(parts: list[str], text: str, length: int) -> int:
     length += len(text) + bool(parts)
     if length > MAX_CHARS:
-        raise ValueError(
+        raise RefusalError(
             "The document exceeds one million extracted characters. "
             "Download it for local extraction."
         )
@@ -34,9 +53,9 @@ def pdf(data: bytes) -> dict:
 
     reader = PdfReader(BytesIO(data))
     if reader.is_encrypted and not reader.decrypt(""):
-        raise ValueError("This PDF needs a password. Download and unlock it before reading.")
+        raise RefusalError("This PDF needs a password. Download and unlock it before reading.")
     if len(reader.pages) > 200:
-        raise ValueError("This PDF exceeds 200 pages. Download it for local extraction.")
+        raise RefusalError("This PDF exceeds 200 pages. Download it for local extraction.")
     parts, empty, length = [], [], 0
     for number, page in enumerate(reader.pages, 1):
         text = page.extract_text(extraction_mode="layout", layout_mode_strip_rotated=False) or ""
@@ -44,7 +63,7 @@ def pdf(data: bytes) -> dict:
         if not text.strip():
             empty.append(number)
     if len(empty) == len(reader.pages):
-        raise ValueError(
+        raise RefusalError(
             "This PDF has no extractable text. It may be scanned: download it and use OCR."
         )
     warnings = [f"Pages without extractable text (blank or need OCR): {empty}"] if empty else []
@@ -59,7 +78,7 @@ def xlsx(data: bytes) -> dict:
             len(archive.infolist()) > 2000
             or sum(i.file_size for i in archive.infolist()) > 50 * 2**20
         ):
-            raise ValueError(
+            raise RefusalError(
                 "The spreadsheet expands beyond the reading limit. "
                 "Download it for local extraction."
             )
@@ -80,7 +99,7 @@ def xlsx(data: bytes) -> dict:
             for row, saved in zip(sheet.iter_rows(), cached.iter_rows(), strict=True):
                 count += len(row)
                 if count > MAX_CELLS:
-                    raise ValueError(
+                    raise RefusalError(
                         "The spreadsheet exceeds 100,000 visited cells. "
                         "Download it for local extraction."
                     )
@@ -110,33 +129,35 @@ def xlsx(data: bytes) -> dict:
 
 
 def main() -> None:
+    resource_limits()
     try:
-        import resource
-    except ImportError:  # Windows: the parent still kills the worker after 30 seconds
-        pass
-    else:
-        resource.setrlimit(resource.RLIMIT_AS, (256 * 2**20, 256 * 2**20))
-        resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
+        # Import checks are separate from parser execution: a parser's own
+        # ImportError or UnicodeError is a parse failure, not an install hint.
+        if sys.argv[1] == "pdf":
+            import pypdf  # noqa: F401
+        elif sys.argv[1] == "xlsx":
+            import openpyxl  # noqa: F401
+        else:
+            raise RefusalError("Unsupported document type.")
+    except ImportError:
+        print(
+            json.dumps(
+                {
+                    "error": "PDF/XLSX reading needs the optional documents extra. "
+                    "Ask the operator to install outlook-graph-mcp[documents] "
+                    "and restart the server."
+                }
+            )
+        )
+        return
     try:
         data = sys.stdin.buffer.read(10 * 2**20 + 1)
         if len(data) > 10 * 2**20:
-            raise ValueError("The attachment exceeds 10 MiB.")
-        if sys.argv[1] == "text":
-            parts = []
-            append(parts, data.decode("utf-8-sig"), 0)
-            result = {"text": "\n".join(parts), "warnings": []}
-        else:
-            result = {"pdf": pdf, "xlsx": xlsx}[sys.argv[1]](data)
-    except ImportError:
-        result = {
-            "error": "PDF/XLSX reading needs the optional documents extra. "
-            "Ask the operator to install outlook-graph-mcp[documents] and restart the server."
-        }
-    except UnicodeError:
-        result = {
-            "error": "This text is not UTF-8. Download it and decode it with its original charset."
-        }
-    except ValueError as exc:
+            raise RefusalError("The attachment exceeds 10 MiB.")
+        result = {"pdf": pdf, "xlsx": xlsx}[sys.argv[1]](data)
+    except MemoryError:
+        result = {"error": "The document parser exceeded its memory limit."}
+    except RefusalError as exc:
         result = {"error": str(exc)}
     except Exception as exc:
         result = {

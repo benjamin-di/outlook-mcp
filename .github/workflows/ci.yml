@@ -41,6 +41,18 @@ jobs:
       - run: uv run ruff format --check src/ tests/ scripts/
       - run: uv run pytest --cov=outlook_mcp -v
 
+  documents-macos:
+    if: github.event_name != 'schedule'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          python-version: "3.13"
+      - run: uv sync --all-extras
+      - run: uv run pytest tests/test_readable_attachments.py -v
+
   # Guards the failure mode that shipped 1.12.0 and 1.13.0 broken for five weeks:
   # `mcp[cli]` was declared with no upper bound, mcp 2.0.0 removed
   # `mcp.server.fastmcp`, and every fresh `pip install` got a server that died on

@@ -421,8 +421,10 @@ extracted text for clients that cannot interpret the embedded binary resource. E
 and their defaults are unchanged.
 
 PDF and XLSX parsing is optional: install `outlook-graph-mcp[documents]` (for example,
-`uv tool install 'outlook-graph-mcp[documents]'`) and restart the server. The default install can read
-UTF-8 text and returns an installation hint for PDF/XLSX. Parser dependencies have bounded versions
+`uv tool install 'outlook-graph-mcp[documents]'`). Enable the opt-in `documents` group with
+`OUTLOOK_MCP_TOOLSETS=mail,attachments,documents` (plus any other groups you need) and restart.
+When enabled, a base install can read text in its declared charset (UTF-8 by default),
+and returns an installation hint for PDF/XLSX. Parser dependencies have bounded versions
 and are imported only in a short-lived worker; they add no requirement to the base install.
 
 `outlook_read_attachment(message_id, attachment_id, offset=0, max_chars=20000)` returns `text`,
@@ -435,10 +437,13 @@ contents remain untrusted data.
 
 Reading is limited to 10 MiB of file bytes, 200 PDF pages, 100,000 visited spreadsheet cells, one
 million extracted characters and 50 MiB / 2,000 entries of expanded XLSX content. Each response
-contains at most 50,000 characters. Parsing runs in a separate process without server credentials,
-with a 30-second wall timeout on every platform; POSIX adds a 256 MiB address-space and 20 CPU-second
-limit. Windows uses the wall timeout and document caps without POSIX resource limits. A limit is an
-explicit error, never a silently partial document.
+contains at most 50,000 characters. Text is decoded in-process; all extracted text is cleaned of
+control characters before paging. PDF/XLSX use a **clean-environment subprocess for crash and
+resource containment, not a sandbox**: it runs as the same user with filesystem, network and
+Keychain access. A parent watchdog polls RSS every 10 ms and kills a parser above 256 MiB on
+Linux, macOS and Windows; brief overshoot between polls is possible. Only one parser runs at a time,
+with a 30-second wall timeout. OS resource limits supplement these checks where supported.
+A limit is an explicit error, never a silently partial document.
 
 ### Folder Management
 
@@ -501,14 +506,14 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 
 ### Toolset selection (optional) — `OUTLOOK_MCP_TOOLSETS`
 
-All 72 tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
+The 71 default tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
 
 ```bash
 # e.g. a recurring mail + calendar agent: 31 tools instead of 72 (about half the tool tokens per turn)
 OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"
 ```
 
-Groups: `mail`, `drafts`, `attachments`, `calendar`, `contacts`, `todo`, `folders`, `digest`, `delta`, `admin`. Unset (the default) loads everything — fully backward compatible. This only affects which tools are advertised; enabled tools behave identically.
+Groups: `mail`, `drafts`, `attachments`, `calendar`, `contacts`, `todo`, `folders`, `digest`, `delta`, `admin`, `documents`. Unset loads the 71 default schemas; `documents` is off until explicitly named. The full declared surface contains 72 tools. This only affects which tools are advertised; enabled tools behave identically.
 
 ### Two accounts, two instances (optional) — `OUTLOOK_MCP_CONFIG_DIR`
 

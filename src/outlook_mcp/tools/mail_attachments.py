@@ -312,7 +312,9 @@ def _media_type(content_type: str, name: str) -> tuple[str, str | None]:
     return media, charset
 
 
-def _readable_text(media: str, charset: str | None, content: bytes) -> str | None:
+def _readable_text(
+    media: str, charset: str | None, content: bytes, *, for_extraction: bool = False
+) -> str | None:
     """The attachment as text, if it is text a model can be shown unaltered; else None.
 
     Never a lossy decode, so text either decodes cleanly or is not text here. And never
@@ -329,6 +331,8 @@ def _readable_text(media: str, charset: str | None, content: bytes) -> str | Non
         text = content.decode(charset or "utf-8-sig")
     except (LookupError, ValueError):
         return None
+    if for_extraction:
+        return sanitize_output(text.replace("\r\n", "\n").replace("\r", "\n"), multiline=True)
     if len(text) > _TEXT_CONTENT_MAX_CHARS or has_control_characters(text):
         return None
     return text
@@ -518,16 +522,38 @@ async def download_attachment(
 
 
 async def fetch_attachment(
-    graph_client: Any, message_id: str, attachment_id: str
+    graph_client: Any, message_id: str, attachment_id: str, *, max_bytes: int | None = None
 ) -> tuple[Any, bytes]:
     """The SDK attachment and its already-decoded bytes, shared by download and reading."""
     message_id = validate_graph_id(message_id)
     attachment_id = validate_graph_id(attachment_id)
-    attachment = (
-        await graph_client.me.messages.by_message_id(message_id)
-        .attachments.by_attachment_id(attachment_id)
-        .get()
+    request = graph_client.me.messages.by_message_id(message_id).attachments.by_attachment_id(
+        attachment_id
     )
+    if max_bytes is not None:
+        from msgraph.generated.users.item.messages.item.attachments.item import (
+            attachment_item_request_builder as attachment_builder,
+        )
+
+        builder = attachment_builder.AttachmentItemRequestBuilder
+
+        metadata = await request.get(
+            request_configuration=builder.AttachmentItemRequestBuilderGetRequestConfiguration(
+                query_parameters=builder.AttachmentItemRequestBuilderGetQueryParameters(
+                    select=["id", "name", "contentType", "size"]
+                )
+            )
+        )
+        size = getattr(metadata, "size", None)
+        if type(size) is not int or size < 0:
+            raise ValueError(
+                "The attachment size is unavailable; download it instead of reading it."
+            )
+        if size > max_bytes:
+            raise ValueError(
+                "This attachment exceeds the 10 MiB reading limit. Download it instead."
+            )
+    attachment = await request.get()
     # The msgraph SDK (Kiota) already base64-decodes contentBytes into raw bytes
     # during deserialization, so content_bytes is the raw file content. Decoding
     # again corrupts binary files / raises UnicodeDecodeError (issue #25).
