@@ -737,6 +737,31 @@ class TestInlineUploadsAreRefusedBeforeAnythingIsSent:
         assert "dump.bin" in str(exc.value) and "attachments_dir" in str(exc.value)
         builder.attachments.post.assert_not_called()
 
+    @pytest.mark.parametrize("wrapped", [False, True])
+    async def test_one_byte_over_the_cap_is_refused_before_decoding(
+        self, tmp_path, monkeypatch, wrapped
+    ):
+        from outlook_mcp import validation
+
+        encoded = base64.b64encode(b"x" * (INLINE_CAP + 1)).decode()
+        if wrapped:
+            encoded = "\r\n".join(encoded[i : i + 76] for i in range(0, len(encoded), 76))
+
+        def no_decoding(*args, **kwargs):
+            raise AssertionError("decoded an oversized file")
+
+        monkeypatch.setattr(validation.base64, "b64decode", no_decoding)
+        client, builder = _draft_client()
+        with pytest.raises(ValueError, match=f"{INLINE_CAP + 1} bytes"):
+            await attach_to_draft(
+                client,
+                draft_id="AAMkAG123=",
+                attachments=[{"name": "over.bin", "content_base64": encoded}],
+                config=Config(attachments_dir=str(tmp_path / "att")),
+            )
+        builder.get.assert_not_called()
+        builder.attachments.post.assert_not_called()
+
     async def test_the_inline_cap_is_graphs_3_mib_and_inclusive(self, tmp_path):
         client, builder = _draft_client()
         config = Config(attachments_dir=str(tmp_path / "att"))

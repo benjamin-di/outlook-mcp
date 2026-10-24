@@ -195,10 +195,6 @@ def _require_something_to_attach(
         )
 
 
-# Twice what 3 MiB encodes to, so line-wrapped base64 under the cap always decodes.
-_INLINE_BASE64_MAX = 2 * 4 * -(-_LARGE_FILE_THRESHOLD // 3)
-
-
 def _over_the_inline_cap(where: str, name: str, size: str) -> ValueError:
     return ValueError(
         f"{where} ({name}) is {size} bytes, over the 3 MiB limit for an inline attachment "
@@ -218,11 +214,17 @@ def _inline_attachments(items: list[dict] | None) -> list[Any]:
     for index, item in enumerate(items or []):
         where = f"attachments[{index}]"
         encoded = item.get("content_base64") if isinstance(item, dict) else None
-        if isinstance(encoded, str) and len(encoded) > _INLINE_BASE64_MAX:
-            # Its length alone puts it far over the cap: refuse before decoding it.
-            name = item.get("name")
-            label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
-            raise _over_the_inline_cap(where, label, f"about {len(encoded) * 3 // 4}")
+        if isinstance(encoded, str):
+            # Use decoded length, including padding, without allocating the bytes.
+            # Ignore MIME whitespace as the decoder does; invalid excess padding
+            # must not reduce a large input below the cap.
+            compact = "".join(encoded.split())
+            padding = min(2, len(compact) - len(compact.rstrip("=")))
+            size = len(compact) // 4 * 3 - padding
+            if size > _LARGE_FILE_THRESHOLD:
+                name = item.get("name")
+                label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
+                raise _over_the_inline_cap(where, label, str(size))
         name, content_type, content = validate_inline_attachment(item, where)
         if len(content) > _LARGE_FILE_THRESHOLD:
             raise _over_the_inline_cap(where, name, str(len(content)))
