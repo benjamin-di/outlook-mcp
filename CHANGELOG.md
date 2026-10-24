@@ -42,6 +42,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   folder the search ran in, as `outlook_list_events`'s carries its calendar, so a later page
   stays in that folder whatever `folder` it is passed.
 
+### Added
+
+- **`outlook_read_message` takes a Message-ID.** An agent often holds a message's Message-ID
+  header value (`<abc@example.com>`) rather than its Graph ID: from a forwarded message's
+  headers, a reply's `In-Reply-To`, or another tool. `message_id` now accepts one, recognised by
+  its `@`, which no Graph ID contains. It is looked up with an exact
+  `$filter=internetMessageId eq '...'` that selects only the ID, and then read as before, so the
+  response's `id` is the Graph ID every other tool takes. The value is matched exactly, angle
+  brackets included. Graph stores what the sender wrote, and a few senders leave the brackets
+  out. A Message-ID shared by copies in several folders is refused with their IDs instead of
+  guessed between. It costs one sentence in one docstring (+10 proxy tokens), with no ceiling
+  change.
+
 ## [1.26.0] — 2026-10-23
 
 ### Fixed

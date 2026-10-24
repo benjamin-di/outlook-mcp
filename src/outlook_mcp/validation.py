@@ -43,6 +43,14 @@ _warned_legacy_config_zone: set[str] = set()
 # "AAMk…=\n" and "a@b.com\n" validated.
 _GRAPH_ID_RE = re.compile(r"^[a-zA-Z0-9_=+/\-]{1,1024}$")
 
+# A Message-ID header value, as Graph keeps it in `internetMessageId`: printable
+# ASCII without spaces, at most a header line (998, RFC 5322), and an `@`. No
+# Graph id can contain `@`, which is what tells the two apart. Angle brackets
+# are usual but not required: Graph stores the value as the sender wrote it
+# (3 of 200 measured had none) and matches it exactly, so nothing is added or
+# stripped here.
+_INTERNET_MESSAGE_ID_RE = re.compile(r"^[\x21-\x7e]{3,998}$")
+
 # Email pattern (simplified but sufficient for validation)
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
@@ -172,6 +180,16 @@ def validate_graph_id(value: str) -> str:
         raise ValueError("Graph ID too long (max 1024 chars)")
     if not _GRAPH_ID_RE.fullmatch(value):
         raise ValueError(f"Graph ID contains invalid characters: {value[:50]}")
+    return value
+
+
+def validate_internet_message_id(value: str) -> str:
+    """Validate a Message-ID header value (``<id@host>``) for an exact lookup."""
+    if "@" not in value or not _INTERNET_MESSAGE_ID_RE.fullmatch(value):
+        raise ValueError(
+            f"Invalid Message-ID: {value[:50]!r}. Pass the header value whole, "
+            "e.g. <abc123@mail.example.com>."
+        )
     return value
 
 

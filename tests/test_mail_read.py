@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from outlook_mcp.errors import NotFoundError
 from outlook_mcp.tools.mail_read import (
     RECEIVED_FLOOR,
     _format_message_summary,
@@ -339,6 +340,84 @@ class TestReadMessage:
         mock_client = MagicMock()
         with pytest.raises(ValueError, match="invalid characters"):
             await read_message(mock_client, "bad id with spaces!")
+
+
+def _make_lookup_mock(found_ids, msg=None):
+    """A client whose ``me.messages.get`` answers a Message-ID lookup with ``found_ids``.
+
+    Chain: client.me.messages.get(...) for the lookup, then
+    client.me.messages.by_message_id(id).get() for the read.
+    """
+    client = _make_message_mock(msg or _make_mock_message())
+    lookup = MagicMock(value=[MagicMock(id=i) for i in found_ids], odata_next_link=None)
+    client.me.messages.get = AsyncMock(return_value=lookup)
+    return client
+
+
+def _lookup_params(client):
+    return client.me.messages.get.call_args.kwargs["request_configuration"].query_parameters
+
+
+class TestReadMessageByInternetMessageId:
+    @pytest.mark.asyncio
+    async def test_a_message_id_is_looked_up_then_read_by_its_graph_id(self):
+        client = _make_lookup_mock(["AAMkFound="])
+        result = await read_message(client, "<a+b/c=d@mail.example.com>")
+
+        qp = _lookup_params(client)
+        assert qp.filter == "internetMessageId eq '<a+b/c=d@mail.example.com>'"
+        assert qp.select == ["id"]
+        client.me.messages.by_message_id.assert_called_once_with("AAMkFound=")
+        assert result["id"] == "AAMkAG123="  # the id of the message the read returned
+
+    @pytest.mark.asyncio
+    async def test_an_apostrophe_is_doubled_inside_the_literal(self):
+        client = _make_lookup_mock(["AAMkFound="])
+        await read_message(client, "<o'brien.1@example.com>")
+        assert _lookup_params(client).filter == "internetMessageId eq '<o''brien.1@example.com>'"
+
+    @pytest.mark.asyncio
+    async def test_a_graph_id_is_read_without_a_lookup(self):
+        client = _make_lookup_mock([])
+        await read_message(client, "AAMkAG123=")
+        client.me.messages.get.assert_not_called()
+        client.me.messages.by_message_id.assert_called_once_with("AAMkAG123=")
+
+    @pytest.mark.asyncio
+    async def test_no_match_is_not_found_and_reads_nothing(self):
+        client = _make_lookup_mock([])
+        with pytest.raises(NotFoundError, match="<gone@example.com>"):
+            await read_message(client, "<gone@example.com>")
+        client.me.messages.by_message_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_copies_in_several_folders_are_named_not_guessed(self):
+        """A Message-ID is shared by every copy of a message; picking one would be a guess."""
+        client = _make_lookup_mock(["AAMkInbox=", "AAMkSent="])
+        with pytest.raises(ValueError, match="2 messages") as exc:
+            await read_message(client, "<copied@example.com>")
+        assert "AAMkInbox=" in str(exc.value) and "AAMkSent=" in str(exc.value)
+        client.me.messages.by_message_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_message_id_is_refused_before_any_request(self):
+        client = _make_lookup_mock(["AAMkFound="])
+        with pytest.raises(ValueError, match="Message-ID"):
+            await read_message(client, "<two words@example.com>")
+        client.me.messages.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_deferred_send_read_uses_the_resolved_id(self):
+        client = _make_lookup_mock(["AAMkFound="])
+        adapter = client.me.messages.by_message_id.return_value.request_adapter
+        adapter.base_url = "https://graph.microsoft.com/v1.0"
+        adapter.send_async = AsyncMock(return_value=_make_mock_message())
+
+        await read_message(client, "<a@example.com>", include_deferred_send=True)
+
+        info = adapter.send_async.call_args.args[0]
+        raw_url = info.path_parameters[info.RAW_URL_KEY]
+        assert raw_url.startswith("https://graph.microsoft.com/v1.0/me/messages/AAMkFound%3D?")
 
 
 class TestSearchMail:

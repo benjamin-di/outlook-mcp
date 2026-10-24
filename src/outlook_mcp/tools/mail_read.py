@@ -29,6 +29,7 @@ from outlook_mcp.validation import (
     validate_datetime,
     validate_email,
     validate_graph_id,
+    validate_internet_message_id,
 )
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0/"
@@ -432,6 +433,44 @@ def _make_body_preview(content: str, limit: int = 200) -> str:
     return collapsed[:limit]
 
 
+async def resolve_message_id(graph_client: Any, message_id: str) -> str:
+    """The Graph id for ``message_id``: a Graph id, or a Message-ID header value.
+
+    A value with an ``@`` is a Message-ID (no Graph id can contain one) and is
+    looked up with an exact ``$filter`` on ``internetMessageId``, selecting only
+    the id. Every copy of a message shares its Message-ID (the Inbox copy of a
+    message sent to yourself and the Sent Items one, or a copied message), so
+    more than one match is refused with the ids rather than guessed between.
+    """
+    if "@" not in message_id:
+        return validate_graph_id(message_id)
+    internet_message_id = validate_internet_message_id(message_id)
+    literal = internet_message_id.replace("'", "''")
+
+    from msgraph.generated.users.item.messages.messages_request_builder import (
+        MessagesRequestBuilder,
+    )
+
+    from outlook_mcp.errors import NotFoundError
+
+    response = await graph_client.me.messages.get(
+        request_configuration=build_request_config(
+            MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
+            {"$filter": f"internetMessageId eq '{literal}'", "$select": "id", "$top": 10},
+        )
+    )
+    ids = [m.id for m in (response.value or []) if m.id]
+    shown = sanitize_output(internet_message_id[:120])
+    if not ids:
+        raise NotFoundError("Message with Message-ID", shown)
+    if len(ids) > 1:
+        raise ValueError(
+            f"Message-ID {shown} matches {len(ids)} messages, copies in different "
+            f"folders: {', '.join(ids)}. Read one by its id."
+        )
+    return ids[0]
+
+
 async def read_message(
     graph_client: Any,
     message_id: str,
@@ -439,7 +478,7 @@ async def read_message(
     include_deferred_send: bool = False,
     concise: bool = False,
 ) -> dict:
-    """Read a single message by ID.
+    """Read a single message by ID, or by its Message-ID (see ``resolve_message_id``).
 
     Pass ``include_deferred_send=True`` to surface the
     PR_DEFERRED_SEND_TIME extended property (the value Exchange reads to
@@ -451,7 +490,7 @@ async def read_message(
     collapsed). Headers (from/to/cc/subject/received/importance/...) are
     preserved. Default False keeps the existing shape.
     """
-    message_id = validate_graph_id(message_id)
+    message_id = await resolve_message_id(graph_client, message_id)
 
     deferred_value: str | None = None
 
