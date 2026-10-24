@@ -222,13 +222,17 @@ async def create_draft(
         msg.subject = subject
     if source_id is None:
         msg.body = message_body(body, is_html, is_markdown)
-    if validated_to:
+    # `is not None`, not truthiness: an empty list is a request to clear the
+    # recipients, and a reply-all draft arrives with Graph's own to/cc already on
+    # it. `if cc:` treated `cc=[]` as "not mentioned", so the draft kept people the
+    # caller had just removed — and sending it mailed them.
+    if to is not None:
         msg.to_recipients = [_make_recipient(e) for e in validated_to]
-    if validated_cc:
+    if cc is not None:
         msg.cc_recipients = [_make_recipient(e) for e in validated_cc]
-    if validated_bcc:
+    if bcc is not None:
         msg.bcc_recipients = [_make_recipient(e) for e in validated_bcc]
-    if validated_reply_to:
+    if reply_to is not None:
         msg.reply_to = [_make_recipient(e) for e in validated_reply_to]
 
     importance_map = {
