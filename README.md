@@ -513,7 +513,7 @@ The client then connects to `https://<your proxy>/mcp` and sends `Authorization:
 
 **This changes who can reach the mailbox.** Over stdio, only the process that started the server can. Over HTTP, one request to the port is enough for anything that holds a token, so the token is the whole of the access control:
 
-- **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let any process running as that user read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. Tokens are comma-separated, so a new one can be added before the old one is removed. Each needs at least 32 characters from `A–Z a–z 0–9 -._~+/`.
+- **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let any process running as that user read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. The token is one value of at least 32 characters from `A–Z a–z 0–9 -._~+/`; to change it, restart the server with the new one.
 - **Plain HTTP sends the token in the clear.** The server does not terminate TLS. On any bind other machines can reach, the token and everything the tools return cross the network readable by anything on the path, unless a reverse proxy in front of the server terminates TLS. Put it behind one, and let the proxy authenticate callers too if more than one client will reach it.
 - **It binds `127.0.0.1` by default.** The SDK also refuses a request whose `Host` is not a loopback name (421, its DNS-rebinding protection), so a reverse proxy on the same machine must send `Host: 127.0.0.1:<port>` upstream.
 - **It is stateless.** The server issues no `Mcp-Session-Id` and answers each request with JSON rather than an event stream. No tool sends anything to the client mid-call, so nothing is lost.
@@ -621,6 +621,7 @@ When `allow_categories` is set, any tool in a non-allowed category returns a per
 - **No logging of sensitive data.** Message bodies, recipient addresses, and tokens are never logged.
 - **Config permissions.** On macOS and Linux the config directory is created `0700` and the config file `0600`, and a loose mode on the file is repaired on load. On Windows those POSIX modes cannot be enforced — `os.chmod` there sets only the read-only attribute — so access is governed by the path's Windows ACL, including whatever it inherits from the directory it was created under, which this server neither applies nor verifies. Symlinked configs are rejected on every platform.
 - **Input validation.** All user inputs (email addresses, Graph IDs, OData filters, KQL queries, datetimes) are validated and sanitized before reaching the Graph API.
+- **HTTP transport (opt-in).** It changes who can reach the mailbox: a bearer token is required on every bind and checked on every request, and the server speaks plain HTTP, so TLS belongs to a proxy in front. The whole security story is in [Remote / HTTP transport](#remote--http-transport-optional--outlook_mcp_transport).
 
 ---
 

@@ -42,7 +42,6 @@ from outlook_mcp.http_transport import (
 
 # Synthetic, and shaped like real ones: 32+ characters of the RFC 6750 alphabet.
 TOKEN = "test-token-" + "a" * 32
-ROTATED = "rotated-token-" + "b" * 32
 WRONG = "wrong-token-" + "c" * 32
 
 HTTP = {TRANSPORT_ENV: "streamable-http"}
@@ -103,7 +102,7 @@ def test_http_is_served_only_when_asked_for(no_transport_env, monkeypatch):
 
     server.main()
 
-    assert served == [HttpSettings(tokens=(TOKEN,))]
+    assert served == [HttpSettings(token=TOKEN)]
 
 
 # ── Refused before anything binds ───────────────────────────────────────
@@ -150,7 +149,7 @@ PUBLIC = ["0.0.0.0", "::", "192.0.2.10", "2001:db8::1", "mcp.example.com"]
 def test_defaults_are_loopback_and_port_8000():
     settings = settings_from_env({**HTTP, TOKEN_ENV: TOKEN})
 
-    assert settings == HttpSettings(host="127.0.0.1", port=8000, tokens=(TOKEN,))
+    assert settings == HttpSettings(host="127.0.0.1", port=8000, token=TOKEN)
 
 
 @pytest.mark.parametrize("host", [None, *LOOPBACK, *PUBLIC])
@@ -160,7 +159,7 @@ def test_every_bind_needs_a_token_loopback_included(host):
         settings_from_env(env)
 
     # ...and is accepted once one is set.
-    assert settings_from_env({**env, TOKEN_ENV: TOKEN}).tokens == (TOKEN,)
+    assert settings_from_env({**env, TOKEN_ENV: TOKEN}).token == TOKEN
 
 
 @pytest.mark.parametrize("host", LOOPBACK)
@@ -184,20 +183,24 @@ def test_a_public_bind_refusal_says_plain_http_sends_the_token_in_the_clear(host
     assert "terminates TLS" in message
 
 
-def test_tokens_are_comma_separated_so_one_can_be_rotated():
-    settings = settings_from_env({**HTTP, TOKEN_ENV: f" {TOKEN} ,{ROTATED},"})
-
-    assert settings.tokens == (TOKEN, ROTATED)
+def test_surrounding_whitespace_is_not_part_of_the_token():
+    assert settings_from_env({**HTTP, TOKEN_ENV: f" {TOKEN}\n"}).token == TOKEN
 
 
 @pytest.mark.parametrize(
     "bad",
-    ["x" * 31, "has space " + "x" * 32, 'quote"' + "x" * 32, "ü" + "x" * 32],
-    ids=["too-short", "space", "quote", "non-ascii"],
+    [
+        "x" * 31,
+        "has space " + "x" * 32,
+        'quote"' + "x" * 32,
+        "ü" + "x" * 32,
+        f"{TOKEN},{WRONG}",
+    ],
+    ids=["too-short", "space", "quote", "non-ascii", "a-list"],
 )
 def test_an_unusable_token_is_refused_without_being_echoed(bad):
     with pytest.raises(ValueError, match=TOKEN_ENV) as exc:
-        settings_from_env({**HTTP, TOKEN_ENV: f"{TOKEN},{bad}"})
+        settings_from_env({**HTTP, TOKEN_ENV: bad})
 
     assert bad not in str(exc.value)
     assert TOKEN not in str(exc.value)
@@ -224,11 +227,12 @@ async def test_an_app_built_without_a_token_refuses_every_request():
     async def send(message):
         sent.append(message)
 
-    headers = [(b"authorization", f"Bearer {TOKEN}".encode())]
-    await app({"type": "http", "headers": headers}, None, send)
+    for presented in (f"Bearer {TOKEN}", "Bearer "):
+        headers = [(b"authorization", presented.encode())]
+        await app({"type": "http", "headers": headers}, None, send)
 
     assert isinstance(app, http_transport.BearerTokenMiddleware)
-    assert sent[0]["status"] == 401
+    assert [m["status"] for m in sent if "status" in m] == [401, 401]
 
 
 # ── A real HTTP round trip ──────────────────────────────────────────────
@@ -237,7 +241,7 @@ async def test_an_app_built_without_a_token_refuses_every_request():
 @pytest.fixture(scope="module")
 def base_url():
     """The production uvicorn config, on an ephemeral loopback port."""
-    settings = HttpSettings(host="127.0.0.1", port=0, tokens=(TOKEN, ROTATED))
+    settings = HttpSettings(host="127.0.0.1", port=0, token=TOKEN)
     instance = uvicorn.Server(http_transport.uvicorn_config(server.mcp, settings))
     thread = threading.Thread(target=instance.run, daemon=True)
     thread.start()
@@ -266,12 +270,12 @@ def _post(url: str, authorization: str | None = None, **headers: str) -> httpx2.
         f"Bearer {WRONG}",
         f"Bearer {TOKEN}x",
         f"Bearer {TOKEN[:-1]}",
-        f"Bearer {TOKEN},{ROTATED}",
+        f"Bearer {TOKEN},{WRONG}",
         "Bearer",
         f"Basic {TOKEN}",
         TOKEN,
     ],
-    ids=["missing", "wrong", "longer", "shorter", "both", "empty", "basic", "no-scheme"],
+    ids=["missing", "wrong", "longer", "shorter", "a-list", "empty", "basic", "no-scheme"],
 )
 def test_a_request_without_a_configured_bearer_gets_401(base_url, authorization):
     response = _post(f"{base_url}/mcp", authorization)
@@ -330,7 +334,7 @@ async def test_a_bind_other_machines_can_reach_accepts_the_proxys_host():
     proxied request to a 0.0.0.0 bind gets 421. Driven in-process, so the test
     never listens on a public interface.
     """
-    app = http_transport.build_app(server.mcp, HttpSettings(host="0.0.0.0", tokens=(TOKEN,)))
+    app = http_transport.build_app(server.mcp, HttpSettings(host="0.0.0.0", token=TOKEN))
     sdk_app = app.app  # the lifespan belongs to the SDK's Starlette app inside the gate
     headers = {"Accept": "application/json, text/event-stream", "Authorization": f"Bearer {TOKEN}"}
     transport = httpx2.ASGITransport(app=app)
@@ -351,7 +355,7 @@ async def test_only_http_requests_are_ever_passed_on():
     async def send(message):
         sent.append(message)
 
-    gate = http_transport.BearerTokenMiddleware(app, (TOKEN,))
+    gate = http_transport.BearerTokenMiddleware(app, TOKEN)
     headers = [(b"authorization", f"Bearer {TOKEN}".encode())]
     await gate({"type": "websocket", "headers": headers}, None, send)
     await gate({"type": "http", "headers": headers}, None, send)
@@ -370,9 +374,8 @@ def test_the_server_is_stateless_and_answers_json(base_url):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("token", [TOKEN, ROTATED], ids=["first", "rotated"])
-async def test_the_right_bearer_lists_the_same_surface_as_stdio(base_url, token):
-    async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http:
+async def test_the_right_bearer_lists_the_same_surface_as_stdio(base_url):
+    async with httpx2.AsyncClient(headers={"Authorization": f"Bearer {TOKEN}"}) as http:
         transport = streamable_http_client(f"{base_url}/mcp", http_client=http)
         # "legacy" is the initialize handshake today's clients use.
         async with Client(transport, mode="legacy") as client:
