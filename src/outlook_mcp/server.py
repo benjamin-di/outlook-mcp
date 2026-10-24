@@ -942,12 +942,16 @@ async def outlook_list_contacts(
 @_wrap_tool_errors
 async def outlook_search_contacts(
     ctx: Context,
-    query: str,
+    query: str | None = None,
     count: int = 25,
+    phone: str | None = None,
 ) -> dict:
-    """Search contacts by name or email using KQL query syntax."""
+    """Search contacts by name or email using KQL query syntax.
+
+    phone (instead of query) finds a number written any way, with or without country code.
+    """
     client = _get_graph_client(ctx)
-    return await contacts.search_contacts(client.sdk_client, query, count)
+    return await contacts.search_contacts(client.sdk_client, query, count, phone)
 
 
 @mcp.tool()

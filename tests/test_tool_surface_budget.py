@@ -115,6 +115,12 @@ CHARS_PER_TOKEN = 4
 # merged onto the mail stack (13,821, #131 #167 #143 #168): each fit its own base,
 # together they do not. Raised at merge time to 14,100 as one ceiling for the contacts
 # pair (#161, then #165 stacked on it, ~13,964 together): ~1% headroom.
+#
+# 13,729 with phone on outlook_search_contacts (#165, +53 on #162 at 13,676):
+# the optional query argument and phone matching description. The contacts stack
+# includes birthday, company, categories, notes and middle name now on main;
+# its combined surface needs a 13,900 ceiling (~1% headroom), rather than the
+# 13,600 discussed before those fields landed.
 TOOL_SURFACE_CEILING = 14_100
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
