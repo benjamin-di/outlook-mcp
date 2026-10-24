@@ -23,6 +23,15 @@ from outlook_mcp.validation import WELL_KNOWN_FOLDERS, sanitize_output, validate
 _MAX_CANDIDATE_PATHS = 5
 
 
+class _NoSuchFolderError(ValueError):
+    """A path's first part names no folder: none at the top of the tree, or, for a
+    path of one escaped name, none anywhere.
+
+    The one refusal after which a reference shaped like an id is tried as one. A
+    path whose first folder exists is a path, however long and id-like its parts.
+    """
+
+
 async def fetch_all_top_level_folders(graph_client: Any, top: int = 100) -> list[Any]:
     """Fetch every top-level mail folder, following `@odata.nextLink` pagination."""
     from msgraph.generated.users.item.mail_folders.mail_folders_request_builder import (
@@ -142,12 +151,16 @@ async def resolve_folder_id(graph_client: Any, folder_ref: str) -> str:
         return normalized
 
     if "/" in trimmed:
+        # Outside the try: an id has no empty part, so a path split_folder_path
+        # refuses is refused as a path.
+        parts = split_folder_path(trimmed)
         try:
-            return await _resolve_path(graph_client, split_folder_path(trimmed))
-        except ValueError:
+            return await _resolve_path(graph_client, parts)
+        except _NoSuchFolderError:
             # An id may contain "/" (the validator allows it), and until paths
-            # existed a "/" meant an id. One that no path matches still goes
-            # through as an id.
+            # existed a "/" meant an id. One whose first part names no folder
+            # still goes through as an id; a path that went wrong below a folder
+            # that exists keeps the resolver's "No folder X in Y".
             if _could_be_graph_id(trimmed):
                 return trimmed
             raise
@@ -183,8 +196,17 @@ def _could_be_graph_id(value: str) -> bool:
     return True
 
 
-def _only_match(folders: list[Any], name: str, where: str, hint: str = "") -> str:
-    """The id of the one folder in ``folders`` called ``name`` (case-insensitive)."""
+def _only_match(
+    folders: list[Any],
+    name: str,
+    where: str,
+    hint: str = "",
+    missing: type[ValueError] = ValueError,
+) -> str:
+    """The id of the one folder in ``folders`` called ``name`` (case-insensitive).
+
+    ``missing`` is what is raised when no folder is called that.
+    """
     target = name.lower()
     matches = [f for f in folders if f.display_name and f.display_name.lower() == target]
     if len(matches) == 1:
@@ -194,7 +216,7 @@ def _only_match(folders: list[Any], name: str, where: str, hint: str = "") -> st
             f"Folder '{name}' {where} is ambiguous ({len(matches)} matches). "
             "Pass a Graph folder ID instead."
         )
-    raise ValueError(
+    raise missing(
         f"No folder '{name}' {where}.{hint} Use outlook_list_folders(recursive=True) to see "
         "each folder's path, or pass a Graph folder ID."
     )
@@ -204,7 +226,7 @@ async def _resolve_path(graph_client: Any, parts: list[str]) -> str:
     """Walk a split path down from the top of the tree, one listing per level."""
     if len(parts) == 1:
         # A single name with an escaped "/" in it: looked up like any name.
-        return await _lookup_display_name(graph_client, parts[0])
+        return await _lookup_display_name(graph_client, parts[0], missing=_NoSuchFolderError)
 
     first = parts[0].lower().replace(" ", "")
     if first in WELL_KNOWN_FOLDERS:
@@ -215,6 +237,7 @@ async def _resolve_path(graph_client: Any, parts: list[str]) -> str:
             parts[0],
             "at the top level",
             " A path starts at the top of the folder tree, e.g. 'Inbox/Travel'.",
+            missing=_NoSuchFolderError,
         )
 
     for depth in range(1, len(parts)):
@@ -224,11 +247,14 @@ async def _resolve_path(graph_client: Any, parts: list[str]) -> str:
     return folder_id
 
 
-async def _lookup_display_name(graph_client: Any, display_name: str) -> str:
+async def _lookup_display_name(
+    graph_client: Any, display_name: str, missing: type[ValueError] = ValueError
+) -> str:
     """Look up a folder by display name (case-insensitive), walking subfolders.
 
     Prefers a top-level match when one exists. Falls back to a BFS walk through
     subfolders so names like "Domains" nested under "Receipts" still resolve.
+    ``missing`` is what is raised when no folder has the name.
     """
     target = display_name.lower()
 
@@ -249,7 +275,7 @@ async def _lookup_display_name(graph_client: Any, display_name: str) -> str:
             matches.append((f, path))
 
     if not matches:
-        raise ValueError(
+        raise missing(
             f"Folder '{display_name}' not found. "
             "Use outlook_list_folders(recursive=True) to see the full folder tree, "
             "or pass a Graph folder ID."
