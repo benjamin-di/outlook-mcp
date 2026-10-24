@@ -121,7 +121,21 @@ CHARS_PER_TOKEN = 4
 # includes birthday, company, categories, notes and middle name now on main;
 # its combined surface needs a 13,900 ceiling (~1% headroom), rather than the
 # 13,600 discussed before those fields landed.
-TOOL_SURFACE_CEILING = 14_100
+#
+# 13,605 with attachments as content (#129, +233 on today's main, 13,372):
+# `as_content` and an optional `save_path` on the two downloads, inline
+# `attachments` and an optional `attachment_paths` on the two mail uploads (+159 in
+# the schemas), and one short sentence each (+74). Four new arguments do not fit the
+# ~128 tokens left, so this is a deliberate raise to 13,750: ~1% headroom.
+#
+# 13,819 after rebasing #129 onto main with #174 and #176 (+233 on 13,586).
+# The added contact fields lifted main's ceiling to 13,700; this independent
+# attachment feature needs a deliberate 14,000 ceiling (~1.3% headroom).
+#
+# 14,197 once #129 (downloads returned as content, inline uploads, +233) merged onto
+# the contacts pair (13,964): over both the 14,100 set for the pair and the 14,000
+# #129 set on its own base. Raised at merge time to 14,350: ~1% headroom.
+TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

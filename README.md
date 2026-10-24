@@ -364,7 +364,7 @@ Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markd
 | `outlook_update_checklist_item` | Update a checklist item — mark done (`is_checked`) or rename (partial patch). |
 | `outlook_delete_checklist_item` | Delete a checklist item from a task. |
 | `outlook_list_task_attachments` | List attachments on a To Do task (id, name, size, content_type) with pagination. |
-| `outlook_download_task_attachment` | Download a task attachment's content to a local file (confined to `attachments_dir`). |
+| `outlook_download_task_attachment` | Download a task attachment's content to a local file (confined to `attachments_dir`), or return it with `as_content=True`. |
 | `outlook_upload_task_attachment` | Attach a local file (from `attachments_dir`) to a task via inline base64 POST (1 byte – 20 MiB). |
 | `outlook_delete_task_attachment` | Remove an attachment from a To Do task. |
 
@@ -391,13 +391,23 @@ Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markd
 > write into it, so neither can sweep arbitrary files off disk. (Downloads are not
 > `todo_write`-gated — they are reads, like `outlook_download_attachment`; the fence, not
 > the category, is what confines them.)
+>
+> **A client that can't see the server's disk**, such as a remote or sandboxed one, can carry
+> the bytes in the call instead, and then nothing is read from or written to disk.
+> `as_content=True` on either download returns the attachment in the result, up to 10 MB:
+> PNG, JPEG, GIF and WebP up to 5 MB as images, text up to 100,000 characters as text, and
+> anything else, PDFs included, as an embedded resource holding the base64 bytes and their
+> type. `attachments` on the two send tools takes inline files,
+> `[{name, content_base64, content_type?}]`, up to 3 MB each (Graph's simple-attachment
+> size). The fence still governs every path argument. An inline file is bytes the agent
+> already holds and could already put in a message body, so it widens nothing.
 
 | Tool | Description |
 |------|-------------|
 | `outlook_list_attachments` | List attachments on a message. |
-| `outlook_download_attachment` | Download an attachment and save decoded bytes into `attachments_dir`. |
-| `outlook_send_with_attachments` | Send a message with attachments read from `attachments_dir` (auto upload session for >3MB). |
-| `outlook_attach_to_draft` | Add attachments from `attachments_dir` to an existing draft (auto upload session for >3MB). |
+| `outlook_download_attachment` | Download an attachment and save decoded bytes into `attachments_dir`, or return it with `as_content=True`. |
+| `outlook_send_with_attachments` | Send a message with attachments read from `attachments_dir` (auto upload session for >3MB) or passed inline in `attachments`. |
+| `outlook_attach_to_draft` | Add attachments from `attachments_dir` (auto upload session for >3MB) or inline in `attachments` to an existing draft. |
 | `outlook_remove_draft_attachment` | Remove a single attachment from a draft. |
 
 ### Folder Management

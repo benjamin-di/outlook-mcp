@@ -490,19 +490,23 @@ class TestAttachToDraft:
                 config=Config(client_id="test", read_only=True, attachments_dir=str(tmp_path)),
             )
 
-    async def test_attach_empty_list_is_noop(self):
-        """attach_to_draft with empty attachment_paths makes no API calls."""
+    async def test_attach_empty_list_is_refused(self):
+        """attach_to_draft with nothing to attach is refused, with no API call.
+
+        It used to report success with attachment_count 0. With `attachments` beside
+        `attachment_paths`, both optional, that is also what a misspelt argument
+        produced, so nothing to attach is now an error (#129 review).
+        """
         mock_client = MagicMock()
 
-        result = await attach_to_draft(
-            mock_client,
-            draft_id="AAMkAG123=",
-            attachment_paths=[],
-            config=_CFG,
-        )
+        with pytest.raises(ValueError, match="nothing would be attached"):
+            await attach_to_draft(
+                mock_client,
+                draft_id="AAMkAG123=",
+                attachment_paths=[],
+                config=_CFG,
+            )
 
-        assert result["attachment_count"] == 0
-        assert result["attachment_ids"] == []
         mock_client.me.messages.by_message_id.return_value.attachments.post.assert_not_called()
 
 

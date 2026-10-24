@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import mimetypes
 import ntpath
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+from mcp.types import (
+    BlobResourceContents,
+    ContentBlock,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+)
 
 from outlook_mcp.config import Config
 from outlook_mcp.errors import LEAVE_SETTINGS_TO_THE_USER, MESSAGE_MAY_HAVE_BEEN_SENT
@@ -18,15 +29,33 @@ from outlook_mcp.permissions import (
 )
 from outlook_mcp.throttle import call_without_replay
 from outlook_mcp.tools.mail_drafts import require_draft
-from outlook_mcp.validation import sanitize_output, validate_email, validate_graph_id
+from outlook_mcp.validation import (
+    has_control_characters,
+    sanitize_output,
+    validate_email,
+    validate_graph_id,
+    validate_inline_attachment,
+)
 
-# 3MB threshold — files above this use upload sessions
+# 3MB threshold — files above this use upload sessions. Also the cap on an inline
+# attachment (`attachments`), which never takes the upload-session path.
 _LARGE_FILE_THRESHOLD = 3 * 1024 * 1024
 # Chunk size for upload sessions (320 KiB aligned, as required by Graph)
 _UPLOAD_CHUNK_SIZE = 320 * 1024 * 10  # 3.2 MB chunks
 
 # Where resolving a path can reach the network — see _network_path_outside.
 _WINDOWS = os.name == "nt"
+
+# `as_content=True` puts the attachment into the model's context rather than onto the disk,
+# so what it may return is capped. Over 10 MiB it is refused and save_path is the way.
+_CONTENT_MAX_BYTES = 10 * 1024 * 1024
+# Some model APIs refuse a larger image outright, so above this an image is a resource.
+_IMAGE_CONTENT_MAX_BYTES = 5 * 1024 * 1024
+# About 25,000 tokens, the default cap some clients put on one tool result. Longer text
+# is a resource too: whole, never truncated.
+_TEXT_CONTENT_MAX_CHARS = 100_000
+# The image types the major model APIs read as images.
+_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 
 def _network_path_outside(path: str, bases: tuple[str, ...]) -> bool:
@@ -131,18 +160,77 @@ def resolve_attachment_path(path: str, attachments_dir: str) -> str:
     return str(resolved)
 
 
-def _make_inline_attachment(file_path: str) -> Any:
-    """Build a FileAttachment SDK object from a local file (<=3MB path)."""
+def _file_attachment(name: str, content: bytes, content_type: str | None) -> Any:
+    """Build a FileAttachment SDK object; the type defaults to a guess from the name."""
     from msgraph.generated.models.file_attachment import FileAttachment
 
     att = FileAttachment()
-    att.name = os.path.basename(file_path)
-    with open(file_path, "rb") as f:
-        att.content_bytes = f.read()
-    content_type, _ = mimetypes.guess_type(file_path)
-    att.content_type = content_type or "application/octet-stream"
+    att.name = name
+    att.content_bytes = content
+    att.content_type = content_type or mimetypes.guess_type(name)[0] or "application/octet-stream"
     att.odata_type = "#microsoft.graph.fileAttachment"
     return att
+
+
+def _make_inline_attachment(file_path: str) -> Any:
+    """Build a FileAttachment SDK object from a local file (<=3MB path)."""
+    with open(file_path, "rb") as f:
+        content = f.read()
+    return _file_attachment(os.path.basename(file_path), content, None)
+
+
+def _require_something_to_attach(
+    attachment_paths: list[str] | None, attachments: list[dict] | None, tool: str, remedy: str
+) -> None:
+    """Refuse a call that would attach nothing.
+
+    Both arguments are optional, and the server ignores an unknown top-level
+    argument, so a misspelt one arrives as neither. Without this the mail went
+    out, or the draft reported "attached", with no file: #41's class, a call that
+    succeeds and does nothing.
+    """
+    if not attachment_paths and not attachments:
+        raise ValueError(
+            f"{tool} needs attachment_paths or attachments (inline files); neither was "
+            f"given, so nothing would be attached. {remedy}"
+        )
+
+
+def _over_the_inline_cap(where: str, name: str, size: str) -> ValueError:
+    return ValueError(
+        f"{where} ({name}) is {size} bytes, over the 3 MiB limit for an inline attachment "
+        "(Graph's simple-attachment size). For a larger file, ask the user to put it in "
+        "attachments_dir and pass its path in attachment_paths."
+    )
+
+
+def _inline_attachments(items: list[dict] | None) -> list[Any]:
+    """FileAttachments for ``attachments`` (inline content), validated before anything is sent.
+
+    Inline content never touches the disk, so the attachments_dir fence has nothing to
+    confine here: it still governs every path. What is capped is size, at Graph's
+    simple-attachment limit, because an inline file never takes the upload-session path.
+    """
+    built = []
+    for index, item in enumerate(items or []):
+        where = f"attachments[{index}]"
+        encoded = item.get("content_base64") if isinstance(item, dict) else None
+        if isinstance(encoded, str):
+            # Use decoded length, including padding, without allocating the bytes.
+            # Ignore MIME whitespace as the decoder does; invalid excess padding
+            # must not reduce a large input below the cap.
+            compact = "".join(encoded.split())
+            padding = min(2, len(compact) - len(compact.rstrip("=")))
+            size = len(compact) // 4 * 3 - padding
+            if size > _LARGE_FILE_THRESHOLD:
+                name = item.get("name")
+                label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
+                raise _over_the_inline_cap(where, label, str(size))
+        name, content_type, content = validate_inline_attachment(item, where)
+        if len(content) > _LARGE_FILE_THRESHOLD:
+            raise _over_the_inline_cap(where, name, str(len(content)))
+        built.append(_file_attachment(name, content, content_type))
+    return built
 
 
 async def list_attachments(
@@ -171,6 +259,119 @@ async def list_attachments(
         ],
         "count": len(attachments),
     }
+
+
+def download_destination(
+    save_path: str | None, as_content: bool, attachments_dir: str
+) -> str | None:
+    """Where a download goes: a confined file, or None when it is returned as content.
+
+    Exactly one of the two, checked before any Graph call. With ``as_content`` nothing is
+    written, so no path is resolved at all and the attachments directory is not created.
+    """
+    if as_content:
+        if save_path is not None:
+            raise ValueError(
+                "Pass save_path or as_content=True, not both: as_content returns the "
+                "attachment and writes nothing."
+            )
+        return None
+    if save_path is None:
+        raise ValueError(
+            "Pass save_path to save the attachment inside attachments_dir, or "
+            "as_content=True to receive it in the result."
+        )
+    save_path = resolve_attachment_path(save_path, attachments_dir)
+    return _validated_download_target(save_path, attachments_dir)
+
+
+def _media_type(content_type: str, name: str) -> tuple[str, str | None]:
+    """(lower-case media type, charset), guessed from the name when the type is generic."""
+    media, _, params = content_type.partition(";")
+    media = media.strip().lower()
+    charset = None
+    for param in params.split(";"):
+        key, _, value = param.partition("=")
+        if key.strip().lower() == "charset":
+            charset = value.strip().strip('"') or None
+    if media in ("", "application/octet-stream"):
+        media = (mimetypes.guess_type(name)[0] or "application/octet-stream").lower()
+    return media, charset
+
+
+def _readable_text(media: str, charset: str | None, content: bytes) -> str | None:
+    """The attachment as text, if it is text a model can be shown unaltered; else None.
+
+    Never a lossy decode, so text either decodes cleanly or is not text here. And never
+    altered: where a message body has its control characters stripped, text that carries
+    any (a sender's terminal escapes) goes out whole as a resource instead.
+    """
+    if not (
+        media.startswith("text/")
+        or media in ("application/json", "application/xml")
+        or media.endswith(("+json", "+xml"))
+    ):
+        return None
+    try:
+        text = content.decode(charset or "utf-8-sig")
+    except (LookupError, ValueError):
+        return None
+    if len(text) > _TEXT_CONTENT_MAX_CHARS or has_control_characters(text):
+        return None
+    return text
+
+
+def _image_type(content: bytes) -> str | None:
+    """The image type ``content`` opens as, from its signature, among ``_IMAGE_TYPES``."""
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def attachment_content(name: str, content_type: str, content: bytes) -> list[ContentBlock]:
+    """An attachment as MCP content (``as_content=True``), never written to disk.
+
+    A JSON block with ``name``, ``size`` (the bytes returned) and ``content_type`` comes
+    first, then the attachment: an image a model can view as ``ImageContent``, text as text,
+    and anything else, PDFs included, as an ``EmbeddedResource`` holding a base64 blob and
+    its media type. Over ``_CONTENT_MAX_BYTES`` it is refused. Shared by the mail and To Do
+    downloads; ``name`` and ``content_type`` arrive sanitised.
+    """
+    if len(content) > _CONTENT_MAX_BYTES:
+        raise ValueError(
+            f"Attachment {name!r} is {len(content)} bytes, over the 10 MiB limit for "
+            "as_content. Save it with save_path instead (it lands in attachments_dir)."
+        )
+    meta = {"name": name, "size": len(content), "content_type": content_type}
+    blocks: list[ContentBlock] = [
+        TextContent(type="text", text=json.dumps(meta, ensure_ascii=False))
+    ]
+    media, charset = _media_type(content_type, name)
+    encoded = base64.b64encode(content).decode()
+
+    # The name and type are the sender's; the bytes decide. Some model APIs reject a
+    # whole result whose image does not decode, so non-image bytes fall through.
+    image = _image_type(content) if media in _IMAGE_TYPES else None
+    if image and len(content) <= _IMAGE_CONTENT_MAX_BYTES:
+        blocks.append(ImageContent(type="image", data=encoded, mime_type=image))
+        return blocks
+    text = _readable_text(media, charset, content)
+    if text is not None:
+        blocks.append(TextContent(type="text", text=text))
+        return blocks
+    # The URI names the attachment and is never a path: the last segment of the name, quoted.
+    file_name = name.replace("\\", "/").rsplit("/", 1)[-1] or "attachment"
+    resource = BlobResourceContents(
+        uri=f"attachment:///{quote(file_name, safe='')}", mime_type=media, blob=encoded
+    )
+    blocks.append(EmbeddedResource(type="resource", resource=resource))
+    return blocks
 
 
 def _validated_download_target(save_path: str, attachments_dir: str) -> str:
@@ -228,19 +429,20 @@ async def download_attachment(
     graph_client: Any,
     message_id: str,
     attachment_id: str,
-    save_path: str,
+    save_path: str | None = None,
     *,
     config: Config,
-) -> dict:
+    as_content: bool = False,
+) -> dict | list[ContentBlock]:
     """Download an attachment.
 
     GET /me/messages/{id}/attachments/{att_id}
-    Writes the file bytes to save_path and returns the path.
+    Writes the file bytes to save_path and returns the path, or with ``as_content``
+    returns them as MCP content and writes nothing.
     """
     message_id = validate_graph_id(message_id)
     attachment_id = validate_graph_id(attachment_id)
-    save_path = resolve_attachment_path(save_path, config.attachments_dir)
-    save_path = _validated_download_target(save_path, config.attachments_dir)
+    save_path = download_destination(save_path, as_content, config.attachments_dir)
 
     attachment = (
         await graph_client.me.messages.by_message_id(message_id)
@@ -262,12 +464,17 @@ async def download_attachment(
             "be an attached email or a link to a cloud file. Nothing was written."
         )
 
+    name = sanitize_output(attachment.name or "")
+    content_type = sanitize_output(attachment.content_type or "")
+    if save_path is None:
+        return attachment_content(name, content_type, content)
+
     write_download(save_path, content)
     return {
         "saved_to": save_path,
-        "name": sanitize_output(attachment.name or ""),
+        "name": name,
         "size": attachment.size,
-        "content_type": sanitize_output(attachment.content_type or ""),
+        "content_type": content_type,
     }
 
 
@@ -302,7 +509,7 @@ async def send_with_attachments(
     to: list[str],
     subject: str,
     body: str,
-    attachment_paths: list[str],
+    attachment_paths: list[str] | None = None,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
     is_html: bool = False,
@@ -310,13 +517,22 @@ async def send_with_attachments(
     reply_to: list[str] | None = None,
     *,
     config: Config,
+    attachments: list[dict] | None = None,
 ) -> dict:
     """Send a message with file attachments.
 
     For files under 3MB: inline as base64 FileAttachment.
     For files over 3MB: create draft, use createUploadSession + chunked upload, then send.
+    ``attachments`` are inline files (``{name, content_base64, content_type?}``, ≤3MB each),
+    which go out like a small file and are never read from or written to disk.
     """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_send_with_attachments")
+    _require_something_to_attach(
+        attachment_paths,
+        attachments,
+        "outlook_send_with_attachments",
+        "For a message with no attachment, use outlook_send_message.",
+    )
 
     # Validate emails
     validated_to = [validate_email(e) for e in to]
@@ -326,11 +542,12 @@ async def send_with_attachments(
 
     # Confine every path before touching the filesystem, then validate existence.
     attachment_paths = [
-        resolve_attachment_path(path, config.attachments_dir) for path in attachment_paths
+        resolve_attachment_path(path, config.attachments_dir) for path in attachment_paths or []
     ]
     for path in attachment_paths:
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Attachment file not found: {path}")
+    inline = _inline_attachments(attachments)
 
     # Partition files into small (inline) and large (upload session)
     small_files = []
@@ -383,7 +600,7 @@ async def send_with_attachments(
         )
 
         msg = _build_message()
-        msg.attachments = [_make_inline_attachment(p) for p in small_files]
+        msg.attachments = [_make_inline_attachment(p) for p in small_files] + inline
 
         request_body = SendMailPostRequestBody()
         request_body.message = msg
@@ -403,7 +620,7 @@ async def send_with_attachments(
 
         msg = _build_message()
         # Attach small files inline on the draft
-        msg.attachments = [_make_inline_attachment(p) for p in small_files]
+        msg.attachments = [_make_inline_attachment(p) for p in small_files] + inline
 
         # Create draft message
         draft = await graph_client.me.messages.post(msg)
@@ -435,35 +652,46 @@ async def send_with_attachments(
 
     return {
         "status": "sent",
-        "attachment_count": len(attachment_paths),
+        "attachment_count": len(attachment_paths) + len(inline),
     }
 
 
 async def attach_to_draft(
     graph_client: Any,
     draft_id: str,
-    attachment_paths: list[str],
+    attachment_paths: list[str] | None = None,
     *,
     config: Config,
+    attachments: list[dict] | None = None,
 ) -> dict:
     """Add one or more attachments to an existing draft message.
 
     For files under 3MB: POST a FileAttachment directly.
     For files over 3MB: createUploadSession + chunked upload.
+    ``attachments`` are inline files (``{name, content_base64, content_type?}``, ≤3MB
+    each), POSTed like a small file and never read from or written to disk.
 
     Returns the new attachment IDs so callers can reference or
     remove individual attachments later.
     """
     check_permission(config, CATEGORY_MAIL_DRAFTS, "outlook_attach_to_draft")
     draft_id = validate_graph_id(draft_id)
+    _require_something_to_attach(
+        attachment_paths,
+        attachments,
+        "outlook_attach_to_draft",
+        "Check the argument names: attachment_paths takes file paths, attachments takes "
+        "{name, content_base64} items.",
+    )
 
     # Confine every path before touching the filesystem, then validate existence.
     attachment_paths = [
-        resolve_attachment_path(path, config.attachments_dir) for path in attachment_paths
+        resolve_attachment_path(path, config.attachments_dir) for path in attachment_paths or []
     ]
     for path in attachment_paths:
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Attachment file not found: {path}")
+    inline = _inline_attachments(attachments)
 
     # Partition files into small (inline) and large (upload session)
     small_files: list[str] = []
@@ -475,16 +703,15 @@ async def attach_to_draft(
         else:
             small_files.append(path)
 
-    if attachment_paths:
+    if attachment_paths or inline:
         # After the paths are confined and found, before anything is uploaded.
         await require_draft(graph_client, draft_id, "outlook_attach_to_draft")
 
     attachment_ids: list[str] = []
     msg_builder = graph_client.me.messages.by_message_id(draft_id)
 
-    # Small files — POST each as an inline FileAttachment
-    for file_path in small_files:
-        att = _make_inline_attachment(file_path)
+    # Small files and inline content — POST each as an inline FileAttachment
+    for att in [_make_inline_attachment(p) for p in small_files] + inline:
         created = await msg_builder.attachments.post(att)
         if created is not None and getattr(created, "id", None):
             attachment_ids.append(created.id)
@@ -514,7 +741,7 @@ async def attach_to_draft(
     return {
         "status": "attached",
         "draft_id": draft_id,
-        "attachment_count": len(attachment_paths),
+        "attachment_count": len(attachment_paths) + len(inline),
         "attachment_ids": attachment_ids,
     }
 
