@@ -1,6 +1,6 @@
 """The tool surface is a per-turn cost, so it gets a ceiling.
 
-Every client pays for all 69 tool schemas on every turn that includes them.
+Every client pays for all 71 tool schemas on every turn that includes them.
 ROADMAP records a measured baseline of ~8,644 tokens (o200k proxy, 2026-07), and
 that number is what makes the `OUTLOOK_MCP_TOOLSETS` gating worth having — but
 nothing stopped it drifting upward one well-meant docstring at a time.
@@ -9,7 +9,7 @@ This is a budget, not a golden file. A golden snapshot of the schemas would fail
 on every wording change and be regenerated without being read, which teaches
 nobody anything. A ceiling only fires when the surface gets materially more
 expensive, and that is the moment worth a conversation: adding a tool, or adding
-a field to all 69.
+a field to all 71.
 
 Raising the ceiling is a legitimate outcome — a new tool has to go somewhere. It
 just has to be deliberate, with the new number written down next to the reason.
@@ -172,7 +172,19 @@ CHARS_PER_TOKEN = 4
 #
 # 14,412 with event keys on the rebased folder-path stack. This exceeds the
 # 14,350 base ceiling; 14,600 gives about 1.3% headroom.
-TOOL_SURFACE_CEILING = 14_600
+#
+# 14,091 on the 71-tool surface with event attachments (#153, +289 on 13,802 with
+# #144 and #148), raised to 14,200: `outlook_attach_to_event` (+163) and
+# `outlook_remove_event_attachment` (+117), most of each the schema every tool pays
+# for, and `outlook_get_event` naming the attachment list it now returns (+6).
+# Removal is its own tool, as for drafts and To Do; the listing rides on
+# `outlook_get_event` rather than a third tool, at the cost of a second request
+# only for an event that has files. The last of the three, so this is their
+# combined number. ~0.8% headroom.
+#
+# 14,701 with event attachments on the rebased folder-path/event-key stack.
+# The 14,600 parent ceiling no longer covers it; 14,850 gives about 1% headroom.
+TOOL_SURFACE_CEILING = 14_850
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
@@ -193,7 +205,7 @@ async def test_the_tool_surface_stays_within_budget():
     cost = _proxy_tokens([t.model_dump(exclude_none=True, by_alias=True) for t in tools])
 
     assert cost <= TOOL_SURFACE_CEILING, (
-        f"The 69-tool surface now costs ~{cost} proxy tokens per turn, over the "
+        f"The 71-tool surface now costs ~{cost} proxy tokens per turn, over the "
         f"{TOOL_SURFACE_CEILING} ceiling. Every client pays this on every turn. "
         f"Either trim it, or raise the ceiling deliberately and say why."
     )
