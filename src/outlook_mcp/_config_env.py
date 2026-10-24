@@ -58,6 +58,11 @@ def _narrow_attachment_root(value: str, baseline: str) -> str:
     """
     variable = PREFIX + "ATTACHMENTS_DIR"
     value, baseline = os.path.expanduser(value), os.path.expanduser(baseline)
+    if _WINDOWS:
+        root_drive = ntpath.splitdrive(ntpath.abspath(baseline))[0].casefold()
+        target_drive = ntpath.splitdrive(ntpath.abspath(value))[0].casefold()
+        if target_drive != root_drive:
+            raise _refuse(variable, "an override on a different drive or share is refused.")
     if _WINDOWS and len(value) >= 2 and all(c in "\\/" for c in value[:2]):
         root = ntpath.normcase(ntpath.abspath(baseline))
         target = ntpath.normcase(ntpath.abspath(value))

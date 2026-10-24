@@ -208,6 +208,7 @@ def test_relative_attachment_override_is_frozen_after_checking(tmp_path, monkeyp
         "//attacker.example/share/file",
         r"\\?\C:\outside",
         r"\\.\device",
+        r"Z:\mapped-share\file",
     ],
 )
 def test_windows_network_escape_is_refused_before_any_resolution(monkeypatch, target):

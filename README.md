@@ -568,7 +568,8 @@ another setting. Security permissions that require explicit consent in the file 
 
 Attachment roots are expanded and resolved without creating a directory. An override is kept as
 the checked absolute path; `..`, sibling prefixes and symlinks cannot escape the configured root.
-On Windows, an unapproved UNC/device location is refused before resolution can contact it.
+On Windows, a different drive/share or an unapproved UNC/device location is refused before
+resolution can contact it.
 Invalid inputs, misspelt security variables and attempts to loosen policy stop startup and name
 the variable to fix in the launch environment. Existing `OUTLOOK_MCP_CONFIG_DIR`, toolset and
 transport variables retain their meanings. With none of the new variables, file loading is unchanged.
