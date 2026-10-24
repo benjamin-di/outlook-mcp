@@ -84,7 +84,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   azure-identity's `ClientAuthenticationError`. A raw path reads its reply with
   `errors.graph_json(response)`, never a bare `response.json()`: otherwise its
   `JSONDecodeError`, a `ValueError`, is reported as invalid input
-- Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 68
+- Cross-tool guidance goes in `INSTRUCTIONS` (sent once per session) or a prompt, never into 69
   docstrings — a docstring is paid for on every turn by every client. A docstring stays
   self-sufficient for using *that* tool; sequencing across tools does not belong there
 - Anything taking a host filesystem path routes through `resolve_attachment_path`. Paths come

@@ -150,6 +150,9 @@ Working rules, each of which saves a round trip:
   paragraphs, line breaks, - and 1. lists, **bold**, *italic*, `code` and [text](https://…)
   or mailto: links become HTML; anything else is shown as written. Without it a body is plain
   text, and a reply keeps its paragraphs and line breaks either way.
+- Putting a booking (a flight, a stay, an appointment) on the calendar? Give the event a `key`
+  from its reference, and call outlook_find_event_by_key first: when a change to the same
+  booking arrives, update the event it finds instead of creating a second one.
 - Polling on a schedule? The delta tools (outlook_list_inbox_delta and friends) return only what
   changed since the token they handed you last time, and outlook_changes_since composes all
   three into one digest.
@@ -750,7 +753,7 @@ async def outlook_get_event(
     ctx: Context,
     event_id: str,
 ) -> dict:
-    """Get one event by ID: body, attendees, organizer, recurrence, type, show_as, anchor zone.
+    """Get one event by ID: body, attendees, organizer, recurrence, type, show_as, anchor zone, key.
 
     `recurrence` comes back in the same shape outlook_create_event accepts; `type` is
     "singleInstance", "seriesMaster", "occurrence" or "exception". `start`/`end` are UTC;
@@ -758,6 +761,22 @@ async def outlook_get_event(
     """
     client = _get_graph_client(ctx)
     return await calendar_read.get_event(client.sdk_client, event_id)
+
+
+@mcp.tool()
+@_wrap_tool_errors
+async def outlook_find_event_by_key(
+    ctx: Context,
+    key: str,
+    calendar: str | None = None,
+) -> dict:
+    """Find events by the `key` given to outlook_create_event or outlook_update_event.
+
+    Any date. Searches the default calendar, or `calendar`. Returns events and series
+    masters, not occurrences.
+    """
+    client = _get_graph_client(ctx)
+    return await calendar_read.find_events_by_key(client.sdk_client, key, calendar)
 
 
 @mcp.tool()
@@ -804,6 +823,7 @@ async def outlook_create_event(
     timezone: str | None = None,
     show_as: str | None = None,
     calendar: str | None = None,
+    key: str | None = None,
 ) -> dict:
     """Create a calendar event with optional attendees, recurrence, busy status, online meeting.
 
@@ -827,6 +847,7 @@ async def outlook_create_event(
     `show_as` is Outlook's "Show as": "free", "tentative", "busy", "oof" (out of office),
     "workingElsewhere", or "unknown". Omitted, Graph defaults the event to busy.
     `calendar`: name or ID; omit for the default.
+    `key`: your own reference for the event, e.g. a booking number.
     """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
@@ -844,6 +865,7 @@ async def outlook_create_event(
         timezone,
         show_as,
         calendar,
+        key,
         config=config,
     )
 
@@ -864,6 +886,7 @@ async def outlook_update_event(
     is_all_day: bool | None = None,
     show_as: str | None = None,
     timezone: str | None = None,
+    key: str | None = None,
 ) -> dict:
     """Update fields on an existing event (partial patch — only provided fields change).
 
@@ -882,6 +905,7 @@ async def outlook_update_event(
     absences.
     `show_as` is Outlook's "Show as" — same values as outlook_create_event — and patches
     on its own; unlike is_all_day it needs nothing resent alongside it.
+    `key` patches on its own too.
     """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
@@ -899,6 +923,7 @@ async def outlook_update_event(
         is_all_day,
         show_as,
         timezone,
+        key,
         config=config,
     )
 

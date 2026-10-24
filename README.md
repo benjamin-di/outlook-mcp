@@ -24,7 +24,7 @@ You'll like this if you're:
 - Looking for **real coverage** — mail, calendar, contacts, to-do, drafts, folders, batch ops, threading — instead of a mail-only or calendar-only wrapper
 - Security-conscious: tokens in the OS keyring (Keychain on macOS, libsecret on Linux -- never cleartext unless you opt in), granular `allow_categories`, optional `read_only` mode, zero telemetry
 
-This **isn't for you** if you need work/school M365 accounts (use Microsoft's official tooling — Entra ID auth and admin-consent flows are out of scope here), or if a basic mail-only client would suffice (this has 68 tools — way more than you need for "read my inbox").
+This **isn't for you** if you need work/school M365 accounts (use Microsoft's official tooling — Entra ID auth and admin-consent flows are out of scope here), or if a basic mail-only client would suffice (this has 69 tools — way more than you need for "read my inbox").
 
 ### How it differs from other Outlook tools you'll find
 
@@ -44,7 +44,7 @@ Give your AI agent full Outlook access. Example prompts that just work:
 - *"Draft a reply to the last message from my sister saying I'll call her this weekend."*
 - *"Move all newsletter and promotional email from this week to a 'Read Later' folder — batch 20 at a time."*
 
-The server exposes 68 discrete tools so the agent can compose its own workflow — read, triage, write, schedule, track tasks — without hardcoded macros.
+The server exposes 69 discrete tools so the agent can compose its own workflow — read, triage, write, schedule, track tasks — without hardcoded macros.
 
 ## Works With
 
@@ -59,13 +59,13 @@ Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v
 
 ## Features
 
-**68 tools** across 13 categories:
+**69 tools** across 13 categories:
 
 - **Auth (1)** -- auth status check (login is via CLI)
 - **Mail Read (7)** -- list inbox (with Focused Inbox and uncategorized filters), read message, bulk read by ID via `$batch`, search (KQL), list folders, delta-sync inbox changes, composed "since last call" digest across mail/events/contacts
 - **Mail Write (3)** -- send, reply/reply-all, forward
 - **Mail Triage (9)** -- move, delete (soft by default), flag, categorize, mark read/unread, reclassify (Focused Inbox), list/set/delete per-sender Focused Inbox overrides
-- **Calendar Read (3)** -- list events (with recurring expansion), get event details, delta-sync event changes
+- **Calendar Read (4)** -- list events (with recurring expansion), get event details, find events by key, delta-sync event changes
 - **Calendar Write (4)** -- create, update, delete, RSVP (accept/decline/tentative)
 - **Contacts (7)** -- list, search, get, create, update, delete, delta-sync changes
 - **To Do (14)** -- task lists, tasks (list/get/create/update/complete/delete), checklist items (add/update/delete), task attachments (list/download/upload/delete)
@@ -324,16 +324,17 @@ Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markd
 
 | Tool | Description |
 |------|-------------|
-| `outlook_list_events` | List events in a date range. Expands recurring events. Each event carries `type` — `occurrence` or `exception` for an instance of a series, `singleInstance` for a one-off — so a listing tells recurring work apart without a second call. A `seriesMaster` never appears here: `calendarView` returns expanded instances, so use `outlook_get_event` to see a master. Each event also carries `show_as`, the free/busy status Outlook labels "Show as". Configurable via `days`, `after`, `before`. `calendar` selects which calendar to read: omit (or `"primary"`) for the default, otherwise a display name (case-insensitive; not-found and ambiguous errors name what exists) or an ID from `outlook_list_calendars`. A `cursor` continues the listing it came from, so later pages need neither `calendar` nor a second lookup. `concise=True` omits `type` and `show_as`. |
-| `outlook_get_event` | Get full event details: attendees, body, online meeting URL, recurrence, `type` (`singleInstance` / `seriesMaster` / `occurrence` / `exception`), `show_as`. |
-| `outlook_list_events_delta` | List only event changes inside a window since the last call. `start` and `end` (ISO 8601) required on the first call (Graph constraint — no whole-calendar sync). Each changed event carries every field the **default** `outlook_list_events` listing returns, `type` and `show_as` included, plus `is_deleted` (`concise=True` has its own narrower shape, which the delta tool does not mirror). Unlike the listing, this endpoint *does* return `seriesMaster` items, so a caller seeding from `outlook_list_events` should expect ids here that the seed never held. Deletes come back as `{id, is_deleted: True}` and nothing else. Cursor is stateless. |
+| `outlook_list_events` | List events in a date range. Expands recurring events. Each event carries `type` — `occurrence` or `exception` for an instance of a series, `singleInstance` for a one-off — so a listing tells recurring work apart without a second call. A `seriesMaster` never appears here: `calendarView` returns expanded instances, so use `outlook_get_event` to see a master. Each event also carries `show_as`, the free/busy status Outlook labels "Show as". Configurable via `days`, `after`, `before`. `calendar` selects which calendar to read: omit (or `"primary"`) for the default, otherwise a display name (case-insensitive; not-found and ambiguous errors name what exists) or an ID from `outlook_list_calendars`. A `cursor` continues the listing it came from, so later pages need neither `calendar` nor a second lookup. An event that has a `key` (see `outlook_create_event`) carries it; one without has no `key` field. `concise=True` omits `type`, `show_as` and `key`. |
+| `outlook_get_event` | Get full event details: attendees, body, online meeting URL, recurrence, `type` (`singleInstance` / `seriesMaster` / `occurrence` / `exception`), `show_as`, and `key` (`null` when the event has none). |
+| `outlook_find_event_by_key` | Find the events whose `key` is the one given — the caller's own reference set by `outlook_create_event` or `outlook_update_event`. No date window: a booking months away is found as readily as tomorrow's. Searches the default calendar, or `calendar` (resolved as for `outlook_list_events`). Returns events in the default listing's shape, `key` included: single events and series masters, never occurrences, so the ID found is the one to update. Nothing matching returns an empty list; `has_more` is `true` when more than 25 events share the key. |
+| `outlook_list_events_delta` | List only event changes inside a window since the last call. `start` and `end` (ISO 8601) required on the first call (Graph constraint — no whole-calendar sync). Each changed event carries every field the **default** `outlook_list_events` listing returns except `key`, `type` and `show_as` included, plus `is_deleted` (`concise=True` has its own narrower shape, which the delta tool does not mirror). Unlike the listing, this endpoint *does* return `seriesMaster` items, so a caller seeding from `outlook_list_events` should expect ids here that the seed never held. Deletes come back as `{id, is_deleted: True}` and nothing else. Cursor is stateless. |
 
 ### Calendar Write
 
 | Tool | Description |
 |------|-------------|
-| `outlook_create_event` | Create event with location and attendees. (`is_online` has no effect on personal accounts — Graph ignores `isOnlineMeeting` for consumer mailboxes.) Pass `recurrence` to create a **series**: a shorthand (`daily`, `weekdays`, `weekly`, `monthly`, `yearly`, anchored on `start`) or a full [Graph recurrence object](https://learn.microsoft.com/graph/api/resources/patternedrecurrence) for anything else. `range.startDate` defaults to the event's start date. `show_as` sets the free/busy status Outlook labels "Show as" — `free`, `tentative`, `busy`, `oof` (out of office), `workingElsewhere`, or `unknown`; omit it and Graph applies its own default of `busy`. `calendar` creates it in another calendar, resolved as `outlook_list_events` resolves it: omit (or `"primary"`) for the default, otherwise a display name or an ID from `outlook_list_calendars`. A calendar Graph lists as read-only (`canEdit: false`) is refused before anything is sent. The tools that take an event ID need no `calendar`: an ID reaches an event on any of your own calendars. |
-| `outlook_update_event` | Update event fields (subject, time, location, body, attendees, all-day, `show_as`). Only patches changed fields. Pass `recurrence` to turn a single event into a series, or `remove_recurrence=True` to turn a series back into a single event. `attendees` **replaces** the whole guest list and emails invitations/cancellations; `is_all_day` needs `start`+`end` in the same call, while `show_as` patches on its own. Patching a time keeps the zone the event is anchored in; `timezone` (with `start`+`end`) re-anchors it elsewhere, which is how a series created before zones existed gets repaired. A `start`, `end` or `recurrence` patch to a series with edited or deleted occurrences is refused, naming them — Graph would silently discard every one. |
+| `outlook_create_event` | Create event with location and attendees. (`is_online` has no effect on personal accounts — Graph ignores `isOnlineMeeting` for consumer mailboxes.) Pass `recurrence` to create a **series**: a shorthand (`daily`, `weekdays`, `weekly`, `monthly`, `yearly`, anchored on `start`) or a full [Graph recurrence object](https://learn.microsoft.com/graph/api/resources/patternedrecurrence) for anything else. `range.startDate` defaults to the event's start date. `show_as` sets the free/busy status Outlook labels "Show as" — `free`, `tentative`, `busy`, `oof` (out of office), `workingElsewhere`, or `unknown`; omit it and Graph applies its own default of `busy`. `calendar` creates it in another calendar, resolved as `outlook_list_events` resolves it: omit (or `"primary"`) for the default, otherwise a display name or an ID from `outlook_list_calendars`. A calendar Graph lists as read-only (`canEdit: false`) is refused before anything is sent. The tools that take an event ID need no `calendar`: an ID reaches an event on any of your own calendars. `key` stores your own reference for the event (a booking number, say: 1–128 letters, digits and `. _ : @ -`) in a hidden extended property, so `outlook_find_event_by_key` can find the event again when a change to the same booking arrives. Nothing stops two events sharing a key; look it up before creating. |
+| `outlook_update_event` | Update event fields (subject, time, location, body, attendees, all-day, `show_as`). Only patches changed fields. Pass `recurrence` to turn a single event into a series, or `remove_recurrence=True` to turn a series back into a single event. `attendees` **replaces** the whole guest list and emails invitations/cancellations; `is_all_day` needs `start`+`end` in the same call, while `show_as` patches on its own. Patching a time keeps the zone the event is anchored in; `timezone` (with `start`+`end`) re-anchors it elsewhere, which is how a series created before zones existed gets repaired. A `start`, `end` or `recurrence` patch to a series with edited or deleted occurrences is refused, naming them — Graph would silently discard every one. `key` sets or replaces the event's key and patches on its own; there is no clearing one. |
 | `outlook_delete_event` | Delete a calendar event. |
 | `outlook_rsvp` | RSVP to an event: `accept`, `decline`, or `tentative`. Optionally include a message. |
 
@@ -471,10 +472,10 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 
 ### Toolset selection (optional) — `OUTLOOK_MCP_TOOLSETS`
 
-All 68 tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
+All 69 tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
 
 ```bash
-# e.g. a recurring mail + calendar agent: 28 tools instead of 68 (about half the tool tokens per turn)
+# e.g. a recurring mail + calendar agent: 29 tools instead of 69 (about half the tool tokens per turn)
 OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"
 ```
 
