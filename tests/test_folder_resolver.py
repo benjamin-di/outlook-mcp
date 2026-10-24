@@ -418,6 +418,48 @@ class TestIdsWithASlash:
         with pytest.raises(ValueError, match="at the top level"):
             await resolve_folder_id(client, ref)
 
+    async def test_a_long_mistyped_path_below_a_folder_that_exists_is_not_an_id(self):
+        """40+ id-alphabet characters, but the first part matched: a path gone wrong,
+        so the resolver's message, not Graph's error for a bad id."""
+        client = _tree_client([], {"inbox": [_mock_folder("travel_id", "Travel")]})
+        ref = "Inbox/TravelPlansForTheYearAheadAndTheOneAfter"
+
+        with pytest.raises(ValueError, match="No folder 'TravelPlans.*' in 'Inbox'"):
+            await resolve_folder_id(client, ref)
+
+    async def test_below_a_user_folder_too(self):
+        client = _tree_client(
+            [_mock_folder("projects_id", "Projects", child_count=1)],
+            {"projects_id": [_mock_folder("c", "Clients")]},
+        )
+
+        with pytest.raises(ValueError, match="No folder 'ClientsAndPartners.*' in 'Projects'"):
+            await resolve_folder_id(client, "Projects/ClientsAndPartnersOfTheLastFiveYears")
+
+    async def test_an_ambiguous_first_part_is_not_an_id(self):
+        client = _tree_client([_mock_folder("a", "Shared"), _mock_folder("b", "shared")], {})
+
+        with pytest.raises(ValueError, match="ambiguous"):
+            await resolve_folder_id(client, "Shared/" + "x" * 40)
+
+    async def test_a_path_split_folder_path_refuses_is_refused_before_any_call(self):
+        """An id has no empty part to refuse, so an id-shaped reference with one is a
+        path, mistyped."""
+        client = _tree_client([], {})
+
+        with pytest.raises(ValueError, match="empty part"):
+            await resolve_folder_id(client, self._ID + "/")
+
+        client.me.mail_folders.get.assert_not_awaited()
+        assert _listed_parents(client) == []
+
+    async def test_an_id_with_a_doubled_slash_no_folder_has_is_passed_through(self):
+        """One part, "//" read as a "/" in a name: no folder anywhere has that name."""
+        ref = self._ID.replace("/", "//")
+        client = _tree_client([_mock_folder("p", "Projects")], {})
+
+        assert await resolve_folder_id(client, ref) == ref
+
     async def test_a_short_id_with_a_plus_is_still_an_id(self):
         """`+` still marks an id on its own, now that `/` marks a path instead."""
         client = _tree_client([], {})

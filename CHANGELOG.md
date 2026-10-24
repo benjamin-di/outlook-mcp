@@ -6,6 +6,33 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **`outlook_create_folder`'s `parent_folder` takes a name, as its description always said.** It
+  was validated as an id and nothing else, so "Junk Email" was refused locally and a user
+  folder's name reached Graph as an id. It now goes through the same resolver as every other
+  folder argument, paths included.
+
+### Added
+
+- **Folder arguments take a path, so any folder can be named, including one whose name another
+  folder shares** (#144). `Inbox/Travel/Flights` names Flights under Travel under Inbox, and a `/`
+  inside a folder's name is written `//` (`Inbox/Q1//Q2`; not a backslash, which JSON reads as a
+  plain `/`). The first part is a well-known name, as before with no request, or a top-level
+  folder; each later part is matched case-insensitively among the previous folder's children,
+  so a path costs one listing per level, where a nested name walks the whole tree. Every tool
+  that takes a folder gets it through `resolve_folder_id`: `outlook_list_inbox`,
+  `outlook_search_mail`, `outlook_move_message`, `outlook_copy_message`, `outlook_batch_triage`'s
+  move and `outlook_list_inbox_delta`. Until now a `/` meant an id, so a path went to Graph as
+  one and failed, a name containing `/` could not be named at all, and a name used under two
+  parents could only be reached by its id. An id-shaped reference whose first part names no
+  folder still goes through as an id; a path that goes wrong below a folder that exists, or that
+  has an empty part, keeps the resolver's own message. The ambiguity error now lists the
+  candidates' paths (the first five), `outlook_list_folders(recursive=True)` returns each
+  folder's `path` in the same form, and the path rule is in the server instructions. No lookup
+  cache: a cached path goes stale silently
+  when a folder is renamed and another takes its name.
+
 ## [1.27.0] — 2026-10-24
 
 ### Fixed
@@ -74,10 +101,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   deleted; after a 5xx, or a send cut off before Graph answered (a dropped connection), it is
   left in Drafts and the error says to check Sent Items first and gives the draft's id. A
   forward without a comment is still one call. The tool surface is unchanged.
-- **`outlook_create_folder`'s `parent_folder` takes a name, as its description always said.** It
-  was validated as an id and nothing else, so "Junk Email" was refused locally and a user
-  folder's name reached Graph as an id. It now goes through the same resolver as every other
-  folder argument, paths included.
 
 ### Added
 
@@ -199,22 +222,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   widens nothing; the caps are there for the model's context. The tool surface grows by 233
   proxy tokens, to 14,197 with the rest of this release, and the budget's ceiling is raised
   deliberately to 14,350.
-
-- **Folder arguments take a path, so any folder can be named, including one whose name another
-  folder shares** (#144). `Inbox/Travel/Flights` names Flights under Travel under Inbox, and a `/`
-  inside a folder's name is written `//` (`Inbox/Q1//Q2`; not a backslash, which JSON reads as a
-  plain `/`). The first part is a well-known name, as before with no request, or a top-level
-  folder; each later part is matched case-insensitively among the previous folder's children,
-  so a path costs one listing per level, where a nested name walks the whole tree. Every tool
-  that takes a folder gets it through `resolve_folder_id`: `outlook_list_inbox`,
-  `outlook_search_mail`, `outlook_move_message`, `outlook_copy_message`, `outlook_batch_triage`'s
-  move and `outlook_list_inbox_delta`. Until now a `/` meant an id, so a path went to Graph as
-  one and failed, a name containing `/` could not be named at all, and a name used under two
-  parents could only be reached by its id. An id-shaped reference that no path matches still
-  goes through as an id. The ambiguity error now lists the candidates' paths (the first five),
-  `outlook_list_folders(recursive=True)` returns each folder's `path` in the same form, and the
-  path rule is in the server instructions. No lookup cache: a cached path goes stale silently
-  when a folder is renamed and another takes its name.
 
 ### Security
 
