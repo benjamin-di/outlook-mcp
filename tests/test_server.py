@@ -75,9 +75,10 @@ EXPECTED_TOOLS = [
     "outlook_update_draft",
     "outlook_send_draft",
     "outlook_delete_draft",
-    # Mail attachments (5)
+    # Mail attachments (6)
     "outlook_list_attachments",
     "outlook_download_attachment",
+    "outlook_read_attachment",
     "outlook_send_with_attachments",
     "outlook_attach_to_draft",
     "outlook_remove_draft_attachment",
@@ -100,9 +101,9 @@ EXPECTED_TOOLS = [
 
 
 def test_tool_count():
-    """All 71 tools are registered (auth is CLI-only now)."""
+    """All 72 tools are registered (auth is CLI-only now)."""
     registered = set(mcp._tool_manager._tools.keys())
-    assert len(registered) == 71
+    assert len(registered) == 72
 
 
 def test_all_tools_registered():
