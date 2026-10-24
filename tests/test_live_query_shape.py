@@ -746,7 +746,7 @@ async def test_the_event_delta_carries_type_without_a_select(real_graph_client):
 # sent.
 
 
-async def test_the_mail_delta_window_filter_is_accepted_and_applied(real_graph_client):
+async def test_the_mail_bootstrap_honours_its_window_or_reports_a_fallback(real_graph_client):
     """Prove the digest's bound on accounts that honour or ignore Graph's filter.
 
     Read-only. Every observed live message outside the bound must be absent
@@ -813,6 +813,9 @@ async def test_the_mail_delta_window_filter_is_accepted_and_applied(real_graph_c
     ignored = any(
         (stamp := parse_graph_datetime(item.get("received") or "")) is not None and stamp < bound
         for item in live
+    )
+    print(
+        f"mail delta received-time filter: {'ignored; client fallback' if ignored else 'honoured'}"
     )
     assert ("mail_window_fallback" in result.get("_meta", {})) is ignored
     assert result["delta_tokens"].get("mail_bootstrap_from") == (

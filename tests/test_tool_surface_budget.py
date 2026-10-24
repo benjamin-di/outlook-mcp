@@ -141,6 +141,9 @@ CHARS_PER_TOKEN = 4
 #
 # 14,205 with the digest bootstrap fix on current main (14,197); the
 # existing 14,350 ceiling covers it without a raise.
+#
+# 14,210 after clarifying that stored token dictionaries must be replaced,
+# not merged (+5); still covered by the 14,350 ceiling.
 TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
