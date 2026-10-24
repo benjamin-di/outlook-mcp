@@ -565,3 +565,10 @@ def test_authenticated_get_cannot_hold_an_empty_event_stream(base_url, path):
         httpx2.get(base_url + path, headers={"Accept": "text/event-stream"}, timeout=2).status_code
         == 401
     )
+
+
+@pytest.mark.parametrize("bad", ["a" * 32, "abc123" * 10, "abcdefg" * 8 + "==="])
+def test_obviously_low_variety_tokens_are_refused_without_echo(bad):
+    with pytest.raises(ValueError) as exc:
+        settings_from_env({**HTTP, TOKEN_ENV: bad})
+    assert bad not in str(exc.value)

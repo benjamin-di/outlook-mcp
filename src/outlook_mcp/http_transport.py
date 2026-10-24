@@ -171,10 +171,10 @@ def _port(value: str) -> int:
 
 def _token(value: str) -> str:
     token = value.strip()
-    if token and not _TOKEN_SHAPE.fullmatch(token):
+    if token and (not _TOKEN_SHAPE.fullmatch(token) or len(set(token.rstrip("="))) < 8):
         raise ValueError(
             f"{TOKEN_ENV} is not usable. A token needs at least 32 characters from A-Z, "
-            f"a-z, 0-9 and -._~+/ (what a bearer token may carry). Generate one with: "
+            f"a-z, 0-9 and -._~+/, with at least 8 distinct characters. This rejects obvious low-variety values, not all predictable tokens. Generate one with: "
             f"{_TOKEN_RECIPE}"
         )
     return token
