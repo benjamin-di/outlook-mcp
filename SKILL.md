@@ -198,3 +198,9 @@ when `OUTLOOK_MCP_TOOLSETS` names it (see Notes).
 - **Toolset selection:** Set `OUTLOOK_MCP_TOOLSETS` (e.g. `mail,calendar,digest,delta`) to load only the tool groups you use and cut per-turn context; unset loads the 71 default schemas; the `documents` group is off until explicitly named. Naming groups loads only those (plus auth/identity), so to add `documents` to the default set, name all eleven: `mail,drafts,attachments,calendar,contacts,todo,folders,digest,delta,admin,documents`. Tools carry read-only / destructive annotations so clients can auto-approve reads.
 - **Two accounts:** One server serves one mailbox. Register a second server entry with its own `OUTLOOK_MCP_CONFIG_DIR` (e.g. `~/.outlook-mcp-work`) and run `outlook-mcp auth` once with that variable set. Move only the config directory, never `HOME` — see README "Two accounts, two instances".
 - **Remote / HTTP:** stdio is the default. `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` over HTTP for a client that cannot spawn a local process. It never starts without a token (`OUTLOOK_MCP_HTTP_TOKEN`, or a file named by `OUTLOOK_MCP_HTTP_TOKEN_FILE`), loopback included, and every request sends it as `Authorization: Bearer <token>`. It binds loopback by default, and plain HTTP sends the token in the clear, so put a TLS-terminating proxy in front of any other bind — see README "Remote / HTTP transport".
+
+
+Optional configuration environment input: `OUTLOOK_MCP_CLIENT_ID`, `OUTLOOK_MCP_TENANT_ID` and
+`OUTLOOK_MCP_TIMEZONE` may override the valid file/default settings. Security environment values
+may only tighten them; attempted loosening is refused at startup. Values remain in memory.
+See README “Environment configuration” for the supported variables and strict boolean/list syntax.
