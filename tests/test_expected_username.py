@@ -91,7 +91,56 @@ def test_expected_username_refuses_blank_or_control_characters(value):
         Config(expected_username=value)
 
 
-@pytest.mark.parametrize("key", ["expectedUsername", "expected-user-name", "expected_usernmae"])
+@pytest.mark.parametrize(
+    "key", ["expectedUsername", "expected-user-name", "expected_usernmae", "expected_usename"]
+)
 def test_a_misspelt_identity_guard_is_not_ignored(key):
     with pytest.raises(ValidationError, match="expected_username"):
         Config(**{key: "owner@example.com"})
+
+
+def test_status_shows_mismatch_remedy_without_either_username(tmp_path, monkeypatch, capsys):
+    from outlook_mcp import cli
+
+    path = tmp_path / "auth_record.json"
+    path.write_text(record("other@example.com").serialize())
+    monkeypatch.setattr(auth_module, "_auth_record_path", lambda: path)
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda: Config(client_id="test-id", expected_username="owner@example.com"),
+    )
+    make = MagicMock(side_effect=AssertionError("must refuse before credential construction"))
+    monkeypatch.setattr(AuthManager, "_make_credential", make)
+    cli.cmd_status()
+    output = capsys.readouterr()
+    text = output.out + output.err
+    assert "not authenticated" in text and "expected_username" in text
+    assert "outlook-mcp auth" in text
+    assert "owner@example.com" not in text and "other@example.com" not in text
+    make.assert_not_called()
+
+
+@pytest.mark.parametrize("command", ["serve", "auth", "status"])
+def test_exact_misspelling_stops_real_entry_points(tmp_path, command):
+    import json
+    import os
+    import subprocess
+    import sys
+
+    config_dir = tmp_path / "settings"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text(
+        json.dumps({"client_id": "test-id", "expected_usename": "owner@example.com"})
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", "from outlook_mcp.cli import main; main()", command],
+        env={**os.environ, "HOME": str(tmp_path), "OUTLOOK_MCP_CONFIG_DIR": str(config_dir)},
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 1
+    assert "expected_usename" in result.stderr and "expected_username" in result.stderr
+    assert "owner@example.com" not in result.stdout + result.stderr
+    assert "Traceback" not in result.stderr

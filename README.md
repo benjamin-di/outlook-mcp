@@ -561,6 +561,16 @@ One server process serves one mailbox. To work against two accounts, register **
 
 Then run `outlook-mcp auth` once per instance, with the same env set, to write each auth record in its own directory. Each instance reads its own `config.json` (own `client_id`, `timezone`, permissions) from its own directory.
 
+To require a particular sign-in for an instance, add `"expected_username": "owner@example.com"`
+to that instance's `config.json`. This optional guard compares Microsoft's saved sign-in username
+case-insensitively; it does not resolve email aliases. A cached mismatch is refused before a credential
+is built or refreshed, and `outlook-mcp status` shows the refusal and sign-in remedy without either
+username. A new sign-in is checked before its record is saved or credential used. A mismatch leaves
+the previous auth record and shared token cache in place; tokens Microsoft cached during the
+interactive flow are not revoked. Unset/null preserves today's behavior. Blank values and misspellings
+such as `expected_usename` stop startup instead of silently disabling the guard.
+
+
 **Only move the config directory — never `HOME`.** The token cache is not in it: it stays in the OS keyring, and on macOS every azure-identity cache on the host shares one Keychain item, coordinated through a signal file — on this server, `~/.IdentityService/outlook-mcp.nocae` (azure-identity appends `.nocae` to every non-CAE cache name; a CAE cache would be a different file over the same item). Both processes must keep consulting that same signal file so their cache writes lock and merge into the one shared entry — which is exactly what moving the config directory preserves and redirecting `HOME` (or the cache location) would break: two signal files that each believe they own the Keychain item overwrite each other's token. `OUTLOOK_MCP_CONFIG_DIR` deliberately moves only where config.json, the auth record, and attachments live; unset or empty keeps the default `~/.outlook-mcp`.
 
 ### Remote / HTTP transport (optional) — `OUTLOOK_MCP_TRANSPORT`
