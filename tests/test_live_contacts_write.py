@@ -47,8 +47,15 @@ class TestCreateContactRoundTrip:
             title="Dr.",
             job_title="Probe",
             birthday="1987-06-05",
+            middle_name="Middle",
+            personal_notes="Line one\nLine two",
+            categories=["LiveWriteGuard"],
         ) as contact_id:
             got = await get_contact(real_graph_client.sdk_client, contact_id)
+
+            assert got["middle_name"] == "Middle"
+            assert got["personal_notes"] == "Line one\nLine two"
+            assert got["categories"] == ["LiveWriteGuard"]
 
             assert got["first_name"] == LIVE_WRITE_NAME
             assert got["last_name"] == "Roundtrip"
@@ -89,10 +96,16 @@ class TestUpdateContactRoundTrip:
                 company="LiveWriteGuard Co-After",
                 job_title="Probe-After",
                 birthday="1988-07-06",
+                middle_name="Middle-After",
+                personal_notes="Note after",
+                categories=["LiveWriteGuard", "LiveWriteGuard-2"],
                 config=live_write_config,
             )
 
             got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["middle_name"] == "Middle-After"
+            assert got["personal_notes"] == "Note after"
+            assert sorted(got["categories"]) == ["LiveWriteGuard", "LiveWriteGuard-2"]
             assert got["company"] == "LiveWriteGuard Co-After"
             assert got["job_title"] == "Probe-After"
             assert got["birthday"] == "1988-07-06 11:59:00+00:00"
@@ -127,6 +140,34 @@ class TestUpdateContactRoundTrip:
             assert got["first_name"] == LIVE_WRITE_NAME
             assert got["mobile_phone"] == "+15555550196"
             assert got["company"] == "Keep Me"
+
+
+class TestCategoriesRoundTrip:
+    async def test_categories_replace_and_empty_clears(self, real_graph_client, live_write_config):
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="Categories",
+            categories=["LiveWriteGuard", "LiveWriteGuard-2"],
+        ) as contact_id:
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                categories=["LiveWriteGuard-3"],
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["categories"] == ["LiveWriteGuard-3"]
+
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                categories=[],
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["categories"] == []
 
 
 class TestPhoneTypeRoundTrip:

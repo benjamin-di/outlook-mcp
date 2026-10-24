@@ -42,6 +42,7 @@ def _make_mock_contact(**overrides):
             "id",
             "display_name",
             "given_name",
+            "middle_name",
             "surname",
             "company_name",
             "title",
@@ -62,6 +63,7 @@ def _make_mock_contact(**overrides):
     contact.id = overrides.get("id", "contact123")
     contact.display_name = overrides.get("display_name", "John Doe")
     contact.given_name = overrides.get("given_name", "John")
+    contact.middle_name = overrides.get("middle_name", "")
     contact.surname = overrides.get("surname", "Doe")
     contact.company_name = overrides.get("company_name", "Acme")
     contact.title = overrides.get("title", "Dr.")
@@ -905,6 +907,15 @@ class TestGetContactAsksGraphForEverything:
         assert builder.get.call_args.args == ()
         assert builder.get.call_args.kwargs == {}
 
+    async def test_get_contact_returns_the_middle_name(self):
+        """The write tools take `middle_name`, so the read returns it under the same name."""
+        detail = await get_contact(
+            _make_contact_by_id_mock(_make_mock_contact(middle_name="Quincy")), "contact123"
+        )
+
+        assert detail["middle_name"] == "Quincy"
+        assert detail["first_name"] == "John"
+
     async def test_every_field_the_detail_formatter_reads_survives_the_round_trip(self):
         """A cheap structural echo of the guard the listing paths get for free."""
         detail = await get_contact(_make_contact_by_id_mock(_make_mock_contact()), "contact123")
@@ -912,6 +923,7 @@ class TestGetContactAsksGraphForEverything:
         assert set(detail) == {
             "id",
             "first_name",
+            "middle_name",
             "last_name",
             "display_name",
             "email_addresses",

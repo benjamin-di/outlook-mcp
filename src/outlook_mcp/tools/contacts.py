@@ -337,6 +337,7 @@ def _format_contact_detail(contact: Any) -> dict:
     return {
         "id": contact.id,
         "first_name": sanitize_output(contact.given_name or ""),
+        "middle_name": sanitize_output(getattr(contact, "middle_name", "") or ""),
         "last_name": sanitize_output(contact.surname or ""),
         "display_name": sanitize_output(contact.display_name or ""),
         "email_addresses": email_addresses,
@@ -551,6 +552,9 @@ async def create_contact(
     job_title: str | None = None,
     phone_type: str = "mobile",
     birthday: str | None = None,
+    middle_name: str | None = None,
+    personal_notes: str | None = None,
+    categories: list[str] | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -594,6 +598,12 @@ async def create_contact(
         new_contact.job_title = job_title
     if born is not None:
         new_contact.birthday = born
+    if middle_name:
+        new_contact.middle_name = middle_name
+    if personal_notes:
+        new_contact.personal_notes = personal_notes
+    if categories:
+        new_contact.categories = categories
 
     created = await graph_client.me.contacts.post(new_contact)
 
@@ -621,6 +631,9 @@ async def update_contact(
     add_emails: list[str] | None = None,
     remove_emails: list[str] | None = None,
     birthday: str | None = None,
+    middle_name: str | None = None,
+    personal_notes: str | None = None,
+    categories: list[str] | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -638,7 +651,8 @@ async def update_contact(
     the named types, so a number filed as mobile moves to business in one patch.
     ``title`` is the name prefix, here so a job that landed in it can be
     corrected in place (#119). ``birthday`` sets or replaces the date; there is
-    no clearing it.
+    no clearing it. ``categories`` replaces the contact's whole list, as
+    ``outlook_categorize_message`` does a message's, so ``[]`` removes them all.
 
     ``email`` replaces every address with the one given. ``add_emails`` and
     ``remove_emails`` change only the addresses they name, so they are merged
@@ -701,6 +715,14 @@ async def update_contact(
         patch_body.job_title = job_title
     if born is not None:
         patch_body.birthday = born
+    if middle_name is not None:
+        patch_body.middle_name = middle_name
+    if personal_notes is not None:
+        patch_body.personal_notes = personal_notes
+    # A list like the business/home numbers: Graph replaces it with what is sent,
+    # so `[]` removes every category and None leaves them alone.
+    if categories is not None:
+        patch_body.categories = categories
 
     if home_address is not None:
         patch_body.home_address = _build_address("home", home_address)

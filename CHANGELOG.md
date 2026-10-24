@@ -258,6 +258,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the reply stays plain text. `is_html` and `is_markdown` together are refused. The supported
   subset is one `INSTRUCTIONS` bullet, sent once per session, so no docstring grows; the five
   booleans add 98 proxy tokens to the tool surface, and the ceiling moves to 13,400.
+- **A contact's categories, notes and middle name can be written** (#175). `outlook_get_contact`
+  returned `categories` and `personal_notes`, but no tool could set them, and Graph's `middleName`
+  was neither read nor written. `outlook_create_contact` and `outlook_update_contact` take
+  `categories`, `personal_notes` and `middle_name`, and `outlook_get_contact` returns
+  `middle_name`. On update, `categories` replaces the contact's whole list, as
+  `outlook_categorize_message` does a message's: `[]` removes every category, and omitting it
+  leaves them alone. The update description says so, since adding one category with a one-item
+  list would drop the rest.
 
 ### Changed
 

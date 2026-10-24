@@ -1047,6 +1047,9 @@ async def outlook_create_contact(
     job_title: str | None = None,
     phone_type: str = "mobile",
     birthday: str | None = None,
+    middle_name: str | None = None,
+    personal_notes: str | None = None,
+    categories: list[str] | None = None,
 ) -> dict:
     """Create a new contact with name and optional email, phone, company, job_title,
     birthday (YYYY-MM-DD).
@@ -1067,6 +1070,9 @@ async def outlook_create_contact(
         job_title,
         phone_type,
         birthday,
+        middle_name,
+        personal_notes,
+        categories,
         config=config,
     )
 
@@ -1091,6 +1097,9 @@ async def outlook_update_contact(
     add_emails: list[str] | None = None,
     remove_emails: list[str] | None = None,
     birthday: str | None = None,
+    middle_name: str | None = None,
+    personal_notes: str | None = None,
+    categories: list[str] | None = None,
 ) -> dict:
     """Update an existing contact (partial patch — only provided fields change).
 
@@ -1101,7 +1110,7 @@ async def outlook_update_contact(
     clear_phones empties those types: phone_type="business", clear_phones=["mobile"] moves it.
     title is the name prefix ("Dr.", "Ms."), shown in the display name — not the job.
     email REPLACES every address; add_emails/remove_emails change only those (3 at most).
-    birthday is a date, YYYY-MM-DD.
+    birthday is a date, YYYY-MM-DD. categories REPLACES the whole list ([] clears it).
     """
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
@@ -1123,6 +1132,9 @@ async def outlook_update_contact(
         add_emails,
         remove_emails,
         birthday,
+        middle_name,
+        personal_notes,
+        categories,
         config=config,
     )
 
