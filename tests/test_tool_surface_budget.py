@@ -129,6 +129,14 @@ CHARS_PER_TOKEN = 4
 # they change only the ones named, three at most. Without them an agent asked to
 # add a second address had to drop the first. Two arguments do not fit the ~39
 # tokens left, so this is a deliberate raise to 13,500: ~1% headroom, as before.
+#
+# 13,314 with `phone` on `outlook_search_contacts` (+53): the argument, `query`
+# becoming optional (one of the two is required, checked in the handler), and one
+# line saying `phone` finds a number written any way. On the Exchange Online
+# mailbox checked, Graph's contact `$search` found a number only as stored, so the
+# same number without its country code found nothing. A separate find-by-phone
+# tool would pay the scaffolding every schema carries for the same rows. Over the
+# ~39 tokens left, so a deliberate raise to 13,500: ~1% headroom, as before.
 TOOL_SURFACE_CEILING = 13_750
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
