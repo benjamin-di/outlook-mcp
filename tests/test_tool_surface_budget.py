@@ -84,7 +84,15 @@ CHARS_PER_TOKEN = 4
 # 13,397 with `company` on `outlook_update_contact` (+25 on today's main, 13,372):
 # create set it and update could not, so a contact who changed employer kept the
 # old one (#173). The argument alone, no new words. No raise.
-TOOL_SURFACE_CEILING = 13_500
+#
+# 13,586 with `middle_name`, `personal_notes` and `categories` on
+# `outlook_create_contact` and `outlook_update_contact` (+189, on 13,397 with #174)
+# and update's sentence that `categories` replaces the whole list ([] clears it):
+# without it, adding one category with a one-item list drops the rest, silently.
+# `outlook_get_contact` returned categories and notes that nothing could write
+# (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
+# raise to 13,700: ~0.8% headroom.
+TOOL_SURFACE_CEILING = 13_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

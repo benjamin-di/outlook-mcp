@@ -75,6 +75,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   where midnight UTC would be the day before everywhere west of Greenwich, and the time the
   birthdays already in a mailbox are stored at. Anything but a plain date is refused before
   anything is sent. There is no clearing a birthday yet.
+- **A contact's categories, notes and middle name can be written** (#175). `outlook_get_contact`
+  returned `categories` and `personal_notes`, but no tool could set them, and Graph's `middleName`
+  was neither read nor written. `outlook_create_contact` and `outlook_update_contact` take
+  `categories`, `personal_notes` and `middle_name`, and `outlook_get_contact` returns
+  `middle_name`. On update, `categories` replaces the contact's whole list, as
+  `outlook_categorize_message` does a message's: `[]` removes every category, and omitting it
+  leaves them alone. The update description says so, since adding one category with a one-item
+  list would drop the rest.
 
 ## [1.26.0] — 2026-10-23
 

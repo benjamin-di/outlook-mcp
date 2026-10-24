@@ -604,6 +604,9 @@ class TestContacts:
             title="SENTINEL-TITLE-b12",
             job_title="SENTINEL-JOBTITLE-b13",
             birthday="1987-06-05",
+            middle_name="SentinelMiddle",
+            personal_notes="SENTINEL-NOTES-b17",
+            categories=["SENTINEL-CATEGORY-b18"],
             config=_CFG,
         )
 
@@ -620,6 +623,9 @@ class TestContacts:
             '"jobTitle": "SENTINEL-JOBTITLE-b13"',
             # A date in, an instant out: Graph's `birthday` is a DateTimeOffset.
             '"birthday": "1987-06-05T11:59:00+00:00"',
+            '"middleName": "SentinelMiddle"',
+            '"personalNotes": "SENTINEL-NOTES-b17"',
+            '"categories": ["SENTINEL-CATEGORY-b18"]',
         )
 
     async def test_create_contact_job_title_never_becomes_the_name_prefix(self):
@@ -658,6 +664,9 @@ class TestContacts:
             business_address={"city": "SentinelBusinessCity2"},
             other_address={"city": "SentinelOtherCity2"},
             birthday="1988-07-06",
+            middle_name="SentinelMiddle2",
+            personal_notes="SENTINEL-NOTES-b19",
+            categories=["SENTINEL-CATEGORY-b20", "SENTINEL-CATEGORY-b21"],
             config=_CFG,
         )
 
@@ -680,6 +689,9 @@ class TestContacts:
             '"businessAddress": {"city": "SentinelBusinessCity2"}',
             '"otherAddress": {"city": "SentinelOtherCity2"}',
             '"birthday": "1988-07-06T11:59:00+00:00"',
+            '"middleName": "SentinelMiddle2"',
+            '"personalNotes": "SENTINEL-NOTES-b19"',
+            '"categories": ["SENTINEL-CATEGORY-b20", "SENTINEL-CATEGORY-b21"]',
         )
 
     async def test_update_contact_can_change_the_company(self):
@@ -696,6 +708,34 @@ class TestContacts:
         body = wire(builder.patch.call_args[0][0])
         assert '"companyName": "Contoso Ltd"' in body
         assert '"jobTitle"' not in body
+
+    async def test_update_contact_categories_replace_the_list_and_empty_clears_it(self):
+        """Graph replaces a contact's categories with the list sent; [] removes them all."""
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(client, contact_id="AAMkAG123=", categories=[], config=_CFG)
+
+        body = wire(builder.patch.call_args[0][0])
+        assert '"categories": []' in body
+
+    async def test_update_contact_leaves_categories_alone_unless_given(self):
+        """A notes edit must not touch the categories (or anything else)."""
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client, contact_id="AAMkAG123=", personal_notes="Met at the fair", config=_CFG
+        )
+
+        body = wire(builder.patch.call_args[0][0])
+        assert '"personalNotes": "Met at the fair"' in body
+        assert '"categories"' not in body
+        assert '"middleName"' not in body
 
     async def test_update_contact_can_correct_the_name_prefix(self):
         """#119 follow-up: a job stuck in the prefix was only fixable by recreating."""
