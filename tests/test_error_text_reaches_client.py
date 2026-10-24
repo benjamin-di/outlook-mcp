@@ -171,6 +171,42 @@ async def test_unexpected_exception_stays_generic():
     assert "internal detail" not in text
 
 
+@pytest.mark.asyncio
+async def test_a_send_answered_5xx_tells_the_model_it_may_have_gone():
+    """A 5xx on a send leaves the outcome unknown (#131).
+
+    The model must read that the message may already have been sent and where to
+    check, not the 503 row's "retry": for a send, retrying blind is the duplicate.
+    The error is the one ``call_without_replay`` raises from Graph's own 503.
+    """
+    from msgraph.generated.models.o_data_errors.main_error import MainError
+    from msgraph.generated.models.o_data_errors.o_data_error import ODataError
+
+    from outlook_mcp.errors import MESSAGE_MAY_HAVE_BEEN_SENT
+    from outlook_mcp.throttle import call_without_replay
+
+    async def _send(_once):
+        inner = MainError()
+        inner.code = "ServiceUnavailable"
+        inner.message = "The service is temporarily unavailable."
+
+        err = ODataError()
+        err.response_status_code = 503
+        err.error = inner
+        raise err
+
+    with pytest.raises(GraphAPIError) as caught:
+        await call_without_replay(_send, outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT)
+
+    is_error, text = await _text_the_model_sees(lambda: caught.value)
+
+    assert is_error is True
+    assert "temporarily unavailable" in text
+    assert "may already have been sent" in text
+    assert "Check Sent Items" in text
+    assert "Retry after a short delay" not in text
+
+
 def _all_subclasses(cls: type) -> set[type]:
     subs = set(cls.__subclasses__())
     return subs.union(*(_all_subclasses(s) for s in subs)) if subs else subs
