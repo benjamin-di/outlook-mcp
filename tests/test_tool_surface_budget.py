@@ -106,7 +106,16 @@ CHARS_PER_TOKEN = 4
 # schema. No docstring grew: the supported subset is one INSTRUCTIONS bullet, sent
 # once per session. One ceiling for the pair, the 13,900 #143 set: reply and forward
 # drafts (+138) and Markdown bodies (+97) together, ~0.6% headroom.
-TOOL_SURFACE_CEILING = 13_900
+#
+# 13,676 with add_emails and remove_emails on outlook_update_contact (#161):
+# two list arguments and the line distinguishing them from email, which replaces
+# the whole list (+90 on main at 13,586). The 13,700 ceiling still holds.
+#
+# 13,911 once #161 (`add_emails` and `remove_emails` on `outlook_update_contact`, +90)
+# merged onto the mail stack (13,821, #131 #167 #143 #168): each fit its own base,
+# together they do not. Raised at merge time to 14,100 as one ceiling for the contacts
+# pair (#161, then #165 stacked on it, ~13,964 together): ~1% headroom.
+TOOL_SURFACE_CEILING = 14_100
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
