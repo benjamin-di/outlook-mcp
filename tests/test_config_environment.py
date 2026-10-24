@@ -263,7 +263,9 @@ def test_invalid_inputs_name_the_variable_without_echoing_values(
 )
 def test_misspelt_environment_security_key_stops_startup(tmp_path, monkeypatch, variable):
     monkeypatch.setenv(variable, "true")
-    with pytest.raises(EnvironmentConfigError, match=variable):
+    # Windows uppercases names in os.environ; check the name the loader receives.
+    environment_name = next(name for name in os.environ if name.casefold() == variable.casefold())
+    with pytest.raises(EnvironmentConfigError, match=environment_name):
         load_config(str(tmp_path))
 
 
