@@ -7,6 +7,7 @@ import json
 import mimetypes
 import ntpath
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -233,6 +234,8 @@ def _inline_attachments(items: list[dict] | None) -> list[Any]:
             padding = min(2, len(compact) - len(compact.rstrip("=")))
             size = len(compact) // 4 * 3 - padding
             if size > _LARGE_FILE_THRESHOLD:
+                if len(compact) % 4 or re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", compact) is None:
+                    raise ValueError(f"{where}: content_base64 is not valid base64.")
                 name = item.get("name")
                 label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
                 raise _over_the_inline_cap(where, label, str(size))

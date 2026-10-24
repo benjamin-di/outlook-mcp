@@ -1076,3 +1076,32 @@ async def test_empty_inline_content_is_refused_without_graph_calls(tmp_path, sen
     builder.get.assert_not_called()
     builder.attachments.post.assert_not_called()
     client.me.send_mail.post.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("send", [False, True])
+@pytest.mark.parametrize("suffix", ["!!!!", "====", "AAAAA"])
+async def test_invalid_near_cap_content_reports_base64_without_decoding(
+    tmp_path, monkeypatch, send, suffix
+):
+    from outlook_mcp import validation
+
+    def no_decoding(*args, **kwargs):
+        raise AssertionError("decoded an oversized input")
+
+    monkeypatch.setattr(validation.base64, "b64decode", no_decoding)
+    client, builder = _draft_client()
+    kwargs = {
+        "attachments": [
+            {"name": "bad.bin", "content_base64": "A" * (4 * INLINE_CAP // 3) + suffix}
+        ],
+        "config": Config(attachments_dir=str(tmp_path / "att")),
+    }
+    with pytest.raises(ValueError, match="content_base64 is not valid base64"):
+        if send:
+            await send_with_attachments(client, ["a@example.com"], "s", "b", **kwargs)
+        else:
+            await attach_to_draft(client, "AAMkAG123=", **kwargs)
+    builder.get.assert_not_called()
+    builder.attachments.post.assert_not_called()
+    client.me.send_mail.post.assert_not_called()
