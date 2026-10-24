@@ -158,7 +158,10 @@ CHARS_PER_TOKEN = 4
 # schema. No docstring grew: the supported subset is one INSTRUCTIONS bullet, sent
 # once per session. One ceiling for the pair, the 13,900 #143 set: reply and forward
 # drafts (+138) and Markdown bodies (+97) together, ~0.6% headroom.
-TOOL_SURFACE_CEILING = 14_200
+#
+# 14,784 on the combined 71-tool tree (current main plus the open pull requests
+# above, merged in order); ceiling 15,000, about 1.5% headroom.
+TOOL_SURFACE_CEILING = 15_000
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever

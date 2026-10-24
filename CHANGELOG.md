@@ -109,6 +109,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   out. A Message-ID shared by copies in several folders is refused with their IDs instead of
   guessed between. It costs one sentence in one docstring (+10 proxy tokens), with no ceiling
   change.
+
 - **`outlook_create_event` takes `calendar`.** An event could be read from a secondary calendar
   (`outlook_list_events`, #62) but only ever created in the default one (#141). `calendar` is
   resolved the way `outlook_list_events` resolves it, with the same errors: omitted, blank or
@@ -118,6 +119,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   can be written; Graph's own answer is a 403 whose hint blames the account type. The tools that
   take an event ID need no `calendar`: `/me/events/{id}` reaches an event on any of the user's own
   calendars.
+
 - **A contact's birthday can be set** (#163). `outlook_get_contact` returned `birthday`, but
   neither write tool could set one. `outlook_create_contact` and `outlook_update_contact` take
   `birthday`, a date (`YYYY-MM-DD`). Graph stores a birthday as an instant, so it is sent as
@@ -125,6 +127,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   where midnight UTC would be the day before everywhere west of Greenwich, and the time the
   birthdays already in a mailbox are stored at. Anything but a plain date is refused before
   anything is sent. There is no clearing a birthday yet.
+
 - **A contact's categories, notes and middle name can be written** (#175). `outlook_get_contact`
   returned `categories` and `personal_notes`, but no tool could set them, and Graph's `middleName`
   was neither read nor written. `outlook_create_contact` and `outlook_update_contact` take
@@ -133,6 +136,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `outlook_categorize_message` does a message's: `[]` removes every category, and omitting it
   leaves them alone. The update description says so, since adding one category with a one-item
   list would drop the rest.
+
 - **The read tools can say whether Microsoft verified who a message is from (#130).** A From
   line is whatever the sender typed, so mail claiming to come from the user's bank or manager
   could be spoofed, and nothing told the agent which it was. `outlook_read_message` and
@@ -152,6 +156,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   are not returned. The instructions every client receives say to use it before acting on a
   message because of who sent it. The tool surface grows by 76 proxy tokens, to 13,337, so
   the ceiling rises from 13,300 to 13,400.
+
 - **Attachments as content, for clients that can't see the server's disk** (#129). The
   attachment tools moved files only through `attachments_dir`, so a remote or sandboxed client
   could neither read an attachment nor attach a file, and a local one needed a second tool call
@@ -202,22 +207,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   half-made reply. The result adds `to` and `cc` as
   Graph addressed the draft. `to` and `subject` are optional in the schema now; a new draft
   still needs both and is refused without them. The tool surface grows by 138 proxy tokens.
-- **Mail bodies can be written in Markdown** (#168). `outlook_send_message`, `outlook_reply`,
-  `outlook_forward` (its `comment`), `outlook_create_draft` and `outlook_update_draft` take
-  `is_markdown=True`, beside `is_html`. Agents write Markdown, and until now it went out as text
-  with its asterisks showing, or with `is_html=True` as text that isn't HTML. A safe subset is
-  converted to HTML: paragraphs, line breaks, `-`, `*`, `+` and numbered lists, `**bold**`,
-  `*italic*`, `` `code` ``, backslash escapes, and `[text](url)` links to `https:` and `mailto:`
-  addresses only; an image, `![alt](url)`, becomes a link to it. Everything else, raw HTML
-  included, is escaped and shown as written; headings, quotes and code blocks stay text, and
-  underscores are not emphasis (`snake_case` names are common in an agent's mail). No new
-  dependency: the converter is about 80 lines in
-  `tools/_mail_body.py`, every pattern linear in the line's length. A reply or forward, and a
-  reply or forward draft (#143), puts the HTML above the quote, as #167 does; on a plain-text
-  thread the Markdown is sent as written and the reply stays plain text. `is_html` and
-  `is_markdown` together are refused. The supported subset is one `INSTRUCTIONS` bullet, sent
-  once per session, so no docstring grows; the five booleans add 97 proxy tokens to the tool
-  surface, within the 13,900 ceiling #143 set for the pair.
 
 - **Folder arguments take a path, so any folder can be named, including one whose name another
   folder shares** (#144). `Inbox/Travel/Flights` names Flights under Travel under Inbox, and a `/`
@@ -236,6 +225,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   folder's `path` in the same form, and the path rule is in the server instructions. No lookup
   cache: a cached path goes stale silently
   when a folder is renamed and another takes its name.
+
 - **Event keys: find "the event for booking X" again** (#148). An agent recording a flight,
   a stay or an appointment had nothing stable to find it by when a change to the same booking
   arrived, only a subject and a time that both change, so it created a second event.
@@ -247,6 +237,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   key is 1–128 letters, digits and `. _ : @ -`, refused otherwise before anything is sent. One
   line in the connect-time instructions tells the agent to look a key up before creating. 68 → 69
   tools.
+
 - **Files on calendar events** (#153). Drafts and To Do tasks could carry attachments and events
   could not, so an agent putting a flight on the calendar had nowhere to put the e-ticket. The new
   `outlook_attach_to_event` attaches files from `attachments_dir` through the same code as
@@ -259,6 +250,53 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   withholds `mail_send`, attaching to an event with attendees is refused, as rewording one is, and
   the tool is marked destructive. A missing file is refused with a message the agent can read.
   69 → 71 tools.
+
+- **A contact's email addresses can be added and removed one at a time** (#161).
+  `outlook_update_contact`'s `email` replaces every address with the one given, so an agent
+  asked to add someone's second address had to drop the first. `add_emails` and
+  `remove_emails` change only the addresses they name: the contact is read, the change is
+  merged into the addresses it holds (kept ones go back as read, display name included), and
+  the update is pinned to that read with `If-Match`, so an edit made in between is refused with
+  `412` instead of being overwritten (#87). Refused before anything is written: `email` together
+  with either list, the same address in both, an empty list, removing an address the contact
+  doesn't have, and a result of more than three addresses, the number of email slots Exchange
+  keeps per contact. `email` is unchanged.
+
+- **Contacts can be found by phone number, however it is written** (#165). Graph's contact
+  `$search` finds a number only as it is stored, so a number from a signature or a missed call
+  without its country code, or with a different one, found nothing, and an agent concluded the
+  caller was not a contact. `outlook_search_contacts` takes `phone` in place of `query`: it reads
+  the contact listing (pages of 1,000, up to 10,000 contacts; nothing is kept) and matches when
+  the shorter number's digits end the longer's, as written or without leading zeros, with at
+  least seven digits. `+44 20 7946 0018` finds `020 7946 0018`. Graph has no server-side
+  alternative: `$filter` on contacts reaches only `emailAddresses`. Fewer than seven digits is
+  refused. `query` searches are unchanged.
+
+- **Mail bodies can be written in Markdown** (#168). `outlook_send_message`, `outlook_reply`,
+  `outlook_forward` (its `comment`), `outlook_create_draft` and `outlook_update_draft` take
+  `is_markdown=True`, beside `is_html`. Agents write Markdown, and until now it went out as text
+  with its asterisks showing, or with `is_html=True` as text that isn't HTML. A safe subset is
+  converted to HTML: paragraphs, line breaks, `-`, `*`, `+` and numbered lists, `**bold**`,
+  `*italic*`, `` `code` ``, backslash escapes, and `[text](url)` links to `https:` and `mailto:`
+  addresses only; an image, `![alt](url)`, becomes a link to it. Everything else, raw HTML
+  included, is escaped and shown as written; headings, quotes and code blocks stay text, and
+  underscores are not emphasis (`snake_case` names are common in an agent's mail). No new
+  dependency: the converter is about 80 lines in
+  `tools/_mail_body.py`, every pattern linear in the line's length. A reply or forward, and a
+  reply or forward draft (#143), puts the HTML above the quote, as #167 does; on a plain-text
+  thread the Markdown is sent as written and the reply stays plain text. `is_html` and
+  `is_markdown` together are refused. The supported subset is one `INSTRUCTIONS` bullet, sent
+  once per session, so no docstring grows; the five booleans add 97 proxy tokens to the tool
+  surface, within the 13,900 ceiling #143 set for the pair.
+
+- **An optional streamable-HTTP transport** (#126), for a server on another machine or in a
+  container, or a client that cannot spawn a local process.
+  `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` through the SDK's own streamable-HTTP
+  app, stateless and answering JSON, on `OUTLOOK_MCP_HTTP_HOST`/`OUTLOOK_MCP_HTTP_PORT` (default
+  `127.0.0.1:8000`). It never starts without `OUTLOOK_MCP_HTTP_TOKEN`, loopback included, and
+  every request must carry it as a bearer or gets `401`. It speaks plain HTTP, so TLS belongs to
+  a proxy in front. stdio stays the default, unchanged; no new dependency. See the README's
+  "Remote / HTTP transport".
 
 ### Changed
 
@@ -277,25 +315,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the connect-time rule and SKILL.md now name attachments themselves. Where only an
   attachment's name reached the model before, a text attachment's body now does.
 
-- **A contact's email addresses can be added and removed one at a time** (#161).
-  `outlook_update_contact`'s `email` replaces every address with the one given, so an agent
-  asked to add someone's second address had to drop the first. `add_emails` and
-  `remove_emails` change only the addresses they name: the contact is read, the change is
-  merged into the addresses it holds (kept ones go back as read, display name included), and
-  the update is pinned to that read with `If-Match`, so an edit made in between is refused with
-  `412` instead of being overwritten (#87). Refused before anything is written: `email` together
-  with either list, the same address in both, an empty list, removing an address the contact
-  doesn't have, and a result of more than three addresses, the number of email slots Exchange
-  keeps per contact. `email` is unchanged.
-- **Contacts can be found by phone number, however it is written** (#165). Graph's contact
-  `$search` finds a number only as it is stored, so a number from a signature or a missed call
-  without its country code, or with a different one, found nothing, and an agent concluded the
-  caller was not a contact. `outlook_search_contacts` takes `phone` in place of `query`: it reads
-  the contact listing (pages of 1,000, up to 10,000 contacts; nothing is kept) and matches when
-  the shorter number's digits end the longer's, as written or without leading zeros, with at
-  least seven digits. `+44 20 7946 0018` finds `020 7946 0018`. Graph has no server-side
-  alternative: `$filter` on contacts reaches only `emailAddresses`. Fewer than seven digits is
-  refused. `query` searches are unchanged.
 
 ## [1.26.0] — 2026-10-23
 
