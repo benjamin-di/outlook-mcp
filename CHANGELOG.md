@@ -6,6 +6,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **Oversized inline attachment input is refused before whitespace normalization** (#129).
+  The exact decoded-size check remains, preceded by a cheap raw-length bound so a
+  whitespace-heavy argument cannot allocate a large split list before being refused.
+
 ## [1.27.0] — 2026-10-24
 
 ### Fixed
