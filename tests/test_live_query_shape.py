@@ -608,6 +608,43 @@ async def test_the_calendar_listing_says_which_calendars_can_be_written(real_gra
     assert defaults and all(cal.can_edit for cal in defaults)
 
 
+async def test_the_event_key_lookup_is_accepted(real_graph_client):
+    """`find_events_by_key` sends an `Any()` lambda over extended properties.
+
+    A shape Graph refused would be a 400 on every lookup, and a lookup that
+    fails is read by an agent as "no such booking", which is when it creates a
+    duplicate. A key no event can carry must come back as an empty answer.
+    Read-only: one filtered listing of the default calendar.
+    """
+    from outlook_mcp.tools.calendar_read import find_events_by_key
+
+    result = await find_events_by_key(
+        real_graph_client.sdk_client, "outlook-mcp:live-guard:no-event-has-this-key"
+    )
+
+    assert result["events"] == [] and result["has_more"] is False
+
+
+async def test_the_event_key_expand_is_accepted_on_a_listing_and_a_read(real_graph_client):
+    """The listing and `get_event` expand the key property with an inner `$filter`.
+
+    `mail_read` builds its one expand of this kind as a raw URL because kiota
+    once dropped the inner filter; these go through the typed builders. So
+    this asks Graph to accept both shapes and checks a listed event's key reads
+    back the same way on both paths. Read-only.
+    """
+    from outlook_mcp.tools.calendar_read import get_event
+
+    after, before = _wide_window()
+    page = await list_events(real_graph_client.sdk_client, after=after, before=before, count=10)
+    if not page["events"]:
+        pytest.skip("No events in the window to read back")
+    listed = page["events"][0]
+    detail = await get_event(real_graph_client.sdk_client, listed["id"])
+
+    assert detail["key"] == listed.get("key")
+
+
 async def test_the_event_listing_returns_the_show_as_it_selects(event_walk):
     """`showAs` is in `list_events`' $select, so it must come back populated.
 

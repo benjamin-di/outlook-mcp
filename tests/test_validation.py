@@ -19,6 +19,7 @@ from outlook_mcp.validation import (
     validate_birthday,
     validate_datetime,
     validate_email,
+    validate_event_key,
     validate_event_timezone,
     validate_folder_name,
     validate_graph_id,
@@ -599,3 +600,55 @@ class TestEventTimezoneValidation:
         this test is what notices.
         """
         assert resolve_timezone("EST").key == "EST"
+
+
+class TestEventKeyValidation:
+    """An event key is matched inside a `$filter` string literal, so it is held to
+    characters no literal needs escaping for, and checked whole."""
+
+    @pytest.mark.parametrize(
+        "key",
+        ["a", "booking:ABC123", "flight:ab12cd:LHR-JFK", "user@example.com", "x_y.z", "A" * 128],
+    )
+    def test_accepts(self, key):
+        assert validate_event_key(key) == key
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "",
+            "A" * 129,
+            "has space",
+            " leading",
+            "trailing ",
+            "it's",  # would end the literal
+            'quote"d',
+            "a/b",
+            "a+b",  # a query string can read + as a space
+            "a#b",
+            "a%27b",
+            "a(b)",
+            "Genève",
+            "tab\there",
+            "booking:ABC123\n",
+        ],
+    )
+    def test_refuses(self, key):
+        with pytest.raises(ValueError, match="Invalid event key"):
+            validate_event_key(key)
+
+    def test_the_refusal_states_the_rule(self):
+        with pytest.raises(ValueError) as exc:
+            validate_event_key("it's")
+        assert "1-128" in str(exc.value)
+        assert ". _ : @ -" in str(exc.value)
+
+    def test_the_refusal_does_not_echo_control_characters(self):
+        with pytest.raises(ValueError) as exc:
+            validate_event_key("bad\x1b[2Jkey")
+        assert "\x1b" not in str(exc.value)
+
+    @pytest.mark.parametrize("value", [None, 123, ["booking:1"]])
+    def test_refuses_a_value_that_is_not_a_string(self, value):
+        with pytest.raises(ValueError, match="Invalid event key"):
+            validate_event_key(value)

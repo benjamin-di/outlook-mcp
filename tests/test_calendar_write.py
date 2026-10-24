@@ -2851,3 +2851,103 @@ class TestCreateEventCalendarOnTheWire:
         await _create(client)
 
         assert [(r.method, r.url.path) for r in sent] == [("POST", "/v1.0/me/events")]
+
+
+# ── event keys ────────────────────────────────────────────────────────
+
+_KEY_PROP = "String {51f1f359-76ee-427e-ac52-22691bf5b2f8} Name EventKey"
+
+
+class TestEventKeyWrites:
+    async def test_create_stamps_the_key_on_the_event(self):
+        mock_client = AsyncMock()
+        mock_client.me.events.post = AsyncMock(return_value=_created("Flight"))
+
+        await create_event(
+            mock_client,
+            subject="Flight",
+            start="2026-11-03T09:00:00",
+            end="2026-11-03T11:00:00",
+            key="flight:AB12CD:LHR-JFK",
+            config=_CFG,
+        )
+
+        (prop,) = _posted(mock_client).single_value_extended_properties
+        assert prop.id == _KEY_PROP
+        assert prop.value == "flight:AB12CD:LHR-JFK"
+
+    async def test_create_without_a_key_sends_no_property(self):
+        mock_client = AsyncMock()
+        mock_client.me.events.post = AsyncMock(return_value=_created("Flight"))
+
+        await create_event(
+            mock_client,
+            subject="Flight",
+            start="2026-11-03T09:00:00",
+            end="2026-11-03T11:00:00",
+            config=_CFG,
+        )
+
+        assert _posted(mock_client).single_value_extended_properties is None
+
+    async def test_create_refuses_an_invalid_key_before_sending(self):
+        mock_client = AsyncMock()
+
+        with pytest.raises(ValueError, match="Invalid event key"):
+            await create_event(
+                mock_client,
+                subject="Flight",
+                start="2026-11-03T09:00:00",
+                end="2026-11-03T11:00:00",
+                key="has space",
+                config=_CFG,
+            )
+
+        mock_client.me.events.post.assert_not_called()
+
+    async def test_update_sets_the_key_and_nothing_else(self):
+        builder, client = _client_with(_current_event())
+
+        await update_event(client, event_id="AAMkAG123=", key="booking:ABC123", config=_CFG)
+
+        patched = builder.patch.call_args[0][0]
+        (prop,) = patched.single_value_extended_properties
+        assert (prop.id, prop.value) == (_KEY_PROP, "booking:ABC123")
+        assert patched.subject is None and patched.start is None and patched.recurrence is None
+
+    async def test_keying_a_series_master_reads_nothing_first(self):
+        """A key is not a reshape: no anchor read, no occurrence check, no pin.
+
+        Graph restores a series' changed occurrences when its times or pattern
+        change; a key changes neither. The live tier checks that against Graph.
+        """
+        master = _current_event(event_type="seriesMaster", edited=[MagicMock()])
+        builder, client = _client_with(master)
+
+        await update_event(client, event_id="AAMkAG123=", key="booking:ABC123", config=_CFG)
+
+        builder.get.assert_not_called()
+        # No pin, asked of the header alone: the update may still carry a request
+        # configuration for something else, such as switching kiota's retries off.
+        sent = builder.patch.call_args.kwargs.get("request_configuration")
+        assert sent is None or not sent.headers.get("If-Match")
+
+    async def test_update_refuses_an_invalid_key_before_any_request(self):
+        builder, client = _client_with(_current_event())
+
+        with pytest.raises(ValueError, match="Invalid event key"):
+            await update_event(client, event_id="AAMkAG123=", key="", config=_CFG)
+
+        builder.get.assert_not_called()
+        builder.patch.assert_not_called()
+
+    async def test_a_key_on_an_event_with_attendees_needs_no_mail_send(self):
+        """The reword gate covers what Outlook shows attendees (subject, body and
+        location); a key is not one of them, so it pays for no read."""
+        builder, client = _client_with(_meeting())
+
+        await update_event(
+            client, event_id="AAMkAG123=", key="booking:ABC123", config=_CFG_CAL_ONLY
+        )
+
+        builder.patch.assert_called_once()

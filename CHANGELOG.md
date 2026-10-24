@@ -220,6 +220,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   folder's `path` in the same form, and the path rule is in the server instructions. No lookup
   cache: a cached path goes stale silently
   when a folder is renamed and another takes its name.
+- **Event keys: find "the event for booking X" again** (#148). An agent recording a flight,
+  a stay or an appointment had nothing stable to find it by when a change to the same booking
+  arrived, only a subject and a time that both change, so it created a second event.
+  `outlook_create_event` and `outlook_update_event` take `key`, the caller's own reference,
+  stored in a hidden extended property this server owns. `outlook_get_event` returns it (`null`
+  when unset), and the default `outlook_list_events` listing shows it on the events that carry
+  one. The new `outlook_find_event_by_key` finds events by key in the default calendar or a named
+  one, with no date window, and returns single events and series masters, never occurrences. A
+  key is 1–128 letters, digits and `. _ : @ -`, refused otherwise before anything is sent. One
+  line in the connect-time instructions tells the agent to look a key up before creating. 68 → 69
+  tools.
 
 ### Changed
 

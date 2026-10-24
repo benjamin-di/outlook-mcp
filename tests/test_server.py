@@ -34,6 +34,7 @@ EXPECTED_TOOLS = [
     # Calendar read (3)
     "outlook_list_events",
     "outlook_get_event",
+    "outlook_find_event_by_key",
     "outlook_list_events_delta",
     # Calendar write (4)
     "outlook_create_event",
@@ -97,9 +98,9 @@ EXPECTED_TOOLS = [
 
 
 def test_tool_count():
-    """All 68 tools are registered (auth is CLI-only now)."""
+    """All 69 tools are registered (auth is CLI-only now)."""
     registered = set(mcp._tool_manager._tools.keys())
-    assert len(registered) == 68
+    assert len(registered) == 69
 
 
 def test_all_tools_registered():
@@ -619,6 +620,63 @@ class TestCalendarWriteArgumentOrder:
         sdk.me.calendars.get.assert_not_called()
         event = sdk.me.events.post.call_args[0][0]
         assert event.show_as.value == "tentative"
+
+    @pytest.mark.asyncio
+    async def test_key_alone_is_not_read_as_show_as(self):
+        """`key` is appended after `show_as`; swapped, it raises `Invalid show_as`."""
+        from unittest.mock import AsyncMock
+
+        from outlook_mcp import server as server_mod
+        from outlook_mcp.config import Config
+
+        sdk = AsyncMock()
+        sdk.me.events.post = AsyncMock(return_value=MagicMock(id="E1", subject="Review"))
+        client = MagicMock()
+        client.sdk_client = sdk
+
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=Config(client_id="test")),
+        ):
+            await server_mod.outlook_create_event(
+                self._ctx(),
+                subject="Review",
+                start="2026-09-07T12:30:00Z",
+                end="2026-09-07T13:00:00Z",
+                key="booking:ABC123",
+            )
+
+        event = sdk.me.events.post.call_args[0][0]
+        assert event.show_as is None
+        assert event.single_value_extended_properties[0].value == "booking:ABC123"
+
+    @pytest.mark.asyncio
+    async def test_update_key_alone_is_not_read_as_a_timezone(self):
+        """`key` is appended after `timezone`; swapped, the call is refused for
+        lacking start and end."""
+        from unittest.mock import AsyncMock
+
+        from outlook_mcp import server as server_mod
+        from outlook_mcp.config import Config
+
+        builder = MagicMock()
+        builder.patch = AsyncMock(return_value=MagicMock(id="AAMkAG123="))
+        sdk = MagicMock()
+        sdk.me.events.by_event_id = MagicMock(return_value=builder)
+        client = MagicMock()
+        client.sdk_client = sdk
+
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=Config(client_id="test")),
+        ):
+            await server_mod.outlook_update_event(
+                self._ctx(), event_id="AAMkAG123=", key="booking:ABC123"
+            )
+
+        event = builder.patch.call_args[0][0]
+        assert event.single_value_extended_properties[0].value == "booking:ABC123"
+        assert event.start is None
 
     @pytest.mark.asyncio
     async def test_update_event_arguments_land_in_the_right_slots(self):
