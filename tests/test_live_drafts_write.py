@@ -7,8 +7,11 @@ the quote (checked against an Exchange Online mailbox). So these create real rep
 forward drafts of recent Inbox messages, read each back, and delete it.
 
 Nothing is sent: no test here calls a send, and every draft is deleted in a
-``finally`` (``tests/test_live_write_never_sends.py`` holds that line). The draft
-bodies carry LIVE_WRITE_SUBJECT, so anything a crash leaks is greppable in Drafts.
+``finally`` (``tests/test_live_write_never_sends.py`` holds that line). Every draft,
+reply or forward, is addressed to ``live.write.guard@example.com`` with
+LIVE_WRITE_SUBJECT as its subject, replacing the sender and "RE:" subject Graph picks
+for a reply, so no draft names a real correspondent and anything a crash leaks is
+greppable in Drafts. Each test checks the draft Graph made carries both.
 
     OUTLOOK_MCP_LIVE_WRITE=1 uv run pytest -m live_write -v tests/test_live_drafts_write.py
 """
@@ -26,6 +29,7 @@ from tests.conftest import LIVE_WRITE_SUBJECT
 pytestmark = [pytest.mark.live_write, pytest.mark.asyncio]
 
 _BODY_OPEN_TAG = re.compile(r"<body\b[^>]*>", re.IGNORECASE)
+_GUARD_TO = ["live.write.guard@example.com"]
 _TEXT = f"{LIVE_WRITE_SUBJECT}\nsecond line\n\nsecond paragraph\n\n- item one\n- item two"
 _HTML = (
     f"<p>{LIVE_WRITE_SUBJECT}<br>second line</p><p>second paragraph</p>"
@@ -60,7 +64,9 @@ async def _recent_inbox_message(sdk, content_type: str):
 
 @asynccontextmanager
 async def _draft(client, config, **kwargs):
-    created = await create_draft(client.sdk_client, to=None, subject=None, config=config, **kwargs)
+    created = await create_draft(
+        client.sdk_client, to=_GUARD_TO, subject=LIVE_WRITE_SUBJECT, config=config, **kwargs
+    )
     try:
         yield created["draft_id"]
     finally:
@@ -76,9 +82,16 @@ async def _read(sdk, draft_id: str):
 
     config = build_request_config(
         MessageItemRequestBuilder.MessageItemRequestBuilderGetQueryParameters,
-        {"$select": "body,isDraft,conversationId"},
+        {"$select": "body,isDraft,conversationId,subject,toRecipients,ccRecipients"},
     )
     return await sdk.me.messages.by_message_id(draft_id).get(request_configuration=config)
+
+
+def _assert_addressed_to_the_guard(draft) -> None:
+    """Ours, not Graph's: a reply would go to the original's sender, titled "RE: ..."."""
+    assert [r.email_address.address for r in draft.to_recipients or []] == _GUARD_TO
+    assert not draft.cc_recipients
+    assert draft.subject == LIVE_WRITE_SUBJECT
 
 
 class TestThreadDraftBodies:
@@ -88,19 +101,19 @@ class TestThreadDraftBodies:
     ):
         sdk = real_graph_client.sdk_client
         source = (await _recent_inbox_message(sdk, "html")).id
-        extra = {"to": ["live.write.guard@example.com"]} if action == "forward_message_id" else {}
 
         # The draft Graph makes with no text: its quote is the reference.
         async with _draft(
-            real_graph_client, live_write_config, body="", **{action: source}, **extra
+            real_graph_client, live_write_config, body="", **{action: source}
         ) as empty_id:
             quote = (await _read(sdk, empty_id)).body.content
         async with _draft(
-            real_graph_client, live_write_config, body=_TEXT, **{action: source}, **extra
+            real_graph_client, live_write_config, body=_TEXT, **{action: source}
         ) as draft_id:
             draft = await _read(sdk, draft_id)
 
         assert draft.is_draft is True
+        _assert_addressed_to_the_guard(draft)
         assert draft.body.content_type.value == "html"
         content = draft.body.content
         opening = _BODY_OPEN_TAG.search(content)
@@ -125,6 +138,7 @@ class TestThreadDraftBodies:
             draft = await _read(sdk, draft_id)
 
         assert draft.is_draft is True
+        _assert_addressed_to_the_guard(draft)
         assert draft.conversation_id == source.conversation_id
         assert draft.body.content_type.value == "text"
         content = draft.body.content.replace("\r\n", "\n")
