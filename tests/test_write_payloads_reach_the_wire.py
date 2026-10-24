@@ -618,6 +618,163 @@ class TestMailDrafts:
             "2026-12-02T09:00:00",
         )
 
+    # Drafts in a thread (#143). The create call and the PATCH are separate
+    # payloads, so each is serialized on its own.
+
+    @staticmethod
+    def _thread_client(content="<html><body><div>QUOTED-ORIGINAL</div></body></html>", html=True):
+        from msgraph.generated.models.body_type import BodyType
+
+        draft = MagicMock(id="AAMkThreadDraft=", to_recipients=[], cc_recipients=[])
+        draft.body = MagicMock(
+            content=content, content_type=BodyType.Html if html else BodyType.Text
+        )
+        source = MagicMock()
+        for action in ("create_reply", "create_reply_all", "create_forward"):
+            getattr(source, action).post = AsyncMock(return_value=draft)
+        new_draft = MagicMock()
+        new_draft.patch = AsyncMock()
+        builders = {"AAMkOriginal=": source, "AAMkThreadDraft=": new_draft}
+        client = MagicMock()
+        client.me.messages.by_message_id = MagicMock(side_effect=lambda i: builders[i])
+        return client, source, new_draft
+
+    async def test_reply_draft_every_argument_reaches_the_wire(self):
+        client, source, new_draft = self._thread_client()
+
+        await mail_drafts.create_draft(
+            client,
+            to=["sentinel.to3@example.com"],
+            subject="SENTINEL-SUBJECT-a11",
+            body="SENTINEL-BODY-a12",
+            cc=["sentinel.cc3@example.com"],
+            bcc=["sentinel.bcc3@example.com"],
+            importance="high",
+            reply_to=["sentinel.rt3@example.com"],
+            deferred_send_datetime="2026-12-03T09:00:00Z",
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        create = source.create_reply.post.call_args[0][0]
+        assert_on_wire(
+            create,
+            "SENTINEL-SUBJECT-a11",
+            "sentinel.to3@example.com",
+            "sentinel.cc3@example.com",
+            "sentinel.bcc3@example.com",
+            '"importance": "high"',
+            "sentinel.rt3@example.com",
+        )
+        # The body is not on the create call: Graph's `comment` would flatten it.
+        assert "SENTINEL-BODY-a12" not in wire(source.create_reply.post.call_args[0][0])
+        assert_on_wire(
+            new_draft.patch.call_args[0][0],
+            "<html><body><p>SENTINEL-BODY-a12</p><div>QUOTED-ORIGINAL</div></body></html>",
+            '"contentType": "html"',
+            "2026-12-03T09:00:00",
+            "0x3FEF",
+        )
+
+    async def test_reply_all_draft_reaches_the_wire(self):
+        client, source, new_draft = self._thread_client()
+
+        await mail_drafts.create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="SENTINEL-BODY-a21",
+            reply_to_message_id="AAMkOriginal=",
+            reply_all=True,
+            config=_CFG,
+        )
+
+        assert '"Comment"' not in wire(source.create_reply_all.post.call_args[0][0])
+        assert_on_wire(
+            new_draft.patch.call_args[0][0], "<p>SENTINEL-BODY-a21</p>", '"contentType": "html"'
+        )
+
+    async def test_forward_draft_reaches_the_wire(self):
+        client, source, new_draft = self._thread_client()
+
+        await mail_drafts.create_draft(
+            client,
+            to=["sentinel.fwd2@example.com"],
+            subject=None,
+            body="SENTINEL-BODY-a31",
+            forward_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        body = wire(source.create_forward.post.call_args[0][0])
+        assert '"Comment"' not in body
+        assert_on_wire(
+            new_draft.patch.call_args[0][0], "<p>SENTINEL-BODY-a31</p>", '"contentType": "html"'
+        )
+        # On `message`, not also the action's own ToRecipients: Graph 400s on both.
+        assert (
+            '"toRecipients": [{"emailAddress": {"address": "sentinel.fwd2@example.com"}}]' in body
+        )
+        assert '"ToRecipients"' not in body
+
+    async def test_html_reply_draft_body_reaches_the_wire_above_the_quote(self):
+        client, source, new_draft = self._thread_client()
+
+        await mail_drafts.create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="<b>SENTINEL-BODY-a41</b>",
+            is_html=True,
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        assert '"Comment"' not in wire(source.create_reply.post.call_args[0][0])
+        assert_on_wire(
+            new_draft.patch.call_args[0][0],
+            '"contentType": "html"',
+            "<html><body><b>SENTINEL-BODY-a41</b><div>QUOTED-ORIGINAL</div></body></html>",
+        )
+
+    async def test_plain_reply_draft_reaches_the_wire_with_its_layout(self):
+        """Graph's `comment` joined these lines with spaces; the PATCH keeps them."""
+        client, _, new_draft = self._thread_client()
+
+        await mail_drafts.create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="SENTINEL-a51 one\nSENTINEL-a52 two\n\nSENTINEL-a53\n\n- SENTINEL-a54",
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        assert_on_wire(
+            new_draft.patch.call_args[0][0],
+            '"contentType": "html"',
+            "<html><body><p>SENTINEL-a51 one<br>SENTINEL-a52 two</p><p>SENTINEL-a53</p>"
+            "<ul><li>SENTINEL-a54</li></ul><div>QUOTED-ORIGINAL</div></body></html>",
+        )
+
+    async def test_plain_reply_draft_on_a_plain_text_original_reaches_the_wire_as_text(self):
+        client, _, new_draft = self._thread_client(content="\r\nQUOTED-ORIGINAL\r\n", html=False)
+
+        await mail_drafts.create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="SENTINEL-a61\nSENTINEL-a62",
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        assert_on_wire(
+            new_draft.patch.call_args[0][0],
+            '"contentType": "text"',
+            '"content": "SENTINEL-a61\\r\\nSENTINEL-a62\\r\\n\\r\\nQUOTED-ORIGINAL\\r\\n"',
+        )
+
 
 # ── contacts ──────────────────────────────────────────────────────────
 
