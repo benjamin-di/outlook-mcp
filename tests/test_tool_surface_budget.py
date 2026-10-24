@@ -151,6 +151,14 @@ CHARS_PER_TOKEN = 4
 #
 # 14,272 with sender authentication on current main (14,197); the existing
 # 14,350 ceiling covers the opt-in read without a raise.
+#
+# 13,594 with folder paths (#144, +8 on 13,586): `outlook_list_folders` says each
+# folder carries the `path` folder arguments accept. The path rule itself went into
+# INSTRUCTIONS, which every tool that takes a folder shares and which is sent once
+# per session, not into five docstrings. No raise.
+#
+# 14,204 with folder paths after rebasing onto main with the mail stack,
+# contacts pair and attachments as content; the 14,350 ceiling still holds.
 TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

@@ -24,7 +24,7 @@ Provides AI agents with full access to mail, calendar, contacts, and tasks via M
 
 ## Agent-friendly
 
-Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`, `outlook_read_messages`, `outlook_search_mail`, `outlook_list_events`, `outlook_list_thread`) to drop large body fields — ~10× fewer tokens for triage scans. Graph errors come back as tool errors whose text carries Graph's message and a recovery hint (re-auth on 401, ROADMAP link on 403/ErrorAccessDenied, re-list on 404, back-off on 429, retry on 503). The exception is a 5xx from a tool that can email someone (mail, an invitation, an event update, an RSVP): it may already have gone through, so check Sent Items or the calendar before calling it again. v1.9.1 docstring audit: every `@mcp.tool()` docstring rewritten to a consistent shape with contrastive pointers for ambiguous pairs and concrete syntax examples, designed to reduce wrong-tool selection by LLMs.
+Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`, `outlook_read_messages`, `outlook_search_mail`, `outlook_list_events`, `outlook_list_thread`) to drop large body fields — ~10× fewer tokens for triage scans. Folder arguments take a well-known name, a display name, an ID or a path (`Inbox/Travel/Flights`, with a `/` inside a name written `//`); a name two folders share is refused with each one's path. Graph errors come back as tool errors whose text carries Graph's message and a recovery hint (re-auth on 401, ROADMAP link on 403/ErrorAccessDenied, re-list on 404, back-off on 429, retry on 503). The exception is a 5xx from a tool that can email someone (mail, an invitation, an event update, an RSVP): it may already have gone through, so check Sent Items or the calendar before calling it again. v1.9.1 docstring audit: every `@mcp.tool()` docstring rewritten to a consistent shape with contrastive pointers for ambiguous pairs and concrete syntax examples, designed to reduce wrong-tool selection by LLMs.
 
 ## Important
 
@@ -85,7 +85,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `outlook_read_message` — Get full message by ID, or by its Message-ID header value (`<abc@example.com>`); `include_sender_auth=True` adds whether Microsoft verified the From domain
 - `outlook_read_messages` — Bulk read up to 20 messages by ID in one `$batch` round-trip (use NOT N read_message calls)
 - `outlook_search_mail` — Search mail using KQL query; a `cursor` continues the search in the folder it started in. Graph has been seen to stop a search a little past 250 results (observed on Exchange Online and Outlook.com); a last page past 250 carries `incomplete`
-- `outlook_list_folders` — List all mail folders
+- `outlook_list_folders` — List all mail folders; `recursive=True` gives each folder's `path`
 - `outlook_list_inbox_delta` — List only inbox changes since last call (massive token savings for recurring agent jobs)
 
 ### Mail — Write
@@ -157,7 +157,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `outlook_remove_draft_attachment` — Remove a single attachment from a draft
 
 ### Folder Management
-- `outlook_create_folder` — Create (top-level or nested)
+- `outlook_create_folder` — Create (top-level, or nested under a `parent_folder` name, path or ID)
 - `outlook_rename_folder` — Rename
 - `outlook_delete_folder` — Delete (refuses well-known folders)
 
