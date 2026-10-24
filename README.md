@@ -518,7 +518,7 @@ stdio is the default, and every client entry above uses it. For a server that ru
 
 ```bash
 export OUTLOOK_MCP_TRANSPORT=streamable-http
-export OUTLOOK_MCP_HTTP_HOST=0.0.0.0   # default 127.0.0.1
+export OUTLOOK_MCP_HTTP_HOST=127.0.0.1   # default 127.0.0.1
 export OUTLOOK_MCP_HTTP_PORT=8000      # default 8000
 export OUTLOOK_MCP_HTTP_TOKEN=...      # python -c "import secrets; print(secrets.token_urlsafe(32))"
 outlook-mcp serve
@@ -526,11 +526,15 @@ outlook-mcp serve
 
 The client then connects to `https://<your proxy>/mcp` and sends `Authorization: Bearer <token>`.
 
+For a container, explicitly set `OUTLOOK_MCP_HTTP_HOST=0.0.0.0` and `OUTLOOK_MCP_HTTP_ALLOWED_HOSTS=mcp.example.com` for the public hostname your proxy forwards. Every public bind prints a plain-HTTP warning before it starts. The token protects against other OS users and browser pages; code running as your OS user can read the client configuration or launch the server itself. Forwarded headers are not trusted.
+
+
 **This changes who can reach the mailbox.** Over stdio, only the process that started the server can. Over HTTP, one request to the port is enough for anything that holds a token, so the token is the whole of the access control:
 
-- **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let any process running as that user read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. The token is one value of at least 32 characters from `A–Z a–z 0–9 -._~+/`; to change it, restart the server with the new one.
+- **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let other OS users or browser pages read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. The token is one value of at least 32 characters from `A–Z a–z 0–9 -._~+/`; to change it, restart the server with the new one.
 - **Plain HTTP sends the token in the clear.** The server does not terminate TLS. On any bind other machines can reach, the token and everything the tools return cross the network readable by anything on the path, unless a reverse proxy in front of the server terminates TLS. Put it behind one, and let the proxy authenticate callers too if more than one client will reach it.
-- **It binds `127.0.0.1` by default.** The SDK also refuses a request whose `Host` is not a loopback name (421, its DNS-rebinding protection), so a reverse proxy on the same machine must send `Host: 127.0.0.1:<port>` upstream.
+- **Host and Origin checks apply to every bind.** Loopback binds accept loopback hosts and origins. `OUTLOOK_MCP_HTTP_ALLOWED_HOSTS` optionally adds comma-separated hostnames or IPs, with an optional port (for example `mcp.example.com` or `mcp.example.com:8443`). On a public bind it selects the permitted hosts; unset permits only the literal bind address. Bare names permit any port. Invalid Host is refused with 421; a supplied Origin must match an allowed host over HTTP or HTTPS, or gets 403. Clients without Origin work. A same-host proxy can send `Host: 127.0.0.1:<port>`.
+- **File paths are on the server.** Attach and send-with-attachments paths resolve inside the server’s `attachments_dir`; a remote client cannot hand over its own local path. A downloaded file and `saved_to` stay on the server, and a path refusal may name the server’s absolute attachments directory.
 - **It is stateless.** The server issues no `Mcp-Session-Id` and answers each request with JSON rather than an event stream. No tool sends anything to the client mid-call, so nothing is lost.
 - **One process still serves one account.** Pair it with `OUTLOOK_MCP_CONFIG_DIR`, as for stdio (one process, one port and one settings directory per mailbox), and run `outlook-mcp auth` where the server runs, with the same environment. A container usually has no keyring; see [Token cache stored unencrypted (Linux)](#token-cache-stored-unencrypted-linux).
 - No token, request URL or request line is logged.

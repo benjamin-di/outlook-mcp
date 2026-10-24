@@ -334,7 +334,9 @@ async def test_a_bind_other_machines_can_reach_accepts_the_proxys_host():
     proxied request to a 0.0.0.0 bind gets 421. Driven in-process, so the test
     never listens on a public interface.
     """
-    app = http_transport.build_app(server.mcp, HttpSettings(host="0.0.0.0", token=TOKEN))
+    app = http_transport.build_app(
+        server.mcp, HttpSettings(host="0.0.0.0", token=TOKEN, allowed_hosts=("mcp.example.com",))
+    )
     sdk_app = app.app  # the lifespan belongs to the SDK's Starlette app inside the gate
     headers = {"Accept": "application/json, text/event-stream", "Authorization": f"Bearer {TOKEN}"}
     transport = httpx2.ASGITransport(app=app)
@@ -449,3 +451,56 @@ def test_the_entrypoint_serves_and_logs_no_token_or_request_url(tmp_path):
     logged = out + err
     for secret in (TOKEN, WRONG, "find-me", "/mcp", f"127.0.0.1:{port}"):
         assert secret not in logged
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["0.0.0.0", "::", "192.0.2.5", "mcp.example.com", "127.0.0.1", "127.0.0.2", "::1", "localhost"],
+)
+def test_public_bind_warning_is_emitted_without_the_token(monkeypatch, capsys, host):
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(uvicorn, "Server", MagicMock())
+    http_transport.serve(server.mcp, HttpSettings(host=host, token=TOKEN))
+    output = capsys.readouterr().err
+    assert ("unencrypted" in output) is (not http_transport._is_loopback(host))
+    if not http_transport._is_loopback(host):
+        assert "every tool result" in output and "TLS-terminating" in output
+    assert TOKEN not in output
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bind", ["127.0.0.2", "0.0.0.0", "::"])
+@pytest.mark.parametrize("bad_header", ["Host", "Origin"])
+async def test_explicit_transport_security_covers_every_bind(bind, bad_header):
+    settings = HttpSettings(host=bind, token=TOKEN, allowed_hosts=("mcp.example.com",))
+    app = http_transport.build_app(server.mcp, settings)
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Authorization": f"Bearer {TOKEN}",
+        bad_header: "https://attacker.example" if bad_header == "Origin" else "attacker.example",
+    }
+    async with app.app.router.lifespan_context(app.app):
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="https://mcp.example.com"
+        ) as client:
+            response = await client.post("/mcp", json=INITIALIZE, headers=headers)
+    assert response.status_code == (421 if bad_header == "Host" else 403)
+
+
+@pytest.mark.parametrize("method", ["DELETE", "OPTIONS", "HEAD"])
+def test_every_method_without_bearer_is_refused(base_url, method):
+    assert httpx2.request(method, base_url + "/mcp", timeout=30).status_code == 401
+
+
+def test_query_string_cannot_supply_the_bearer(base_url):
+    response = httpx2.get(base_url + "/mcp?access_token=" + TOKEN, timeout=30)
+    assert response.status_code == 401
+
+
+def test_uvicorn_does_not_enable_access_logging_or_forwarded_headers(monkeypatch):
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    config = http_transport.uvicorn_config(server.mcp, HttpSettings(token=TOKEN))
+    assert config.access_log is False
+    assert config.proxy_headers is False
+    assert config.server_header is False

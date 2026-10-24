@@ -80,6 +80,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   The exact decoded-size check remains, preceded by a cheap raw-length bound so a
   whitespace-heavy argument cannot allocate a large split list before being refused.
 
+- **An optional streamable-HTTP transport** (#126), for a server on another machine or in a
+  container, or a client that cannot spawn a local process.
+  `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` through the SDK's own streamable-HTTP
+  app, stateless and answering JSON, on `OUTLOOK_MCP_HTTP_HOST`/`OUTLOOK_MCP_HTTP_PORT` (default
+  `127.0.0.1:8000`). It never starts without `OUTLOOK_MCP_HTTP_TOKEN`, loopback included, and
+  every request must carry it as a bearer or gets `401`. It speaks plain HTTP, so TLS belongs to
+  a proxy in front. stdio stays the default, unchanged; uvicorn is declared directly. See the README's
+  "Remote / HTTP transport".
+
 ## [1.27.0] — 2026-10-24
 
 ### Fixed
@@ -276,28 +285,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `as_content`, an attachment's text and images reach the model straight from this server, so
   the connect-time rule and SKILL.md now name attachments themselves. Where only an
   attachment's name reached the model before, a text attachment's body now does.
-- **An optional streamable-HTTP transport, for a server that cannot be a local child process**
-  (#126): one on another machine or in a container, behind a reverse proxy, or for a client
-  that only speaks HTTP. `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` through the
-  SDK's own streamable-HTTP app, stateless and answering JSON, with `OUTLOOK_MCP_HTTP_HOST` and
-  `OUTLOOK_MCP_HTTP_PORT` (default `127.0.0.1:8000`). One rule holds on every bind, loopback
-  included: no `OUTLOOK_MCP_HTTP_TOKEN`, no server, since a loopback port with no token would let
-  any process running as that user read the mailbox with one request. Every request must carry
-  `Authorization: Bearer <token>` or gets `401`; tokens are comma-separated so one can be
-  rotated, and compared in constant time. The server speaks plain HTTP, so on a bind other
-  machines can reach, the token crosses the network in the clear unless a reverse proxy in front
-  terminates TLS; the refusal to start says so, as does the README. The settings are checked
-  before anything binds, and no token or request URL is logged. stdio stays the default and is
-  unchanged: without the variable, the server makes exactly the call it made before. No new
-  dependency, since the SDK already ships the HTTP server. One process still serves one account.
-- **An optional streamable-HTTP transport** (#126), for a server on another machine or in a
-  container, or a client that cannot spawn a local process.
-  `OUTLOOK_MCP_TRANSPORT=streamable-http` serves `/mcp` through the SDK's own streamable-HTTP
-  app, stateless and answering JSON, on `OUTLOOK_MCP_HTTP_HOST`/`OUTLOOK_MCP_HTTP_PORT` (default
-  `127.0.0.1:8000`). It never starts without `OUTLOOK_MCP_HTTP_TOKEN`, loopback included, and
-  every request must carry it as a bearer or gets `401`. It speaks plain HTTP, so TLS belongs to
-  a proxy in front. stdio stays the default, unchanged; no new dependency. See the README's
-  "Remote / HTTP transport".
 
 ## [1.26.0] — 2026-10-23
 

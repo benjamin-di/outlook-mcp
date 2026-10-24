@@ -17,15 +17,15 @@ binds, so a refusal exits with its reason instead of after the port is open:
 
 - one rule for every bind: no ``OUTLOOK_MCP_HTTP_TOKEN``, no server. Loopback
   is no exception, since a loopback port with no token lets any process running
-  as that user read the mailbox with one HTTP request;
+  on the machine read the mailbox with one HTTP request;
 - every request must present the token as ``Authorization: Bearer <token>``
   or gets 401 before the SDK sees it;
 - loopback (``127.0.0.1``) unless ``OUTLOOK_MCP_HTTP_HOST`` says otherwise. The
   server speaks plain HTTP, so on a bind other machines can reach the token
   crosses the network in the clear unless a proxy in front terminates TLS, and
-  the refusal says so.
+  server startup warns about it.
 
-Nothing here logs, and uvicorn runs without an access log at WARNING, so no
+Only the public-bind warning is printed here. uvicorn has no access log, so no
 token and no request URL reaches stderr or stdout.
 """
 
@@ -34,9 +34,12 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import re
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from mcp.server.transport_security import TransportSecuritySettings
 
 if TYPE_CHECKING:
     import uvicorn
@@ -47,6 +50,7 @@ TRANSPORT_ENV = "OUTLOOK_MCP_TRANSPORT"
 HOST_ENV = "OUTLOOK_MCP_HTTP_HOST"
 PORT_ENV = "OUTLOOK_MCP_HTTP_PORT"
 TOKEN_ENV = "OUTLOOK_MCP_HTTP_TOKEN"
+ALLOWED_HOSTS_ENV = "OUTLOOK_MCP_HTTP_ALLOWED_HOSTS"
 
 STDIO = "stdio"
 STREAMABLE_HTTP = "streamable-http"
@@ -66,6 +70,7 @@ class HttpSettings:
     port: int = DEFAULT_PORT
     # Out of repr, so a settings object that ever reaches a log carries no token.
     token: str = field(default="", repr=False)
+    allowed_hosts: tuple[str, ...] = ()
 
 
 def settings_from_env(environ: Mapping[str, str]) -> HttpSettings | None:
@@ -88,7 +93,49 @@ def settings_from_env(environ: Mapping[str, str]) -> HttpSettings | None:
     token = _token(environ.get(TOKEN_ENV, ""))
     if not token:
         raise ValueError(_missing_token(host))
-    return HttpSettings(host=host, port=port, token=token)
+    return HttpSettings(host=host, port=port, token=token, allowed_hosts=_allowed_hosts(environ))
+
+
+def _allowed_hosts(environ: Mapping[str, str]) -> tuple[str, ...]:
+    hosts = tuple(
+        part.strip().lower()
+        for part in environ.get(ALLOWED_HOSTS_ENV, "").split(",")
+        if part.strip()
+    )
+    for host in hosts:
+        if not re.fullmatch(
+            r"(?:\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9.-]*)(?::(?:[0-9]{1,5}|\*))?", host
+        ):
+            raise ValueError(
+                f"{ALLOWED_HOSTS_ENV} needs comma-separated hostnames or IPs, optionally with a port; no URLs."
+            )
+        port = (
+            host.rpartition(":")[2]
+            if ":" in host and "]" not in host
+            else host.partition("]")[2].removeprefix(":")
+        )
+        if port.isdecimal() and not 1 <= int(port) <= 65535:
+            raise ValueError(f"{ALLOWED_HOSTS_ENV} has a port outside 1 to 65535.")
+    return hosts
+
+
+def _transport_security(settings: HttpSettings) -> TransportSecuritySettings:
+    host = f"[{settings.host}]" if ":" in settings.host else settings.host
+    names = list(settings.allowed_hosts) or [host]
+    if _is_loopback(settings.host):
+        names.extend(["127.0.0.1", "localhost", "[::1]", host])
+    allowed = []
+    for name in names:
+        allowed.append(name)
+        # A bare DNS name or bracketed IPv6 address may carry any local port.
+        if ":" not in name or name.endswith("]"):
+            allowed.append(name + ":*")
+    allowed = list(dict.fromkeys(allowed))
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed,
+        allowed_origins=[scheme + name for name in allowed for scheme in ("http://", "https://")],
+    )
 
 
 def _missing_token(host: str) -> str:
@@ -194,13 +241,17 @@ def build_app(server: MCPServer, settings: HttpSettings) -> ASGIApp:
 
     There is no unguarded variant: settings without a token, which
     ``settings_from_env`` never returns, get a gate that matches nothing.
-    ``host`` goes to the SDK so that a loopback bind keeps its DNS-rebinding
-    protection: a request whose ``Host`` is not a loopback name gets 421.
+    Explicit SDK transport security validates Host (421) and any Origin (403)
+    on every bind, including nonstandard loopback addresses. Loopback names
+    are allowed on a loopback bind; other names require allowed_hosts. A public
+    bind without that setting permits only its literal bind address. Clients
+    without Origin remain supported.
     """
     app = server.streamable_http_app(
         stateless_http=True,
         json_response=True,
         host=settings.host,
+        transport_security=_transport_security(settings),
     )
     return BearerTokenMiddleware(app, settings.token)
 
@@ -217,6 +268,8 @@ def uvicorn_config(server: MCPServer, settings: HttpSettings) -> uvicorn.Config:
         # string included; its handler is removed outright as well.
         log_level=server.settings.log_level.lower(),
         access_log=False,
+        proxy_headers=False,
+        server_header=False,
         # There is no WebSocket endpoint, so no WebSocket implementation is
         # loaded even where one is installed: an upgrade request stays plain
         # HTTP and meets the token check like any other.
@@ -227,4 +280,10 @@ def uvicorn_config(server: MCPServer, settings: HttpSettings) -> uvicorn.Config:
 def serve(server: MCPServer, settings: HttpSettings) -> None:
     import uvicorn
 
+    if not _is_loopback(settings.host):
+        print(
+            "Warning: this public bind uses plain HTTP. The bearer token and every tool result "
+            "cross the network unencrypted unless a TLS-terminating reverse proxy is in front.",
+            file=sys.stderr,
+        )
     uvicorn.Server(uvicorn_config(server, settings)).run()
