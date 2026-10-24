@@ -236,12 +236,18 @@ def _parse_result(tokens: list[str]) -> _Result | None:
     if not (_METHOD.match(method) and _RESULT.match(result)):
         return None
     props: dict[str, list[str]] = {}
-    rest = tokens[3:]
-    while rest:
-        if not (len(rest) >= 2 and rest[1] == "=" and _PROPERTY.match(rest[0])):
+    index = 3
+    while index < len(tokens):
+        if not (
+            index + 1 < len(tokens) and tokens[index + 1] == "=" and _PROPERTY.match(tokens[index])
+        ):
             return None
         # A property with an empty value (`smtp.mailfrom=;`) is two tokens.
-        has_value = len(rest) >= 3 and rest[2] != "=" and not (len(rest) >= 4 and rest[3] == "=")
-        props.setdefault(rest[0], []).append(rest[2] if has_value else "")
-        rest = rest[3:] if has_value else rest[2:]
+        has_value = (
+            index + 2 < len(tokens)
+            and tokens[index + 2] != "="
+            and not (index + 3 < len(tokens) and tokens[index + 3] == "=")
+        )
+        props.setdefault(tokens[index], []).append(tokens[index + 2] if has_value else "")
+        index += 3 if has_value else 2
     return _Result(method.split("/", 1)[0], result, {k: tuple(v) for k, v in props.items()})
