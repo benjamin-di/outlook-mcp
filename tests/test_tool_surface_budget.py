@@ -153,7 +153,10 @@ CHARS_PER_TOKEN = 4
 # occurrences, so the lookup before a create would miss a booking three weeks out
 # and hand back occurrence IDs for a series. The guidance on using keys is in
 # INSTRUCTIONS, paid once per session. ~0.7% headroom.
-TOOL_SURFACE_CEILING = 14_350
+#
+# 14,412 with event keys on the rebased folder-path stack. This exceeds the
+# 14,350 base ceiling; 14,600 gives about 1.3% headroom.
+TOOL_SURFACE_CEILING = 14_600
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
