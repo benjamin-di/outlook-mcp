@@ -92,6 +92,10 @@ CHARS_PER_TOKEN = 4
 # `outlook_get_contact` returned categories and notes that nothing could write
 # (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
 # raise to 13,700: ~0.8% headroom.
+#
+# 13,594 after the digest describes has_more and preserving the whole token
+# dictionary (#156, +8 on main at 13,586). The ignored-filter fallback and
+# bootstrap context add response metadata, not schema fields. No ceiling raise.
 TOOL_SURFACE_CEILING = 13_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
