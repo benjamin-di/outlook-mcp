@@ -507,6 +507,26 @@ async def event_walk(real_graph_client):
     return _EVENT_WALK
 
 
+async def test_the_calendar_listing_says_which_calendars_can_be_written(real_graph_client):
+    """`outlook_create_event(calendar=...)` refuses a calendar listed with
+    `canEdit: false`, and lets one through when the listing says nothing.
+
+    So a listing that stopped carrying `canEdit` would turn the refusal off
+    without failing anything offline: every write would go to Graph and come
+    back as the 403 the refusal exists to explain. Read-only: one listing.
+    """
+    from outlook_mcp.calendar_resolver import fetch_all_calendars
+
+    calendars = await fetch_all_calendars(real_graph_client.sdk_client)
+
+    assert calendars, "the account lists no calendars at all"
+    assert all(isinstance(cal.can_edit, bool) for cal in calendars), [
+        (cal.name, cal.can_edit) for cal in calendars
+    ]
+    defaults = [cal for cal in calendars if cal.is_default_calendar]
+    assert defaults and all(cal.can_edit for cal in defaults)
+
+
 async def test_the_event_listing_returns_the_show_as_it_selects(event_walk):
     """`showAs` is in `list_events`' $select, so it must come back populated.
 

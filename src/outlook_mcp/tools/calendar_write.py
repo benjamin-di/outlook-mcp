@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from outlook_mcp.calendar_resolver import resolve_calendar_id
 from outlook_mcp.config import Config
 from outlook_mcp.permissions import (
     CATEGORY_CALENDAR_WRITE,
@@ -402,6 +403,7 @@ async def create_event(
     recurrence: dict | str | None = None,
     timezone: str | None = None,
     show_as: str | None = None,
+    calendar: str | None = None,
     *,
     config: Config,
 ) -> dict:
@@ -443,7 +445,20 @@ async def create_event(
     positional argument for an external caller. ``show_as`` therefore sits
     after ``timezone``, and ``server.py``'s positional call has to agree — a
     disagreement there only misfires when a value is actually supplied, so a
-    green suite proves nothing about it.
+    green suite proves nothing about it. ``calendar`` is appended after
+    ``show_as`` for the same reason.
+
+    ``calendar`` is the one ``outlook_list_events`` reads, resolved the same
+    way: ``None``, blank or "primary" keeps ``POST /me/events`` with no extra
+    round trip; anything else is a display name or ID matched against
+    ``/me/calendars`` by ``calendar_resolver``, and the event is posted to that
+    calendar's own collection. A calendar Graph lists as read-only is refused
+    there rather than sent for a 403. Nothing else needs to know which calendar
+    an event is on: ``/me/events/{id}`` reaches events on any of the user's own
+    calendars — checked read-only on four calendars of one mailbox, and for an
+    event created here by ``TestCreatingInAnotherCalendar`` — so the tools that
+    take an event ID are unchanged. A calendar someone else shared is not
+    claimed: Graph documents its events under ``/me/calendars/{id}/events``.
     """
     check_permission(config, CATEGORY_CALENDAR_WRITE, "outlook_create_event")
     if attendees:
@@ -527,7 +542,16 @@ async def create_event(
     if resolved_show_as is not None:
         event.show_as = resolved_show_as
 
-    response = await graph_client.me.events.post(event)
+    # Last, because it is the only check that asks Graph: every argument above
+    # is refused for free, and the calendar listing is paid for only by a call
+    # that is going to be sent.
+    calendar_id = await resolve_calendar_id(graph_client, calendar, writable=True)
+    events = (
+        graph_client.me.events
+        if calendar_id is None
+        else graph_client.me.calendars.by_calendar_id(calendar_id).events
+    )
+    response = await events.post(event)
 
     return {
         "status": "created",

@@ -63,7 +63,17 @@ CHARS_PER_TOKEN = 4
 # 13,261 with `clear_phones` on `outlook_update_contact` and its one-line example
 # (+58): without it, moving a number from mobile to business left a copy in
 # mobile (#120 follow-up). No raise; ~39 tokens of headroom left.
-TOOL_SURFACE_CEILING = 13_300
+#
+# 13,298 with `calendar` on `outlook_create_event` (#141, +37): the argument and
+# one short line; that it takes a display name is in INSTRUCTIONS already, which
+# every session gets once. No raise; 2 tokens of headroom left.
+#
+# 13,308 once #146 (`outlook_read_message` takes a Message-ID, +10) and #147
+# (`calendar` on create, +37) landed together on 2026-10-23: each fit on its own,
+# the pair did not. Raised to 13,500 at merge time — a deliberate step for the
+# contributor batch reviewed that day, several of which carry their own raise to
+# the same number. The ~1% convention resumes from whatever the batch measures.
+TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
