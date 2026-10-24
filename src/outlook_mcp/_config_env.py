@@ -27,7 +27,7 @@ _WINDOWS = os.name == "nt"
 
 
 def _refuse(variable: str, reason: str) -> EnvironmentConfigError:
-    return EnvironmentConfigError(f"{variable}: {reason}")
+    return EnvironmentConfigError(f"{variable!r}: {reason}")
 
 
 def _parse(variable: str, field: str, value: str) -> object:

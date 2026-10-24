@@ -410,3 +410,21 @@ def test_existing_windows_unc_root_can_narrow_without_real_network(monkeypatch):
         r"\\files.example\share\root\child", r"\\files.example\share\root"
     )
     assert PureWindowsPath(value) == PureWindowsPath(r"\\files.example\share\root\child")
+
+
+def test_same_share_network_sibling_is_refused_before_resolution(monkeypatch):
+    monkeypatch.setattr(_config_env, "_WINDOWS", True)
+    monkeypatch.setattr(
+        _config_env, "Path", lambda *_: pytest.fail("resolved outside the approved network root")
+    )
+    with pytest.raises(EnvironmentConfigError, match="OUTLOOK_MCP_ATTACHMENTS_DIR"):
+        _config_env._narrow_attachment_root(
+            r"\\files.example\share\other", r"\\files.example\share\root"
+        )
+
+
+def test_misspelt_environment_name_cannot_inject_control_characters():
+    with pytest.raises(EnvironmentConfigError) as exc:
+        _config_env.apply_environment(Config(), {"OUTLOOK_MCP_READ_\nONLY": "true"})
+    assert "OUTLOOK_MCP_READ_" in str(exc.value)
+    assert "\n" not in str(exc.value) and "\\n" in str(exc.value)
