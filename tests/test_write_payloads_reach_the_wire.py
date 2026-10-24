@@ -193,6 +193,39 @@ class TestCalendarWrite:
             '"showAs": "tentative"',
         )
 
+    async def test_an_event_key_reaches_the_wire_on_create_and_update(self):
+        """The key lives in a hidden extended property, under Graph's camelCase name."""
+        client = AsyncMock()
+        client.me.events.post = AsyncMock(return_value=MagicMock(id="E1", subject="s"))
+        await calendar_write.create_event(
+            client,
+            subject="s",
+            start="2026-09-07T12:30:00Z",
+            end="2026-09-07T13:30:00Z",
+            key="SENTINEL-KEY-4b1",
+            config=_CFG,
+        )
+        assert_on_wire(
+            client.me.events.post.call_args[0][0],
+            '"singleValueExtendedProperties"',
+            '"String {51f1f359-76ee-427e-ac52-22691bf5b2f8} Name EventKey"',
+            '"value": "SENTINEL-KEY-4b1"',
+        )
+
+        builder = MagicMock()
+        builder.patch = AsyncMock(return_value=MagicMock(id="E1"))
+        client = MagicMock()
+        client.me.events.by_event_id = MagicMock(return_value=builder)
+        await calendar_write.update_event(
+            client, event_id="AAMkAG123=", key="SENTINEL-KEY-4b3", config=_CFG
+        )
+        assert_on_wire(
+            builder.patch.call_args[0][0],
+            '"singleValueExtendedProperties"',
+            '"String {51f1f359-76ee-427e-ac52-22691bf5b2f8} Name EventKey"',
+            '"value": "SENTINEL-KEY-4b3"',
+        )
+
     async def test_create_event_puts_the_anchor_zone_on_the_wire(self):
         """The zone is a value Graph reads, so assert it in the payload.
 
