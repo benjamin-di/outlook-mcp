@@ -334,16 +334,61 @@ def _readable_text(media: str, charset: str | None, content: bytes) -> str | Non
     return text
 
 
+# The terminal PNG chunk as a file carries it: zero-length payload plus its CRC.
+# Searching for the four bytes "IEND" accepted a file with nothing in it — no IHDR,
+# no pixels — and sent it to the client as an image, which is the failure this
+# check exists to prevent. Allowing it anywhere in the last 16 bytes still leaves
+# room for a little trailing padding.
+_PNG_IEND_CHUNK = b"\x00\x00\x00\x00IEND\xaeB`\x82"
+
+
+def _jpeg_complete(content: bytes) -> bool:
+    """True if ``content`` reaches a scan and ends with end-of-image after it.
+
+    Not ``endswith`` on ``FF D9``: phones write bytes after EOI on purpose.
+    A Samsung camera appends a ``SEFH…SEFT`` trailer, and Google's Motion Photo —
+    the default on Pixel — appends a whole MP4, so the file does not end at the
+    image. Decoders stop at EOI either way, so those files were never the problem,
+    and refusing them would make a phone photo unviewable.
+
+    So walk the segments to the first start-of-scan and look for EOI after it.
+    Scan data byte-stuffs ``0xFF``, so ``FF D9`` inside the scan can only be the end
+    of the image, and an EXIF thumbnail's own EOI is skipped along with its APP1
+    segment.
+    """
+    i = 2
+    while i + 4 <= len(content) and content[i] == 0xFF:
+        marker = content[i + 1]
+        if marker == 0xFF:  # fill byte
+            i += 1
+            continue
+        length = int.from_bytes(content[i + 2 : i + 4], "big")
+        if marker == 0xDA:  # start of scan
+            return b"\xff\xd9" in content[i + 2 + length :]
+        i += 2 + length
+    return False
+
+
 def _image_type(content: bytes) -> str | None:
-    """The image type ``content`` opens as, from its signature, among ``_IMAGE_TYPES``."""
-    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+    """The image type ``content`` opens as, from its start and its end.
+
+    A signature is a handful of bytes, and a sender can stop right after it: a PNG
+    truncated before its IEND cannot be opened by the client, and a client that
+    rejects one unreadable image can reject the whole tool result. So each type has
+    to finish the way it starts — the terminal chunk for PNG and GIF, end-of-image
+    for JPEG, and a RIFF length that fits the bytes actually present for WEBP.
+    Anything else is returned as a resource, which is always safe.
+    """
+    if content.startswith(b"\x89PNG\r\n\x1a\n") and _PNG_IEND_CHUNK in content[-16:]:
         return "image/png"
-    if content.startswith(b"\xff\xd8\xff"):
+    if content.startswith(b"\xff\xd8\xff") and _jpeg_complete(content):
         return "image/jpeg"
-    if content[:6] in (b"GIF87a", b"GIF89a"):
+    if content[:6] in (b"GIF87a", b"GIF89a") and content.endswith(b";"):
         return "image/gif"
     if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
-        return "image/webp"
+        declared = int.from_bytes(content[4:8], "little")
+        if declared + 8 <= len(content):
+            return "image/webp"
     return None
 
 

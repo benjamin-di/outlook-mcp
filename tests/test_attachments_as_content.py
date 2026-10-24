@@ -60,7 +60,19 @@ def _png() -> bytes:
     )
 
 
+# A real 1x1 JPEG (macOS `sips`, Exif segment kept so the segment walk has one to
+# skip). Written from base64 rather than as a literal: a JPEG is not readable as bytes.
+JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAAaADAAQAAAABAAAAAQAAAAD/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9sAQwACAgICAgIDAgIDBQMDAwUGBQUFBQYIBgYGBgYICggICAgICAoKCgoKCgoKDAwMDAwMDg4ODg4PDw8PDw8PDw8P/9sAQwECAgIEBAQHBAQHEAsJCxAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ/90ABAAB/9oADAMBAAIRAxEAPwD4vooor+Uz/fw//9k="
+)
+
 PNG = _png()
+
+# Real 1x1 GIF and WebP (GIF written by `sips`, WebP lossless by Pillow), not
+# headers with filler after them: a fixture that cannot be opened tests that the
+# server forwards unreadable files, which is the opposite of the point.
+GIF = base64.b64decode("R0lGODdhAQABAJEAAAAAAP8AAP///wAAACH5BAQAAAAALAAAAAABAAEAAAICTAEAOw==")
+WEBP = base64.b64decode("UklGRhwAAABXRUJQVlA4TA8AAAAvAAAAAAcQ/Y/+ByKi/wEA")
 
 # A minimal PDF with the binary comment line real PDFs carry, which is not valid UTF-8.
 PDF = (
@@ -285,7 +297,10 @@ class TestContentByType:
         """Some model APIs refuse an image over 5 MB; the bytes still arrive whole."""
         limit = mail_attachments._IMAGE_CONTENT_MAX_BYTES
         assert limit == 5 * 1024 * 1024
-        at_limit = PNG + b"\x00" * (limit - len(PNG))
+        # Pad *before* the terminal chunk, so the file at the limit is still a PNG
+        # that ends the way it starts; `over` gains a byte after IEND and is not.
+        tail, head = PNG[-12:], PNG[:-12]
+        at_limit = head + b"\x00" * (limit - len(PNG)) + tail
         over = at_limit + b"\x00"
 
         assert (await _blocks(at_limit, "a.png", "image/png", tmp_path))[1].type == "image"
@@ -297,9 +312,11 @@ class TestContentByType:
     @pytest.mark.parametrize(
         ("content_type", "content"),
         [
-            ("image/jpeg", b"\xff\xd8\xff\xe0\x00\x10JFIF"),
-            ("image/gif", b"GIF89a\x01\x00\x01\x00"),
-            ("image/webp", b"RIFF\x24\x00\x00\x00WEBPVP8 "),
+            # Complete files: end-of-image, the GIF trailer, a RIFF length that
+            # matches. A signature on its own is not an image a client can open.
+            ("image/jpeg", JPEG),
+            ("image/gif", GIF),
+            ("image/webp", WEBP),
         ],
     )
     async def test_every_image_type_a_model_reads_is_an_image(
@@ -309,6 +326,31 @@ class TestContentByType:
 
         assert blocks[1].type == "image"
         assert blocks[1].mime_type == content_type
+
+    @pytest.mark.parametrize(
+        ("content_type", "content"),
+        [
+            # Each carries a valid signature and nothing after it — the shape a
+            # truncated download or a sender's hand-made file takes.
+            ("image/png", b"\x89PNG\r\n\x1a\n"),
+            ("image/jpeg", b"\xff\xd8\xff\xe0\x00\x10JFIF"),
+            ("image/gif", b"GIF89a\x01\x00\x01\x00"),
+        ],
+    )
+    async def test_a_truncated_image_is_a_resource_not_an_image(
+        self, tmp_path, content_type, content
+    ):
+        """A client that cannot open the image can reject the whole tool result."""
+        blocks = await _blocks(content, "photo", content_type, tmp_path)
+
+        assert blocks[1].type == "resource"
+        assert base64.b64decode(blocks[1].resource.blob) == content
+
+    async def test_a_png_cut_before_its_terminal_chunk_is_a_resource(self, tmp_path):
+        """Signature, IHDR and IDAT, no IEND: half a file is not a file."""
+        blocks = await _blocks(PNG[:-12], "photo.png", "image/png", tmp_path)
+
+        assert blocks[1].type == "resource"
 
     async def test_an_image_name_over_bytes_that_are_no_image_is_a_resource(self, tmp_path):
         """A sender can name anything `chart.png`; some model APIs reject a whole result
@@ -1105,3 +1147,76 @@ async def test_invalid_near_cap_content_reports_base64_without_decoding(
     builder.get.assert_not_called()
     builder.attachments.post.assert_not_called()
     client.me.send_mail.post.assert_not_called()
+
+
+class TestJpegTrailers:
+    """A phone photo is not required to end where its image ends.
+
+    Samsung's camera app writes a `SEFH…SEFT` trailer after end-of-image, and
+    Google's Motion Photo — the default on Pixel — appends a whole MP4. Both open
+    fine, because decoders stop at EOI. Turning them away would make a phone photo
+    unviewable, which is worse than the truncated file this check exists for.
+    """
+
+    SAMSUNG = b"SEFH" + b"\x00" * 12 + b"SEFT" + b"\x00" * 8
+    MOTION_PHOTO = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 2048
+
+    @pytest.mark.parametrize(
+        "trailer",
+        [SAMSUNG, MOTION_PHOTO, b"\x00\x00"],
+        ids=["samsung-trailer", "motion-photo-mp4", "two-zero-bytes"],
+    )
+    async def test_bytes_after_end_of_image_are_still_an_image(self, tmp_path, trailer):
+        blocks = await _blocks(JPEG + trailer, "photo.jpg", "image/jpeg", tmp_path)
+
+        assert blocks[1].type == "image"
+
+    async def test_a_jpeg_cut_in_half_is_a_resource(self, tmp_path):
+        blocks = await _blocks(JPEG[: len(JPEG) // 2], "photo.jpg", "image/jpeg", tmp_path)
+
+        assert blocks[1].type == "resource"
+
+    async def test_a_jpeg_cut_just_after_the_scan_header_is_a_resource(self, tmp_path):
+        """The header arrives, the scan data does not: nothing to open."""
+        scan = JPEG.index(b"\xff\xda")
+        blocks = await _blocks(JPEG[: scan + 6], "photo.jpg", "image/jpeg", tmp_path)
+
+        assert blocks[1].type == "resource"
+
+
+class TestIncompleteImages:
+    """A signature, or a stray marker, is not a file.
+
+    The terminal bytes have to be the terminal *chunk*: the four ASCII bytes
+    "IEND" appear in a file only as part of one, so searching for them accepted
+    `signature + b"IEND"` — no dimensions, no pixels — and sent it as an image.
+    """
+
+    SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+    async def test_signature_and_the_letters_iend_are_not_a_png(self, tmp_path):
+        blocks = await _blocks(self.SIGNATURE + b"IEND", "photo.png", "image/png", tmp_path)
+
+        assert blocks[1].type == "resource"
+
+    async def test_an_iend_chunk_with_the_wrong_crc_is_not_a_png(self, tmp_path):
+        broken = self.SIGNATURE + b"\x00\x00\x00\x00IEND\x00\x00\x00\x00"
+        blocks = await _blocks(broken, "photo.png", "image/png", tmp_path)
+
+        assert blocks[1].type == "resource"
+
+    async def test_a_png_with_trailing_padding_is_still_a_png(self, tmp_path):
+        """Padding after the terminal chunk is tolerated: readers stop at IEND."""
+        blocks = await _blocks(PNG + b"\x00\x00", "photo.png", "image/png", tmp_path)
+
+        assert blocks[1].type == "image"
+
+    async def test_a_gif_cut_before_its_trailer_is_a_resource(self, tmp_path):
+        blocks = await _blocks(GIF[:-1], "anim.gif", "image/gif", tmp_path)
+
+        assert blocks[1].type == "resource"
+
+    async def test_a_webp_shorter_than_its_declared_length_is_a_resource(self, tmp_path):
+        blocks = await _blocks(WEBP[:-4], "photo.webp", "image/webp", tmp_path)
+
+        assert blocks[1].type == "resource"
