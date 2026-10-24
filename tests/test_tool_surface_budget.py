@@ -141,6 +141,10 @@ CHARS_PER_TOKEN = 4
 # `outlook_get_event` rather than a third tool, at the cost of a second request
 # only for an event that has files. The last of the three, so this is their
 # combined number. ~0.8% headroom.
+#
+# 13,676 with add_emails and remove_emails on outlook_update_contact (#161):
+# two list arguments and the line distinguishing them from email, which replaces
+# the whole list (+90 on main at 13,586). The 13,700 ceiling still holds.
 TOOL_SURFACE_CEILING = 14_200
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
