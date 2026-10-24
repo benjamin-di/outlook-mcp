@@ -443,6 +443,7 @@ async def update_contact(
     email: str | None = None,
     phone: str | None = None,
     phone_type: str = "mobile",
+    company: str | None = None,
     title: str | None = None,
     job_title: str | None = None,
     home_address: dict | None = None,
@@ -500,6 +501,8 @@ async def update_contact(
         _assign_phone(patch_body, phone, phone_type)
     if clear_phones:
         _clear_phones(patch_body, clear_phones)
+    if company is not None:
+        patch_body.company_name = company
     if title is not None:
         patch_body.title = title
     if job_title is not None:

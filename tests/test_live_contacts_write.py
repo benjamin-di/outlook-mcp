@@ -86,12 +86,14 @@ class TestUpdateContactRoundTrip:
                 last_name="After",
                 email="after@example.com",
                 phone="+15555550197",
+                company="LiveWriteGuard Co-After",
                 job_title="Probe-After",
                 birthday="1988-07-06",
                 config=live_write_config,
             )
 
             got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["company"] == "LiveWriteGuard Co-After"
             assert got["job_title"] == "Probe-After"
             assert got["birthday"] == "1988-07-06 11:59:00+00:00"
             assert got["title"] == ""
