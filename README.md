@@ -429,7 +429,9 @@ and are imported only in a short-lived worker; they add no requirement to the ba
 
 `outlook_read_attachment(message_id, attachment_id, offset=0, max_chars=20000)` returns `text`,
 `next_offset` (null at the end), `total_chars`, file `bytes` / `sha256`, and `warnings`. Continue with
-the same IDs and the returned offset until null. PDF output marks page numbers; a page without a
+the same IDs and the returned offset until null. Each continuation downloads and parses the
+whole file again, then returns the requested slice; there is no document cache. Use a larger
+`max_chars` (up to 50000) to reduce repeated work. PDF output marks page numbers; a page without a
 text layer is reported as blank or needing OCR. Document text lines are prefixed with `| `,
 so only the reader can emit an unprefixed `[Page N]` structural marker. No OCR is performed. XLSX output includes hidden
 sheets, cell addresses, number formats, formulas and `saved_result` (Excel's stored value, null when
