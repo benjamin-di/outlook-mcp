@@ -26,6 +26,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the per-call cap stopped mid-sync, and a reply with no new cursor hands back the token passed
   in instead of `None`.
 
+- **A mail search Graph cut short says so.** Graph ends a message `$search` a little past 250
+  results with no `@odata.nextLink` and no error, whatever `$top` asks for (275 for pages of 25
+  or more, measured on an Exchange Online mailbox holding tens of thousands of matches; Graph's
+  documentation says up to 1,000), which reads exactly like the end of a complete search.
+  `outlook_search_mail`'s cursor now counts what it has served, and the last page of a search
+  that ends past 250 carries `incomplete`: older matches may be missing, and adding
+  `received<=` with the last message's date reaches them.
+
 ### Added
 
 - **Folder arguments take a path, so any folder can be named, including one whose name another
@@ -140,13 +148,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `$skiptoken`, which is what Graph's own `@odata.nextLink` is. The cursor also carries the
   folder the search ran in, as `outlook_list_events`'s carries its calendar, so a later page
   stays in that folder whatever `folder` it is passed.
-- **A mail search Graph cut short says so.** Graph ends a message `$search` a little past 250
-  results with no `@odata.nextLink` and no error, whatever `$top` asks for (275 for pages of 25
-  or more, measured on an Exchange Online mailbox holding tens of thousands of matches; Graph's
-  documentation says up to 1,000), which reads exactly like the end of a complete search.
-  `outlook_search_mail`'s cursor now counts what it has served, and the last page of a search
-  that ends past 250 carries `incomplete`: older matches may be missing, and adding
-  `received<=` with the last message's date reaches them.
 - **A contact's company can be changed.** `outlook_create_contact` takes `company` and
   `outlook_get_contact` returns it, but `outlook_update_contact` could not write it, so a contact
   who moved to another employer kept the old one unless it was deleted and recreated (#173).
