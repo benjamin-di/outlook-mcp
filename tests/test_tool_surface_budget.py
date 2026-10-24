@@ -123,6 +123,12 @@ CHARS_PER_TOKEN = 4
 # for drafts and To Do; the listing rides on `outlook_get_event` rather than a
 # third tool, at the cost of a second request only for an event that has files.
 # ~1% headroom, as before.
+#
+# 13,351 with `add_emails` and `remove_emails` on `outlook_update_contact` (+90):
+# the two list arguments, and one line saying `email` replaces every address while
+# they change only the ones named, three at most. Without them an agent asked to
+# add a second address had to drop the first. Two arguments do not fit the ~39
+# tokens left, so this is a deliberate raise to 13,500: ~1% headroom, as before.
 TOOL_SURFACE_CEILING = 13_750
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

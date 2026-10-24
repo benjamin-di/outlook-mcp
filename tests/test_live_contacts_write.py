@@ -384,6 +384,140 @@ class TestAddressRoundTrip:
             assert got["home_address"]["city"] == "Kirkland"
 
 
+class TestEmailAddressRoundTrip:
+    """`add_emails` / `remove_emails` keep the addresses they do not name.
+
+    `email` replaces every address with one, so before these an agent asked to
+    add a second address had to drop the first. Only Graph can say that a merged
+    list is stored in the order sent, and that the `If-Match` pin on it is
+    enforced rather than ignored.
+    """
+
+    @staticmethod
+    def _addresses(got):
+        return [e["address"].lower() for e in got["email_addresses"]]
+
+    async def test_addresses_are_added_and_removed_around_the_first(
+        self, real_graph_client, live_write_config
+    ):
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="Emails",
+            email="first@example.com",
+        ) as contact_id:
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                add_emails=["second@example.com", "third@example.com"],
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert self._addresses(got) == [
+                "first@example.com",
+                "second@example.com",
+                "third@example.com",
+            ]
+
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                remove_emails=["second@example.com"],
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert self._addresses(got) == ["first@example.com", "third@example.com"]
+
+            await update_contact(
+                real_graph_client.sdk_client,
+                contact_id=contact_id,
+                remove_emails=["first@example.com", "third@example.com"],
+                config=live_write_config,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            assert got["email_addresses"] == []
+
+    async def test_the_merge_is_pinned_and_graph_enforces_the_pin(
+        self, real_graph_client, live_write_config
+    ):
+        """A stale `If-Match` on a contact is refused with `412`; the current one is not.
+
+        If Graph ignored the header on contacts, the pin on the merge would protect
+        nothing and an address added elsewhere between the read and the PATCH would
+        be silently dropped.
+        """
+        import httpx
+
+        token = real_graph_client.credential.get_token("https://graph.microsoft.com/.default").token
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="Pinned",
+            email="pinned@example.com",
+        ) as contact_id:
+            url = f"https://graph.microsoft.com/v1.0/me/contacts/{contact_id}"
+            current = httpx.get(url, headers=headers, timeout=30).json()
+            etag = current.get("@odata.etag")
+            assert etag, "Graph returned no @odata.etag on a contact, so the merge cannot pin"
+
+            stale = httpx.patch(
+                url,
+                headers={**headers, "If-Match": 'W/"AAAAAAAAAAAAAAAAAAAAAAAAAAAA"'},
+                json={"emailAddresses": current["emailAddresses"]},
+                timeout=30,
+            )
+            assert stale.status_code == 412, (
+                f"Graph ignored a stale If-Match on a contact (answered {stale.status_code}), "
+                "so pinning the address merge protects nothing."
+            )
+            assert stale.json()["error"]["code"] == "ErrorIrresolvableConflict"
+
+            fresh = httpx.patch(
+                url,
+                headers={**headers, "If-Match": etag},
+                json={"emailAddresses": current["emailAddresses"]},
+                timeout=30,
+            )
+            assert fresh.status_code == 200, fresh.text
+
+    async def test_graph_does_not_keep_a_fourth_address(self, real_graph_client, live_write_config):
+        """Why the merge refuses a fourth address instead of sending it.
+
+        Exchange keeps three email slots per contact. Graph may refuse a fourth or
+        drop it; either is fine here. Keeping all four is not: the refusal would
+        then be blocking something Graph can store, and should go.
+        """
+        import httpx
+
+        token = real_graph_client.credential.get_token("https://graph.microsoft.com/.default").token
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        four = [f"slot{n}@example.com" for n in range(1, 5)]
+
+        async with _temporary_contact(
+            real_graph_client,
+            live_write_config,
+            first_name=LIVE_WRITE_NAME,
+            last_name="FourAddresses",
+        ) as contact_id:
+            url = f"https://graph.microsoft.com/v1.0/me/contacts/{contact_id}"
+            sent = httpx.patch(
+                url,
+                headers=headers,
+                json={"emailAddresses": [{"address": a} for a in four]},
+                timeout=30,
+            )
+            got = await get_contact(real_graph_client.sdk_client, contact_id)
+            kept = self._addresses(got)
+            assert sent.status_code >= 400 or len(kept) < 4, (
+                f"Graph kept all four addresses ({sent.status_code}); the three-address "
+                "refusal in update_contact is no longer needed."
+            )
+
+
 class TestBirthdayRoundTrip:
     async def test_a_birthday_is_replaced_and_survives_an_unrelated_update(
         self, real_graph_client, live_write_config

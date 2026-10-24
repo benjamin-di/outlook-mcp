@@ -442,6 +442,31 @@ def _searchable(contact) -> str | None:
     return None
 
 
+async def test_a_contact_read_carries_its_change_key_where_the_merge_looks(real_graph_client):
+    """`update_contact`'s `add_emails` / `remove_emails` pin their PATCH to the read.
+
+    The offline tests mock a contact whose change key sits in
+    `additional_data["@odata.etag"]`, which is where the merge reads it. A mock
+    cannot say the SDK still puts it there: if msgraph moved or dropped it, the
+    pin would silently become None, the patch would go out unpinned (#87's
+    fallback), and every offline test would still pass. Read-only: one listing
+    row and one plain GET of that contact, the GET the merge itself sends.
+    """
+    page = await list_contacts(real_graph_client.sdk_client, count=1)
+    if not page["contacts"]:
+        pytest.skip("No contacts in this mailbox")
+    contact_id = page["contacts"][0]["id"]
+
+    contact = await real_graph_client.sdk_client.me.contacts.by_contact_id(contact_id).get()
+
+    extras = getattr(contact, "additional_data", None) or {}
+    assert extras.get("@odata.etag"), (
+        "the SDK no longer exposes a contact's change key at "
+        'additional_data["@odata.etag"], so add_emails / remove_emails send an '
+        f"unpinned patch. additional_data keys: {sorted(extras)}"
+    )
+
+
 async def test_the_contact_listing_returns_the_categories_it_selects(contact_walk):
     """`categories` is in the listing's $select, so it must come back populated.
 
