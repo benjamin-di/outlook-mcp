@@ -260,3 +260,32 @@ async def test_gating_actually_reduces_the_surface():
         _proxy_tokens([t.model_dump(exclude_none=True, by_alias=True) for t in mail_only])
         < _proxy_tokens([t.model_dump(exclude_none=True, by_alias=True) for t in full]) // 2
     )
+
+
+def test_documents_enabled_surface_has_an_explicit_budget():
+    import os
+    import subprocess
+    import sys
+
+    from outlook_mcp.toolsets import TOOL_GROUPS
+
+    code = """import asyncio,json
+from mcp.client import Client
+from outlook_mcp.server import mcp
+async def main():
+    async with Client(mcp) as c:
+        tools=(await c.list_tools()).tools
+    payload=[t.model_dump(exclude_none=True,by_alias=True) for t in tools]
+    print(json.dumps({"count":len(tools),"cost":len(json.dumps(payload,default=str))//4}))
+asyncio.run(main())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**os.environ, "OUTLOOK_MCP_TOOLSETS": ",".join(sorted(set(TOOL_GROUPS.values())))},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    measured = json.loads(result.stdout)
+    assert measured["count"] == 72
+    assert measured["cost"] <= 15_150, measured

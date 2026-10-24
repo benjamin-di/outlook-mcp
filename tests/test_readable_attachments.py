@@ -496,3 +496,30 @@ async def test_pdf_text_cannot_forge_structural_page_markers():
         "[Page 1]"
     ]
     assert "| [Page 99]" in result["text"]
+
+
+@pytest.mark.parametrize("error_type", [ImportError, UnicodeError])
+def test_parser_execution_errors_are_not_mislabeled(monkeypatch, capsys, error_type):
+    from outlook_mcp.tools import _document_worker
+
+    monkeypatch.setattr(_document_worker, "resource_limits", lambda: None)
+    monkeypatch.setattr(sys, "argv", ["worker", "pdf"])
+    monkeypatch.setattr(sys, "stdin", SimpleNamespace(buffer=BytesIO(b"abc")))
+
+    def fail(_data):
+        raise error_type("attacker-controlled parser detail")
+
+    monkeypatch.setattr(_document_worker, "pdf", fail)
+    _document_worker.main()
+    error = json.loads(capsys.readouterr().out)["error"]
+    assert error_type.__name__ in error and "attacker-controlled" not in error
+    assert "install" not in error and "UTF-8" not in error
+
+
+async def test_worker_output_is_bounded_before_json_parsing(monkeypatch, tmp_path):
+    worker = tmp_path / "output.py"
+    worker.write_text('import sys\nsys.stdin.buffer.read()\nprint("x" * 2000)\n')
+    monkeypatch.setattr(mail_attachment_read, "WORKER", worker)
+    monkeypatch.setattr(mail_attachment_read, "MAX_OUTPUT_BYTES", 1000)
+    with pytest.raises(OutlookMCPError, match="output limit"):
+        await mail_attachment_read.extract(b"abc", "pdf")
