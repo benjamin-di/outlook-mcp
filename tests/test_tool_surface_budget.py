@@ -117,6 +117,11 @@ CHARS_PER_TOKEN = 4
 # line saying so (+38). A new tool for it would have cost a whole second schema.
 # Raised to 13,900 as one ceiling for this and #168 (`is_markdown`, stacked on
 # this), which together measure ~13,820: ~0.6% headroom over the pair.
+#
+# 13,594 with folder paths (#144, +8 on 13,586): `outlook_list_folders` says each
+# folder carries the `path` folder arguments accept. The path rule itself went into
+# INSTRUCTIONS, which every tool that takes a folder shares and which is sent once
+# per session, not into five docstrings. No raise.
 TOOL_SURFACE_CEILING = 14_000
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
