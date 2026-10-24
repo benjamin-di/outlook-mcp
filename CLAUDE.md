@@ -38,6 +38,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
 - `src/outlook_mcp/folder_resolver.py`, `calendar_resolver.py` — Display name / well-known name → Graph id resolution for mail folders and calendars
 - `src/outlook_mcp/throttle.py` — Retry-After honoring for the raw-httpx delta/`$batch` paths (SDK path already retries via kiota), and `call_without_replay` for the SDK writes that can email someone: kiota's retry off, 429 retried here, never a 5xx (#131)
 - `src/outlook_mcp/toolsets.py` — Tool annotations + config-gated toolset selection (`OUTLOOK_MCP_TOOLSETS`); `configure()` runs once after registration
+- `src/outlook_mcp/sender_auth.py` — Microsoft's `Authentication-Results` verdict on a message's From domain, for `include_sender_auth` (#130). Pure: no Graph, no I/O
 - `src/outlook_mcp/tools/` — One file per tool group:
   - `mail_read.py`, `mail_write.py`, `mail_triage.py` — Tier 1 (auth tools live directly in `server.py`)
   - `calendar_read.py`, `calendar_write.py` — Tier 1
