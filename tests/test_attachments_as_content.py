@@ -294,12 +294,38 @@ class TestContentByType:
         assert blocks[1].resource.mime_type == "image/png"
         assert base64.b64decode(blocks[1].resource.blob) == over
 
-    @pytest.mark.parametrize("content_type", ["image/jpeg", "image/gif", "image/webp"])
-    async def test_every_image_type_a_model_reads_is_an_image(self, tmp_path, content_type):
-        blocks = await _blocks(b"\xff\xd8\xff\xe0", "photo", content_type, tmp_path)
+    @pytest.mark.parametrize(
+        ("content_type", "content"),
+        [
+            ("image/jpeg", b"\xff\xd8\xff\xe0\x00\x10JFIF"),
+            ("image/gif", b"GIF89a\x01\x00\x01\x00"),
+            ("image/webp", b"RIFF\x24\x00\x00\x00WEBPVP8 "),
+        ],
+    )
+    async def test_every_image_type_a_model_reads_is_an_image(
+        self, tmp_path, content_type, content
+    ):
+        blocks = await _blocks(content, "photo", content_type, tmp_path)
 
         assert blocks[1].type == "image"
         assert blocks[1].mime_type == content_type
+
+    async def test_an_image_name_over_bytes_that_are_no_image_is_a_resource(self, tmp_path):
+        """A sender can name anything `chart.png`; some model APIs reject a whole result
+        whose image does not decode, so only bytes that open as an image are an image."""
+        content = b"%PDF-1.7 not a picture"
+        blocks = await _blocks(content, "chart.png", "image/png", tmp_path)
+
+        assert blocks[1].type == "resource"
+        assert blocks[1].resource.mime_type == "image/png"
+        assert base64.b64decode(blocks[1].resource.blob) == content
+
+    async def test_an_image_labelled_as_another_image_type_is_sent_as_what_it_is(self, tmp_path):
+        blocks = await _blocks(PNG, "photo.jpg", "image/jpeg", tmp_path)
+
+        assert blocks[1].type == "image"
+        assert blocks[1].mime_type == "image/png"
+        assert _meta(blocks)["content_type"] == "image/jpeg"
 
     async def test_an_image_type_a_model_cannot_read_is_a_resource(self, tmp_path):
         blocks = await _blocks(b"II*\x00", "scan.tiff", "image/tiff", tmp_path)
@@ -645,6 +671,11 @@ class TestInlineUploadsAreRefusedBeforeAnythingIsSent:
             pytest.param(
                 {"name": "a\r\nb.pdf", "content_base64": "AAAA"}, "needs a name", id="name-crlf"
             ),
+            pytest.param({"name": "..", "content_base64": "AAAA"}, "not a file name", id="dot-dot"),
+            pytest.param({"name": ".", "content_base64": "AAAA"}, "not a file name", id="dot"),
+            pytest.param(
+                {"name": "a" * 252 + ".pdf", "content_base64": "AAAA"}, "255", id="name-too-long"
+            ),
             pytest.param({"name": "a.pdf"}, "needs content_base64", id="no-content"),
             pytest.param(
                 {"name": "a.pdf", "content_base64": "not base64!"}, "not valid base64", id="bad-b64"
@@ -671,6 +702,39 @@ class TestInlineUploadsAreRefusedBeforeAnythingIsSent:
             )
 
         builder.get.assert_not_called()
+        builder.attachments.post.assert_not_called()
+
+    async def test_a_name_is_stripped_and_255_characters_still_fit(self, tmp_path):
+        client, builder = _draft_client()
+        longest = "a" * 251 + ".png"
+
+        await attach_to_draft(
+            client,
+            draft_id="AAMkAG123=",
+            attachments=[_inline(PNG, "  pixel.png "), _inline(PNG, longest)],
+            config=Config(attachments_dir=str(tmp_path / "att")),
+        )
+
+        assert [att.name for att in _posted(builder)] == ["pixel.png", longest]
+
+    async def test_far_over_the_cap_is_refused_before_it_is_decoded(self, tmp_path, monkeypatch):
+        """Decoding 30 MiB of base64 only to refuse it is waste; its length says enough."""
+        from outlook_mcp import validation
+
+        def no_decoding(*args, **kwargs):
+            raise AssertionError("decoded")
+
+        monkeypatch.setattr(validation.base64, "b64decode", no_decoding)
+        client, builder = _draft_client()
+
+        with pytest.raises(ValueError, match="3 MiB") as exc:
+            await attach_to_draft(
+                client,
+                draft_id="AAMkAG123=",
+                attachments=[{"name": "dump.bin", "content_base64": "A" * (40 * 1024 * 1024)}],
+                config=Config(attachments_dir=str(tmp_path / "att")),
+            )
+        assert "dump.bin" in str(exc.value) and "attachments_dir" in str(exc.value)
         builder.attachments.post.assert_not_called()
 
     async def test_the_inline_cap_is_graphs_3_mib_and_inclusive(self, tmp_path):
@@ -735,6 +799,84 @@ class TestInlineUploadsAreRefusedBeforeAnythingIsSent:
             )
         builder.attachments.post.assert_not_called()
         client.me.send_mail.post.assert_not_called()
+
+
+class TestAnUploadWithNothingToAttachIsRefused:
+    """Both upload tools take `attachment_paths` and `attachments`, and both are optional,
+    so a call with neither, or with a misspelt one (the server ignores unknown top-level
+    arguments), would send the mail or report "attached" with no file: the #41 class, a
+    call that succeeds and does nothing. Each is refused before Graph is called, through
+    the real server, so the error is what the model sees."""
+
+    @staticmethod
+    def _graph():
+        client, builder = _draft_client()
+        client.me.send_mail.post = AsyncMock()
+        client.me.messages.post = AsyncMock()
+        return client, builder
+
+    @staticmethod
+    def _untouched(client, builder):
+        client.me.send_mail.post.assert_not_called()
+        client.me.messages.post.assert_not_called()
+        builder.get.assert_not_called()
+        builder.attachments.post.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "extra",
+        [{"attachment": ["report.pdf"]}, {}],
+        ids=["misspelt-argument", "no-attachment-argument"],
+    )
+    async def test_send_with_attachments_refuses_and_sends_nothing(self, serve, extra):
+        client, builder = self._graph()
+        serve(client)
+
+        result = await _call(
+            "outlook_send_with_attachments",
+            {"to": ["someone@example.com"], "subject": "s", "body": "b", **extra},
+        )
+
+        assert result.is_error is True
+        text = result.content[0].text
+        assert "attachment_paths" in text and "attachments" in text
+        assert "outlook_send_message" in text
+        self._untouched(client, builder)
+
+    @pytest.mark.parametrize(
+        "extra",
+        [{"attachment": ["report.pdf"]}, {}],
+        ids=["misspelt-argument", "no-attachment-argument"],
+    )
+    async def test_attach_to_draft_refuses_and_touches_nothing(self, serve, extra):
+        client, builder = self._graph()
+        serve(client)
+
+        result = await _call("outlook_attach_to_draft", {"draft_id": "AAMkAG123=", **extra})
+
+        assert result.is_error is True
+        text = result.content[0].text
+        assert "attachment_paths" in text and "attachments" in text
+        self._untouched(client, builder)
+
+    async def test_empty_lists_are_refused_too(self, tmp_path):
+        client, builder = self._graph()
+        config = Config(attachments_dir=str(tmp_path / "att"))
+
+        with pytest.raises(ValueError, match="attachment_paths"):
+            await attach_to_draft(
+                client, draft_id="AAMkAG123=", attachment_paths=[], attachments=[], config=config
+            )
+        with pytest.raises(ValueError, match="attachment_paths"):
+            await send_with_attachments(
+                client,
+                to=["someone@example.com"],
+                subject="s",
+                body="b",
+                attachment_paths=[],
+                attachments=[],
+                config=config,
+            )
+        self._untouched(client, builder)
 
 
 class TestTheFenceStillGovernsEveryPath:

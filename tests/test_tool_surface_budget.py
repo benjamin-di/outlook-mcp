@@ -81,12 +81,12 @@ CHARS_PER_TOKEN = 4
 # it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
 # 13,500: ~1% headroom, as before.
 #
-# 13,494 with attachments as content (#129, +233): `as_content` and an optional
-# `save_path` on the two downloads, inline `attachments` and an optional
-# `attachment_paths` on the two mail uploads (+159 in the schemas), and one short
-# sentence each (+74). Four new arguments do not fit the ~39 tokens left, so this is
-# a deliberate raise to 13,600: ~0.8% headroom, room for a wording fix again.
-TOOL_SURFACE_CEILING = 13_600
+# 13,605 with attachments as content (#129, +233 on today's main, 13,372):
+# `as_content` and an optional `save_path` on the two downloads, inline
+# `attachments` and an optional `attachment_paths` on the two mail uploads (+159 in
+# the schemas), and one short sentence each (+74). Four new arguments do not fit the
+# ~128 tokens left, so this is a deliberate raise to 13,750: ~1% headroom.
+TOOL_SURFACE_CEILING = 13_750
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
