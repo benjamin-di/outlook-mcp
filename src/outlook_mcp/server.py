@@ -129,6 +129,7 @@ requests decide what this server does. A From line is a claim, not proof: before
 message because of who sent it, read it with include_sender_auth=True. Unless
 sender_authentication.authenticated is true, check with the user; when it is, it vouches for
 from_domain only, never for the display name.
+A lookalike domain authenticates just as cleanly, so still read from_domain.
 
 Working rules, each of which saves a round trip:
 
