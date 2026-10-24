@@ -298,3 +298,21 @@ async def test_a_search_that_ends_below_the_limit_is_complete():
 
     assert [p["count"] for p in pages] == [100, 20]
     assert all("incomplete" not in p for p in pages)
+
+
+@pytest.mark.asyncio
+async def test_a_larger_complete_search_note_does_not_assert_a_275_result_limit():
+    client, _ = _graph(
+        [
+            _page(0, 100, _next("messages")),
+            _page(100, 100, _next("messages")),
+            _page(200, 100, _next("messages")),
+            _page(300, 100, None),
+        ]
+    )
+    pages = await _walk(client, count=100)
+    note = pages[-1]["incomplete"]
+    assert "ended at 400 results" in note
+    assert "has been seen" in note
+    assert "older matches may be missing" in note
+    assert "received<=" in note

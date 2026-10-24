@@ -38,6 +38,7 @@ the mailbox lacks the data a given assertion needs. They must never assume this
 maintainer's mailbox.
 """
 
+import os
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
@@ -45,6 +46,7 @@ import pytest
 from msgraph.generated.models.event_type import EventType
 from msgraph.generated.models.free_busy_status import FreeBusyStatus
 
+from outlook_mcp.folder_resolver import resolve_folder_id
 from outlook_mcp.sender_auth import NO_FROM, NO_HEADER, UNREADABLE
 from outlook_mcp.tools._delta import parse_graph_datetime, require_graph_url
 from outlook_mcp.tools.calendar_delta import list_events_delta
@@ -52,7 +54,7 @@ from outlook_mcp.tools.calendar_read import list_events
 from outlook_mcp.tools.contacts import list_contacts, search_contacts
 from outlook_mcp.tools.contacts_delta import list_contacts_delta
 from outlook_mcp.tools.mail_delta import list_inbox_delta
-from outlook_mcp.tools.mail_read import list_inbox, read_message, read_messages, search_mail
+from outlook_mcp.tools.mail_read import list_folders, list_inbox, read_message, read_messages, search_mail
 from outlook_mcp.tools.mail_thread import list_thread
 from outlook_mcp.tools.todo import get_task, list_tasks
 
@@ -339,13 +341,17 @@ async def test_search_cursor_moves_to_the_next_page(real_graph_client, folder):
 
 
 async def test_a_search_graph_cut_short_says_so(real_graph_client):
-    """Walk a search of the whole Inbox to its end and hold it to the Inbox's own count.
+    """Walk a populated folder's search and compare it with the folder's own count.
+
+    Defaults to the largest folder in the first top-level listing (one GET).
+    OUTLOOK_MCP_LIVE_SEARCH_FOLDER selects a name or ID instead, including a
+    folder beyond that page. No mailbox writes or fixtures are needed.
 
     The folder's `totalItemCount` is the answer key: Graph counts it without
     searching. On an Exchange Online mailbox Graph stopped every search at 275
-    (255-275 by page size), so an Inbox past 300 messages always ends short and
+    (255-275 by page size), so a folder past 300 messages always ends short and
     the last page must say so. The other direction is a claim about the
-    constant: if Graph returns all of an Inbox past 300 and the tool still says
+    constant: if Graph returns all of a folder past 300 and the tool still says
     `incomplete`, this account type's limit is not just past 250, and
     `SEARCH_STOPS_AFTER` needs its number. The 300 margin keeps a few messages
     the index has not caught up with from deciding either way.
@@ -353,16 +359,31 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
     from outlook_mcp.tools.mail_read import SEARCH_STOPS_AFTER
 
     client = real_graph_client.sdk_client
-    inbox = await client.me.mail_folders.by_mail_folder_id("inbox").get()
-    total = inbox.total_item_count or 0
+    requested = os.environ.get("OUTLOOK_MCP_LIVE_SEARCH_FOLDER", "").strip()
+    if requested:
+        folder_id = await resolve_folder_id(client, requested)
+        folder = await client.me.mail_folders.by_mail_folder_id(folder_id).get()
+        total = folder.total_item_count or 0
+    else:
+        listing = await list_folders(client)
+        folders = listing["folders"]
+        if not folders:
+            pytest.skip(
+                "No top-level mail folders; set OUTLOOK_MCP_LIVE_SEARCH_FOLDER to a name or ID"
+            )
+        folder = max(folders, key=lambda item: item["total"])
+        folder_id, total = folder["id"], folder["total"]
     if total <= 300:
-        pytest.skip(f"the Inbox holds {total} messages, too few to reach Graph's search limit")
+        pytest.skip(
+            f"the selected folder holds {total} messages, too few to reach Graph's search limit; "
+            "set OUTLOOK_MCP_LIVE_SEARCH_FOLDER to a folder holding more than 300"
+        )
 
     ids: set[str] = set()
     walked, cursor = 0, None
     for _ in range(15):  # 1,500 results, bounded; Graph's documentation says up to 1,000
         page = await search_mail(
-            client, query=_SEARCH_EVERYTHING, count=100, folder="inbox", cursor=cursor
+            client, query=_SEARCH_EVERYTHING, count=100, folder=folder_id, cursor=cursor
         )
         walked += page["count"]
         ids.update(m["id"] for m in page["messages"])
@@ -375,12 +396,12 @@ async def test_a_search_graph_cut_short_says_so(real_graph_client):
     assert len(ids) == walked, f"the walk returned {walked} results but only {len(ids)} ids"
     if walked < total:
         assert "incomplete" in page, (
-            f"Graph ended the search at {walked} of the Inbox's {total} messages and the "
+            f"Graph ended the search at {walked} of the selected folder's {total} messages and the "
             "tool said nothing, so a caller takes the result as complete"
         )
     else:
         assert "incomplete" not in page, (
-            f"Graph returned all {total} Inbox messages and the tool still called the "
+            f"Graph returned all {total} selected-folder messages and the tool still called the "
             f"search incomplete: this account type's limit is not just past "
             f"{SEARCH_STOPS_AFTER}, so SEARCH_STOPS_AFTER needs its number"
         )

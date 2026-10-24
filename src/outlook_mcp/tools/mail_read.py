@@ -876,9 +876,9 @@ async def search_mail(
     }
     if response.odata_next_link is None and served > SEARCH_STOPS_AFTER:
         result["incomplete"] = (
-            f"Graph ends a mail search after about 275 results and this one stopped at {served}, "
-            "so older matches may be missing. Results are newest first: add received<= and the "
-            "last message's date to the query to search further back."
+            f"This search ended at {served} results with no next page. Graph has been seen to "
+            "stop a search around 275 without saying so, so older matches may be missing: "
+            "add received<= with the last message's date to the query to reach them."
         )
     return result
 
