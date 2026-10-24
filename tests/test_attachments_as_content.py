@@ -1057,3 +1057,22 @@ async def test_whitespace_heavy_raw_input_is_refused_before_normalization(tmp_pa
     builder.get.assert_not_called()
     builder.attachments.post.assert_not_called()
     client.me.send_mail.post.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("send", [False, True])
+@pytest.mark.parametrize("encoded", ["", " \t\r\n"])
+async def test_empty_inline_content_is_refused_without_graph_calls(tmp_path, send, encoded):
+    client, builder = _draft_client()
+    kwargs = {
+        "attachments": [{"name": "empty.bin", "content_base64": encoded}],
+        "config": Config(attachments_dir=str(tmp_path / "att")),
+    }
+    with pytest.raises(ValueError, match="content_base64 must not be empty"):
+        if send:
+            await send_with_attachments(client, ["a@example.com"], "s", "b", **kwargs)
+        else:
+            await attach_to_draft(client, "AAMkAG123=", **kwargs)
+    builder.get.assert_not_called()
+    builder.attachments.post.assert_not_called()
+    client.me.send_mail.post.assert_not_called()
