@@ -1100,3 +1100,57 @@ async def test_microsofts_own_header_parses_on_real_mail(real_graph_client):
     assert UNREADABLE not in reasons, reasons
     if all(r in (NO_HEADER, NO_FROM) for r in reasons):
         pytest.skip(f"none of the newest {len(ids)} messages carries Microsoft's header")
+
+
+async def _a_contact_with_a_phone(client):
+    """A listed contact whose summary phone has 7+ significant digits, or None."""
+    from outlook_mcp.tools.contacts import _MIN_PHONE_DIGITS, _phone_digits
+
+    cursor = None
+    for _ in range(10):  # 1,000 contacts, bounded
+        page = await list_contacts(client, count=100, cursor=cursor)
+        for contact in page["contacts"]:
+            if len(_phone_digits(contact["phone"])) >= _MIN_PHONE_DIGITS:
+                return contact
+        if not page["has_more"]:
+            return None
+        cursor = page["cursor"]
+    return None
+
+
+async def test_a_phone_search_finds_a_stored_number_however_it_is_written(real_graph_client):
+    """`phone=` reads the listing in pages of 1,000 and compares digits.
+
+    Two things only Graph can answer: that the listing accepts this `$top` with the
+    summary `$select`, and that the pages are walked to the contact. The number is
+    searched as its bare digits and as its last seven, neither of which is how it
+    is stored. Read-only.
+    """
+    contact = await _a_contact_with_a_phone(real_graph_client.sdk_client)
+    if contact is None:
+        pytest.skip("No listed contact has a phone number of seven digits or more")
+    digits = "".join(ch for ch in contact["phone"] if ch.isdigit())
+
+    for written in (digits, digits[-7:]):
+        found = await search_contacts(real_graph_client.sdk_client, phone=written, count=100)
+        assert contact["id"] in {c["id"] for c in found["contacts"]}, (
+            f"phone search missed a stored number written as {len(written)} digits; "
+            f"{found['count']} other match(es)"
+        )
+
+
+async def test_contact_search_still_misses_a_part_of_a_number(real_graph_client):
+    """The reason `phone=` exists, pinned: Graph's `$search` does not find a stored
+    number from its last seven digits. If it starts to, the scan can go."""
+    contact = await _a_contact_with_a_phone(real_graph_client.sdk_client)
+    if contact is None:
+        pytest.skip("No listed contact has a phone number of seven digits or more")
+    digits = "".join(ch for ch in contact["phone"] if ch.isdigit())
+    if len(digits) <= 7:
+        pytest.skip("The harvested number has no more than seven digits")
+
+    found = await search_contacts(real_graph_client.sdk_client, query=digits[-7:], count=25)
+    assert contact["id"] not in {c["id"] for c in found["contacts"]}, (
+        "Graph's contact $search now finds a number from its last digits; "
+        "outlook_search_contacts(phone=...) may no longer need to read the listing"
+    )
