@@ -133,7 +133,12 @@ _LARGE_SEND_SETUP = {
 
 # Tools the scan finds that have no case below, each with the reason. Empty: every
 # tool that can send is exercised.
-NOT_EXERCISED: dict[str, str] = {}
+NOT_EXERCISED: dict[str, str] = {
+    "outlook_attach_to_event": (
+        "nothing is sent at attach time; a retried POST can leave a duplicate file "
+        "that attendees receive with the next update, as for outlook_attach_to_draft"
+    ),
+}
 
 # (tool, path the write is sent to, the call, answers it needs first, where to check)
 SENDS = [

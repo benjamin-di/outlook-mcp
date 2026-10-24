@@ -38,6 +38,7 @@ from outlook_mcp.graph import GraphClient
 from outlook_mcp.tools import (
     admin,
     batch,
+    calendar_attachments,
     calendar_delta,
     calendar_read,
     calendar_write,
@@ -744,7 +745,8 @@ async def outlook_get_event(
     ctx: Context,
     event_id: str,
 ) -> dict:
-    """Get one event by ID: body, attendees, organizer, recurrence, type, show_as, anchor zone, key.
+    """Get one event by ID: body, attendees, organizer, recurrence, type, show_as, anchor zone, key,
+    attachments (metadata).
 
     `recurrence` comes back in the same shape outlook_create_event accepts; `type` is
     "singleInstance", "seriesMaster", "occurrence" or "exception". `start`/`end` are UTC;
@@ -946,6 +948,40 @@ async def outlook_rsvp(
     client = _get_graph_client(ctx)
     config = _get_config(ctx)
     return await calendar_write.rsvp(client.sdk_client, event_id, response, message, config=config)
+
+
+@mcp.tool()
+@_wrap_tool_errors
+async def outlook_attach_to_event(
+    ctx: Context,
+    event_id: str,
+    attachment_paths: list[str],
+) -> dict:
+    """Attach files to an event; auto-switches to upload-session for files >3MB.
+
+    `attachment_paths` resolve inside `attachments_dir`, as for outlook_attach_to_draft.
+    Attendees get the files with the event's next update. Returns new attachment IDs.
+    """
+    client = _get_graph_client(ctx)
+    config = _get_config(ctx)
+    return await calendar_attachments.attach_to_event(
+        client.sdk_client, event_id, attachment_paths, config=config
+    )
+
+
+@mcp.tool()
+@_wrap_tool_errors
+async def outlook_remove_event_attachment(
+    ctx: Context,
+    event_id: str,
+    attachment_id: str,
+) -> dict:
+    """Remove one attachment from an event (IDs from outlook_get_event's `attachments`)."""
+    client = _get_graph_client(ctx)
+    config = _get_config(ctx)
+    return await calendar_attachments.remove_event_attachment(
+        client.sdk_client, event_id, attachment_id, config=config
+    )
 
 
 # ── Contact Tools ──────────────────────────────────────
