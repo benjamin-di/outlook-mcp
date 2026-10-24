@@ -99,6 +99,13 @@ CHARS_PER_TOKEN = 4
 # line saying so (+38). A new tool for it would have cost a whole second schema.
 # Raised to 13,900 as one ceiling for this and #168 (`is_markdown`, stacked on
 # this), which together measure ~13,820: ~0.6% headroom over the pair.
+#
+# 13,821 with `is_markdown` on the five tools that write a mail body (#168, +97 on
+# 13,724 with #143): `outlook_send_message`, `outlook_reply`, `outlook_forward`,
+# `outlook_create_draft` and `outlook_update_draft`, about 20 each for the boolean's
+# schema. No docstring grew: the supported subset is one INSTRUCTIONS bullet, sent
+# once per session. One ceiling for the pair, the 13,900 #143 set: reply and forward
+# drafts (+138) and Markdown bodies (+97) together, ~0.6% headroom.
 TOOL_SURFACE_CEILING = 13_900
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

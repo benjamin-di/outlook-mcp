@@ -9,7 +9,7 @@ from outlook_mcp.config import Config
 from outlook_mcp.errors import DRAFT_MAY_HAVE_BEEN_SENT, MESSAGE_MAY_HAVE_BEEN_SENT, GraphAPIError
 from outlook_mcp.permissions import CATEGORY_MAIL_SEND, check_permission
 from outlook_mcp.throttle import call_without_replay
-from outlook_mcp.tools._mail_body import above_quote
+from outlook_mcp.tools._mail_body import above_quote, check_body_format, message_body
 from outlook_mcp.validation import validate_email, validate_graph_id
 
 
@@ -24,15 +24,18 @@ async def send_message(
     importance: str = "normal",
     request_read_receipt: bool = False,
     reply_to: list[str] | None = None,
+    is_markdown: bool = False,
     *,
     config: Config,
 ) -> dict:
     """Send an email message.
 
     Validates all recipient addresses, builds a Graph Message object,
-    and posts via graph_client.me.send_mail.post().
+    and posts via graph_client.me.send_mail.post(). ``is_markdown`` sends the
+    body as HTML converted from Markdown (``_mail_body.markdown_to_html``).
     """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_send_message")
+    check_body_format(is_html, is_markdown)
 
     # Validate all email addresses
     validated_to = [validate_email(e) for e in to]
@@ -40,10 +43,8 @@ async def send_message(
     validated_bcc = [validate_email(e) for e in bcc] if bcc else []
     validated_reply_to = [validate_email(e) for e in reply_to] if reply_to else []
 
-    from msgraph.generated.models.body_type import BodyType
     from msgraph.generated.models.email_address import EmailAddress
     from msgraph.generated.models.importance import Importance
-    from msgraph.generated.models.item_body import ItemBody
     from msgraph.generated.models.message import Message
     from msgraph.generated.models.recipient import Recipient
     from msgraph.generated.users.item.send_mail.send_mail_post_request_body import (
@@ -58,9 +59,7 @@ async def send_message(
 
     msg = Message()
     msg.subject = subject
-    msg.body = ItemBody()
-    msg.body.content = body
-    msg.body.content_type = BodyType.Html if is_html else BodyType.Text
+    msg.body = message_body(body, is_html, is_markdown)
     msg.to_recipients = [_make_recipient(e) for e in validated_to]
     if validated_cc:
         msg.cc_recipients = [_make_recipient(e) for e in validated_cc]
@@ -102,6 +101,7 @@ async def _send_in_thread(
     text: str,
     is_html: bool,
     to: list[Any] | None = None,
+    is_markdown: bool = False,
 ) -> None:
     """Reply, reply-all or forward with ``text`` above the quoted original.
 
@@ -148,7 +148,7 @@ async def _send_in_thread(
     try:
         if text:
             patch = Message()
-            patch.body = above_quote(draft.body, text, is_html)
+            patch.body = above_quote(draft.body, text, is_html, is_markdown=is_markdown)
             await new_draft.patch(patch)
     except Exception:
         # The PATCH's error is the one to report, even if the delete fails too.
@@ -191,6 +191,7 @@ async def reply(
     body: str,
     reply_all: bool = False,
     is_html: bool = False,
+    is_markdown: bool = False,
     *,
     config: Config,
 ) -> dict:
@@ -203,10 +204,11 @@ async def reply(
     "HTML" reply went out as plain text.
     """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_reply")
+    check_body_format(is_html, is_markdown)
     message_id = validate_graph_id(message_id)
 
     action = "reply_all" if reply_all else "reply"
-    await _send_in_thread(graph_client, message_id, action, body, is_html)
+    await _send_in_thread(graph_client, message_id, action, body, is_html, is_markdown=is_markdown)
 
     return {"status": "replied", "reply_all": reply_all}
 
@@ -216,14 +218,15 @@ async def forward(
     message_id: str,
     to: list[str],
     comment: str | None = None,
+    is_markdown: bool = False,
     *,
     config: Config,
 ) -> dict:
     """Forward a message to one or more recipients.
 
     With a ``comment``, through a draft like ``reply``, so the comment keeps its
-    paragraphs and line breaks above the forwarded message. Without one, one
-    forward call.
+    paragraphs and line breaks above the forwarded message (``is_markdown``: the
+    comment is Markdown). Without one, one forward call.
     """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_forward")
     message_id = validate_graph_id(message_id)
@@ -243,7 +246,9 @@ async def forward(
 
     recipients = [_make_recipient(e) for e in validated_to]
     if comment:
-        await _send_in_thread(graph_client, message_id, "forward", comment, False, recipients)
+        await _send_in_thread(
+            graph_client, message_id, "forward", comment, False, recipients, is_markdown
+        )
         return {"status": "forwarded"}
 
     request_body = ForwardPostRequestBody()
