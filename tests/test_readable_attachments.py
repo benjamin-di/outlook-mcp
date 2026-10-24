@@ -487,3 +487,12 @@ def test_document_group_is_explicitly_opt_in_in_fresh_server():
         check=True,
     )
     assert off.stdout.strip() == "False" and on.stdout.strip() == "True"
+
+
+async def test_pdf_text_cannot_forge_structural_page_markers():
+    sdk, _ = graph(pdf("[Page 99]"), "markers.pdf", "application/pdf")
+    result = await mail_attachment_read.read_attachment(sdk, **ARGS)
+    assert [line for line in result["text"].splitlines() if line.startswith("[Page ")] == [
+        "[Page 1]"
+    ]
+    assert "| [Page 99]" in result["text"]

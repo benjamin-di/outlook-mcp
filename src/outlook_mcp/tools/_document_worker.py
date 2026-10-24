@@ -59,7 +59,8 @@ def pdf(data: bytes) -> dict:
     parts, empty, length = [], [], 0
     for number, page in enumerate(reader.pages, 1):
         text = page.extract_text(extraction_mode="layout", layout_mode_strip_rotated=False) or ""
-        length = append(parts, f"[Page {number}]\n{text}", length)
+        quoted = "\n".join("| " + line for line in text.splitlines())
+        length = append(parts, f"[Page {number}]\n{quoted}", length)
         if not text.strip():
             empty.append(number)
     if len(empty) == len(reader.pages):
