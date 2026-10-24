@@ -18,8 +18,8 @@ binds, so a refusal exits with its reason instead of after the port is open:
 - one rule for every bind: no ``OUTLOOK_MCP_HTTP_TOKEN``, no server. Loopback
   is no exception, since a loopback port with no token lets any process running
   as that user read the mailbox with one HTTP request;
-- every request must present one of the tokens as
-  ``Authorization: Bearer <token>`` or gets 401 before the SDK sees it;
+- every request must present the token as ``Authorization: Bearer <token>``
+  or gets 401 before the SDK sees it;
 - loopback (``127.0.0.1``) unless ``OUTLOOK_MCP_HTTP_HOST`` says otherwise. The
   server speaks plain HTTP, so on a bind other machines can reach the token
   crosses the network in the clear unless a proxy in front terminates TLS, and
@@ -65,7 +65,7 @@ class HttpSettings:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     # Out of repr, so a settings object that ever reaches a log carries no token.
-    tokens: tuple[str, ...] = field(default=(), repr=False)
+    token: str = field(default="", repr=False)
 
 
 def settings_from_env(environ: Mapping[str, str]) -> HttpSettings | None:
@@ -85,10 +85,10 @@ def settings_from_env(environ: Mapping[str, str]) -> HttpSettings | None:
 
     host = environ.get(HOST_ENV, "").strip() or DEFAULT_HOST
     port = _port(environ.get(PORT_ENV, "").strip())
-    tokens = _tokens(environ.get(TOKEN_ENV, ""))
-    if not tokens:
+    token = _token(environ.get(TOKEN_ENV, ""))
+    if not token:
         raise ValueError(_missing_token(host))
-    return HttpSettings(host=host, port=port, tokens=tokens)
+    return HttpSettings(host=host, port=port, token=token)
 
 
 def _missing_token(host: str) -> str:
@@ -119,17 +119,15 @@ def _port(value: str) -> int:
     raise ValueError(f"{PORT_ENV}={value!r} is not a TCP port. Use a number from 1 to 65535.")
 
 
-def _tokens(value: str) -> tuple[str, ...]:
-    """Comma-separated, so a new token can be added before the old one is removed."""
-    tokens = tuple(part.strip() for part in value.split(",") if part.strip())
-    for number, token in enumerate(tokens, start=1):
-        if not _TOKEN_SHAPE.fullmatch(token):
-            raise ValueError(
-                f"{TOKEN_ENV}: token {number} of {len(tokens)} is not usable. A token needs "
-                f"at least 32 characters from A-Z, a-z, 0-9 and -._~+/ (what a bearer token "
-                f"may carry). Generate one with: {_TOKEN_RECIPE}"
-            )
-    return tokens
+def _token(value: str) -> str:
+    token = value.strip()
+    if token and not _TOKEN_SHAPE.fullmatch(token):
+        raise ValueError(
+            f"{TOKEN_ENV} is not usable. A token needs at least 32 characters from A-Z, "
+            f"a-z, 0-9 and -._~+/ (what a bearer token may carry). Generate one with: "
+            f"{_TOKEN_RECIPE}"
+        )
+    return token
 
 
 def _is_loopback(host: str) -> bool:
@@ -146,16 +144,16 @@ def _is_loopback(host: str) -> bool:
 
 
 class BearerTokenMiddleware:
-    """Pass an HTTP request on only if it presents one of the configured tokens.
+    """Pass an HTTP request on only if it presents the configured token.
 
     It wraps the whole app, so it stands in front of every path and of both
     protocol eras the SDK routes. A refusal is the same 401 whatever was wrong,
-    and it says nothing about which token, if any, came close.
+    and it says nothing about how close the token presented came.
     """
 
-    def __init__(self, app: ASGIApp, tokens: tuple[str, ...]) -> None:
+    def __init__(self, app: ASGIApp, token: str) -> None:
         self.app = app
-        self._tokens = tuple(token.encode("ascii") for token in tokens)
+        self._token = token.encode("ascii")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "lifespan" or (scope["type"] == "http" and self._authorized(scope)):
@@ -186,12 +184,9 @@ class BearerTokenMiddleware:
         if scheme.lower() != b"bearer":
             return False
         presented = presented.strip(b" ")
-        # Every token compared, in constant time each, so the time taken does
-        # not say which one (or how much of one) matched.
-        matched = False
-        for token in self._tokens:
-            matched |= hmac.compare_digest(presented, token)
-        return matched
+        # In constant time, so the time taken does not say how much of it
+        # matched. No token configured matches nothing, an empty one included.
+        return bool(self._token) and hmac.compare_digest(presented, self._token)
 
 
 def build_app(server: MCPServer, settings: HttpSettings) -> ASGIApp:
@@ -207,7 +202,7 @@ def build_app(server: MCPServer, settings: HttpSettings) -> ASGIApp:
         json_response=True,
         host=settings.host,
     )
-    return BearerTokenMiddleware(app, settings.tokens)
+    return BearerTokenMiddleware(app, settings.token)
 
 
 def uvicorn_config(server: MCPServer, settings: HttpSettings) -> uvicorn.Config:
