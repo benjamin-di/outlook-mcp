@@ -91,7 +91,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 ### Mail — Write
 - `outlook_send_message` — Send email with recipients, CC, BCC, HTML, importance
 - `outlook_reply` — Reply or reply-all to a message; plain text keeps its paragraphs and line breaks above the quote
-- `outlook_forward` — Forward a message
+- `outlook_forward` — Forward a message; a `comment` keeps its paragraphs and line breaks above the forwarded message
 
 ### Mail — Triage
 - `outlook_move_message` — Move to a folder

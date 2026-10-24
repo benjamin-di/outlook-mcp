@@ -114,8 +114,9 @@ async def _send_in_thread(
     draft is sent.
 
     Nothing has gone out before the send. A failed PATCH, or a send Graph refused
-    (a 4xx), deletes the draft and raises. After a 5xx the send may have happened,
-    so the draft is left alone and the error says where to look.
+    (a 4xx), deletes the draft and raises. After a 5xx, or a send cut off before
+    Graph answered (a dropped connection, a timeout), the send may have happened,
+    so the draft is left alone and the error says where to look and gives its id.
     """
     from msgraph.generated.models.message import Message
     from msgraph.generated.users.item.messages.item.create_forward import (
@@ -155,10 +156,11 @@ async def _send_in_thread(
             await new_draft.delete()
         raise
 
+    in_doubt = f"{DRAFT_MAY_HAVE_BEEN_SENT} The draft's id is {draft.id}."
     try:
         await call_without_replay(
             lambda once: new_draft.send.post(request_configuration=once),
-            outcome_unknown=DRAFT_MAY_HAVE_BEEN_SENT,
+            outcome_unknown=in_doubt,
         )
     except GraphAPIError as exc:
         if 400 <= exc.status_code < 500:
@@ -166,6 +168,21 @@ async def _send_in_thread(
             with contextlib.suppress(Exception):
                 await new_draft.delete()
         raise
+    except Exception as exc:
+        # No answer from Graph at all, which leaves the send as much in doubt as a
+        # 5xx: the draft stays, and the agent is told where to look instead of
+        # getting a bare crash. Only the exception's type is named; its text can
+        # carry the request URL.
+        raise GraphAPIError(
+            0,
+            "SendOutcomeUnknown",
+            f"The send was cut off before Graph answered ({type(exc).__name__}), so "
+            "the message may already have been sent.",
+            action=(
+                "Check Sent Items before sending it again; if it is not there, it is "
+                f"still in Drafts. The draft's id is {draft.id}."
+            ),
+        ) from exc
 
 
 async def reply(

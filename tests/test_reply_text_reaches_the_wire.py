@@ -232,3 +232,26 @@ class TestNothingHalfSent:
         text = str(caught.value)
         assert "may already have been sent" in text, text
         assert "Sent Items" in text and "Drafts" in text, text
+        assert "The draft's id is R1." in text, text
+
+    async def test_a_send_cut_off_before_graph_answers_says_the_same(self):
+        """A dropped connection is no answer at all: as much in doubt as a 5xx."""
+
+        def drop_the_send(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST" and request.url.path.endswith("/R1/send"):
+                graph.sent.append(request)
+                raise httpx.RemoteProtocolError("Server disconnected", request=request)
+            return handle(request)
+
+        graph = _graph("createReply", _draft(_HTML_QUOTE))
+        handle, graph._handle = graph._handle, drop_the_send
+
+        with pytest.raises(GraphAPIError) as caught:
+            await mail_write.reply(graph.client(), "M1", "x", config=_CFG)
+
+        assert "DELETE /me/messages/R1" not in graph.calls()
+        assert graph.calls().count("POST /me/messages/R1/send") == 1
+        text = str(caught.value)
+        assert "RemoteProtocolError" in text and "/R1/send" not in text, text
+        assert "Check Sent Items" in text and "still in Drafts" in text, text
+        assert "The draft's id is R1." in text, text

@@ -69,7 +69,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   paragraphs, line breaks kept, `- ` or `* ` lines to a list, everything else escaped); on a
   plain-text message as plain text. Checked against an Exchange Online mailbox. The send runs
   without kiota's replay (#131). If the patch fails or Graph refuses the send, the draft is
-  deleted; after a 5xx it is left in Drafts and the error says to check Sent Items first. A
+  deleted; after a 5xx, or a send cut off before Graph answered (a dropped connection), it is
+  left in Drafts and the error says to check Sent Items first and gives the draft's id. A
   forward without a comment is still one call. The tool surface is unchanged.
 
 ### Added

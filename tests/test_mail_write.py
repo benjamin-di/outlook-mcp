@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from outlook_mcp.config import Config
-from outlook_mcp.errors import ReadOnlyError
+from outlook_mcp.errors import GraphAPIError, ReadOnlyError
 from outlook_mcp.tools.mail_write import forward, reply, send_message
 
 _CFG = Config(client_id="test")
@@ -276,14 +276,19 @@ class TestReplyContentType:
         draft.send.post.assert_not_called()
 
     async def test_a_send_that_fails_outside_graph_leaves_the_draft(self):
-        """A dropped connection says nothing about whether the send happened."""
+        """A dropped connection says nothing about whether the send happened, so the
+        agent is told what a 5xx tells it, with the draft's id, not handed a crash."""
         client, _, draft = _thread_client()
         draft.send.post = AsyncMock(side_effect=OSError("connection reset"))
 
-        with pytest.raises(OSError):
+        with pytest.raises(GraphAPIError) as caught:
             await reply(client, message_id="AAMkAG123=", body="x", config=_CFG)
 
         draft.delete.assert_not_called()
+        text = str(caught.value)
+        assert "OSError" in text and "connection reset" not in text, text
+        assert "Check Sent Items" in text and "still in Drafts" in text, text
+        assert "The draft's id is R1." in text, text
 
 
 class TestForwardComment:
