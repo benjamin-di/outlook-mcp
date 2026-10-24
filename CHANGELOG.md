@@ -208,6 +208,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   key is 1–128 letters, digits and `. _ : @ -`, refused otherwise before anything is sent. One
   line in the connect-time instructions tells the agent to look a key up before creating. 68 → 69
   tools.
+- **Files on calendar events** (#153). Drafts and To Do tasks could carry attachments and events
+  could not, so an agent putting a flight on the calendar had nowhere to put the e-ticket. The new
+  `outlook_attach_to_event` attaches files from `attachments_dir` through the same code as
+  `outlook_attach_to_draft`: every path is confined by `resolve_attachment_path`, a file up to
+  3 MB is one POST, and a larger one uses Graph's upload session for events. It returns the new
+  attachment IDs. `outlook_remove_event_attachment` removes one, and `outlook_get_event` now lists
+  `attachments` (ID, name, size, type and whether inline, never the bytes), reading them with a
+  second request only when the event has any. Attendees are not sent the files when they are
+  attached; they get them with the event's next update. So under an `allow_categories` that
+  withholds `mail_send`, attaching to an event with attendees is refused, as rewording one is, and
+  the tool is marked destructive. A missing file is refused with a message the agent can read.
+  68 → 70 tools.
 
 ### Changed
 

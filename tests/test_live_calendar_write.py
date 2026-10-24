@@ -19,11 +19,13 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from outlook_mcp.tools._recurrence import maybe_zone
+from outlook_mcp.tools.calendar_attachments import attach_to_event, remove_event_attachment
 from outlook_mcp.tools.calendar_read import find_events_by_key, get_event, list_events
 from outlook_mcp.tools.calendar_write import create_event, delete_event, update_event
 from tests.conftest import LIVE_WRITE_SUBJECT
@@ -1425,6 +1427,29 @@ class TestOccurrenceChangesAreNotDiscardedSilently:
             found = await find_events_by_key(sdk, key)
             assert [(e["id"], e["type"]) for e in found["events"]] == [(event_id, "seriesMaster")]
 
+    async def test_attaching_to_a_series_keeps_them(self, real_graph_client, live_write_config):
+        """An attachment is not a reshape, so nothing guards it; Graph has to agree.
+
+        A master with one edited and one deleted occurrence gets a file. Both
+        changes must survive, as they do a subject patch, and the file must be
+        listed on the master.
+        """
+        sdk = real_graph_client.sdk_client
+        folder = Path(live_write_config.attachments_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "series-note.txt").write_bytes(b"synthetic attachment for a live-write guard")
+
+        async with self._series_with_changed_occurrences(
+            real_graph_client, live_write_config, " attach-exceptions"
+        ) as (event_id, monday, edited_day, deleted_day):
+            await attach_to_event(sdk, event_id, ["series-note.txt"], config=live_write_config)
+
+            self._assert_changes_survive(
+                await _instances(sdk, event_id, monday, _EAST), edited_day, deleted_day
+            )
+            names = [a["name"] for a in (await get_event(sdk, event_id))["attachments"]]
+            assert names == ["series-note.txt"]
+
     async def test_changing_an_occurrence_moves_the_masters_change_key(
         self, real_graph_client, live_write_config
     ):
@@ -1783,3 +1808,49 @@ class TestEventKeys:
             key=key,
         ):
             assert (await find_events_by_key(sdk, key[:-1]))["events"] == []
+
+
+class TestEventAttachments:
+    """Attach, list and remove, against Graph, for both upload paths.
+
+    A file over 3 MB goes through the upload session and `_upload_large_file`,
+    whose chunk responses are unchecked (#125), so the listing afterwards is
+    what says the upload landed.
+    """
+
+    async def test_files_are_attached_listed_and_removed(
+        self, real_graph_client, live_write_config
+    ):
+        sdk = real_graph_client.sdk_client
+        monday = _anchor_monday()
+        folder = Path(live_write_config.attachments_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "itinerary.txt").write_bytes(b"synthetic itinerary for a live-write guard")
+        large_size = 3 * 1024 * 1024 + 4096
+        (folder / "large.bin").write_bytes(b"\x00" * large_size)
+
+        async with _temporary_event(
+            real_graph_client,
+            live_write_config,
+            subject_suffix=" attachments",
+            start=f"{monday.isoformat()}T17:00:00Z",
+            end=f"{monday.isoformat()}T17:30:00Z",
+        ) as event_id:
+            assert (await get_event(sdk, event_id))["attachments"] == []
+
+            small = await attach_to_event(
+                sdk, event_id, ["itinerary.txt"], config=live_write_config
+            )
+            await attach_to_event(sdk, event_id, ["large.bin"], config=live_write_config)
+
+            listed = {a["name"]: a for a in (await get_event(sdk, event_id))["attachments"]}
+            assert set(listed) == {"itinerary.txt", "large.bin"}
+            assert listed["itinerary.txt"]["id"] == small["attachment_ids"][0]
+            assert listed["large.bin"]["size"] >= large_size
+            assert not any(a["is_inline"] for a in listed.values())
+
+            for attachment in listed.values():
+                await remove_event_attachment(
+                    sdk, event_id, attachment["id"], config=live_write_config
+                )
+            assert (await get_event(sdk, event_id))["attachments"] == []

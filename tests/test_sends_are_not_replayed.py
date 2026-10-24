@@ -131,9 +131,13 @@ _LARGE_SEND_SETUP = {
     "/createUploadSession": [(200, {}, {"uploadUrl": "https://upload.example.com/s"})],
 }
 
-# Tools the scan finds that have no case below, each with the reason. Empty: every
-# tool that can send is exercised.
-NOT_EXERCISED: dict[str, str] = {}
+# Tools the scan finds that have no case below, each with the reason.
+NOT_EXERCISED: dict[str, str] = {
+    "outlook_attach_to_event": (
+        "attaching emails no one: the files reach attendees with the organizer's next "
+        "update of the event, and outlook_update_event sends that without a replay"
+    ),
+}
 
 # (tool, path the write is sent to, the call, answers it needs first, where to check)
 SENDS = [
