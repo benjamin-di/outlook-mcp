@@ -80,6 +80,10 @@ CHARS_PER_TOKEN = 4
 # date, YYYY-MM-DD. `outlook_get_contact` already returned it; nothing could write
 # it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
 # 13,500: ~1% headroom, as before.
+#
+# 13,397 with `company` on `outlook_update_contact` (+25 on today's main, 13,372):
+# create set it and update could not, so a contact who changed employer kept the
+# old one (#173). The argument alone, no new words. No raise.
 TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

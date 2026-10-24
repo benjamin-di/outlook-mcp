@@ -41,6 +41,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `$skiptoken`, which is what Graph's own `@odata.nextLink` is. The cursor also carries the
   folder the search ran in, as `outlook_list_events`'s carries its calendar, so a later page
   stays in that folder whatever `folder` it is passed.
+- **A contact's company can be changed.** `outlook_create_contact` takes `company` and
+  `outlook_get_contact` returns it, but `outlook_update_contact` could not write it, so a contact
+  who moved to another employer kept the old one unless it was deleted and recreated (#173).
+  `outlook_update_contact` now takes `company` (Graph's `companyName`), changed only when given,
+  like the tool's other fields.
 
 ### Added
 

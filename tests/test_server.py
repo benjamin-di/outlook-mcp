@@ -303,6 +303,58 @@ async def test_wrap_tool_errors_end_to_end_via_mocked_implementation():
     assert "retry" in exc_info.value.action.lower()
 
 
+class TestUpdateContactArgumentOrder:
+    """`server.py` hands `update_contact` its arguments positionally, and `company`,
+    `title` and `job_title` are three neighbouring `str | None` slots (#173). Swapped
+    in one file only, a new employer would land in the name prefix and show up in the
+    display name, the #119 bug again. As in the calendar tests above, these run the
+    real handler behind the real wrapper and assert on the patch that reaches Graph,
+    one value at a time, since a test passing all three would still pass a swap.
+    """
+
+    @staticmethod
+    async def _update(**fields):
+        from unittest.mock import AsyncMock
+
+        from outlook_mcp import server as server_mod
+        from outlook_mcp.config import Config
+
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        sdk = MagicMock()
+        sdk.me.contacts.by_contact_id.return_value = builder
+        client = MagicMock()
+        client.sdk_client = sdk
+
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=Config(client_id="test")),
+        ):
+            await server_mod.outlook_update_contact(MagicMock(), contact_id="AAMkAG123=", **fields)
+        return builder.patch.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_company_alone_lands_in_company_name(self):
+        contact = await self._update(company="Contoso Ltd")
+        assert contact.company_name == "Contoso Ltd"
+        assert contact.title is None
+        assert contact.job_title is None
+
+    @pytest.mark.asyncio
+    async def test_title_alone_lands_in_the_name_prefix(self):
+        contact = await self._update(title="Dr.")
+        assert contact.title == "Dr."
+        assert contact.company_name is None
+        assert contact.job_title is None
+
+    @pytest.mark.asyncio
+    async def test_job_title_alone_lands_in_job_title(self):
+        contact = await self._update(job_title="Engineer")
+        assert contact.job_title == "Engineer"
+        assert contact.company_name is None
+        assert contact.title is None
+
+
 class TestCalendarWriteArgumentOrder:
     """`server.py` hands both calendar write tools their arguments positionally.
 
