@@ -99,19 +99,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     `attachments`, `[{name, content_base64, content_type?}]`, beside `attachment_paths`, which
     becomes optional. Each is limited to 3 MB, Graph's simple-attachment size, so no inline file
     takes the upload-session path. A malformed item, a name that is a path and an unknown key
-    are refused before anything is sent.
+    are refused before anything is sent. A call with neither `attachment_paths` nor
+    `attachments` is refused too: the server ignores an unknown argument, so a misspelt one
+    would otherwise send the mail, or report "attached", with no file. An `attach_to_draft` with
+    an empty list used to succeed with nothing attached; it is refused the same way.
+  - An image comes back as an image only when its bytes open as one, by their signature: a
+    sender can name anything `chart.png`, and some model APIs reject a whole result whose image
+    does not decode. A real image labelled as another image type goes out as what it is.
 
   The fence is unchanged: `resolve_attachment_path` still governs every path argument. An
   inline file is bytes the agent already holds and could already put in a message body, so it
   widens nothing; the caps are there for the model's context. The tool surface grows by 233
-  proxy tokens, to 13,494, so the budget's ceiling is raised deliberately from 13,300 to
-  13,600.
+  proxy tokens, to 13,819 on top of the other contributions this release, so the budget's
+  ceiling is raised deliberately from 13,700 to 14,000.
 
 ### Security
 
 - **The agent is told attachments are written by other people, not only their names.** With
   `as_content`, an attachment's text and images reach the model straight from this server, so
-  the connect-time rule and SKILL.md now name attachments themselves.
+  the connect-time rule and SKILL.md now name attachments themselves. Where only an
+  attachment's name reached the model before, a text attachment's body now does.
 
 ## [1.26.0] — 2026-10-23
 

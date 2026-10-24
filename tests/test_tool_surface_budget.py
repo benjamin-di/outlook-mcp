@@ -93,11 +93,15 @@ CHARS_PER_TOKEN = 4
 # (#175). Six arguments do not fit the ~100 tokens left, so this is a deliberate
 # raise to 13,700: ~0.8% headroom.
 #
-# 13,494 with attachments as content (#129, +233): `as_content` and an optional
-# `save_path` on the two downloads, inline `attachments` and an optional
-# `attachment_paths` on the two mail uploads (+159 in the schemas), and one short
-# sentence each (+74). Four new arguments do not fit the ~39 tokens left, so this is
-# a deliberate raise to 13,600: ~0.8% headroom, room for a wording fix again.
+# 13,605 with attachments as content (#129, +233 on today's main, 13,372):
+# `as_content` and an optional `save_path` on the two downloads, inline
+# `attachments` and an optional `attachment_paths` on the two mail uploads (+159 in
+# the schemas), and one short sentence each (+74). Four new arguments do not fit the
+# ~128 tokens left, so this is a deliberate raise to 13,750: ~1% headroom.
+#
+# 13,819 after rebasing #129 onto main with #174 and #176 (+233 on 13,586).
+# The added contact fields lifted main's ceiling to 13,700; this independent
+# attachment feature needs a deliberate 14,000 ceiling (~1.3% headroom).
 TOOL_SURFACE_CEILING = 14_000
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

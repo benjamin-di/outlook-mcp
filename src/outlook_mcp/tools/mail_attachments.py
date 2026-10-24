@@ -178,6 +178,35 @@ def _make_inline_attachment(file_path: str) -> Any:
     return _file_attachment(os.path.basename(file_path), content, None)
 
 
+def _require_something_to_attach(
+    attachment_paths: list[str] | None, attachments: list[dict] | None, tool: str, remedy: str
+) -> None:
+    """Refuse a call that would attach nothing.
+
+    Both arguments are optional, and the server ignores an unknown top-level
+    argument, so a misspelt one arrives as neither. Without this the mail went
+    out, or the draft reported "attached", with no file: #41's class, a call that
+    succeeds and does nothing.
+    """
+    if not attachment_paths and not attachments:
+        raise ValueError(
+            f"{tool} needs attachment_paths or attachments (inline files); neither was "
+            f"given, so nothing would be attached. {remedy}"
+        )
+
+
+# Twice what 3 MiB encodes to, so line-wrapped base64 under the cap always decodes.
+_INLINE_BASE64_MAX = 2 * 4 * -(-_LARGE_FILE_THRESHOLD // 3)
+
+
+def _over_the_inline_cap(where: str, name: str, size: str) -> ValueError:
+    return ValueError(
+        f"{where} ({name}) is {size} bytes, over the 3 MiB limit for an inline attachment "
+        "(Graph's simple-attachment size). For a larger file, ask the user to put it in "
+        "attachments_dir and pass its path in attachment_paths."
+    )
+
+
 def _inline_attachments(items: list[dict] | None) -> list[Any]:
     """FileAttachments for ``attachments`` (inline content), validated before anything is sent.
 
@@ -187,14 +216,16 @@ def _inline_attachments(items: list[dict] | None) -> list[Any]:
     """
     built = []
     for index, item in enumerate(items or []):
-        name, content_type, content = validate_inline_attachment(item, f"attachments[{index}]")
+        where = f"attachments[{index}]"
+        encoded = item.get("content_base64") if isinstance(item, dict) else None
+        if isinstance(encoded, str) and len(encoded) > _INLINE_BASE64_MAX:
+            # Its length alone puts it far over the cap: refuse before decoding it.
+            name = item.get("name")
+            label = sanitize_output(name.strip()) if isinstance(name, str) else "no name"
+            raise _over_the_inline_cap(where, label, f"about {len(encoded) * 3 // 4}")
+        name, content_type, content = validate_inline_attachment(item, where)
         if len(content) > _LARGE_FILE_THRESHOLD:
-            raise ValueError(
-                f"attachments[{index}] ({name}) is {len(content)} bytes, over the 3 MiB limit "
-                "for an inline attachment (Graph's simple-attachment size). For a larger file, "
-                "ask the user to put it in attachments_dir and pass its path in "
-                "attachment_paths."
-            )
+            raise _over_the_inline_cap(where, name, str(len(content)))
         built.append(_file_attachment(name, content, content_type))
     return built
 
@@ -287,6 +318,19 @@ def _readable_text(media: str, charset: str | None, content: bytes) -> str | Non
     return text
 
 
+def _image_type(content: bytes) -> str | None:
+    """The image type ``content`` opens as, from its signature, among ``_IMAGE_TYPES``."""
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def attachment_content(name: str, content_type: str, content: bytes) -> list[ContentBlock]:
     """An attachment as MCP content (``as_content=True``), never written to disk.
 
@@ -308,8 +352,11 @@ def attachment_content(name: str, content_type: str, content: bytes) -> list[Con
     media, charset = _media_type(content_type, name)
     encoded = base64.b64encode(content).decode()
 
-    if media in _IMAGE_TYPES and len(content) <= _IMAGE_CONTENT_MAX_BYTES:
-        blocks.append(ImageContent(type="image", data=encoded, mime_type=media))
+    # The name and type are the sender's; the bytes decide. Some model APIs reject a
+    # whole result whose image does not decode, so non-image bytes fall through.
+    image = _image_type(content) if media in _IMAGE_TYPES else None
+    if image and len(content) <= _IMAGE_CONTENT_MAX_BYTES:
+        blocks.append(ImageContent(type="image", data=encoded, mime_type=image))
         return blocks
     text = _readable_text(media, charset, content)
     if text is not None:
@@ -477,6 +524,12 @@ async def send_with_attachments(
     which go out like a small file and are never read from or written to disk.
     """
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_send_with_attachments")
+    _require_something_to_attach(
+        attachment_paths,
+        attachments,
+        "outlook_send_with_attachments",
+        "For a message with no attachment, use outlook_send_message.",
+    )
 
     # Validate emails
     validated_to = [validate_email(e) for e in to]
@@ -613,6 +666,13 @@ async def attach_to_draft(
     """
     check_permission(config, CATEGORY_MAIL_DRAFTS, "outlook_attach_to_draft")
     draft_id = validate_graph_id(draft_id)
+    _require_something_to_attach(
+        attachment_paths,
+        attachments,
+        "outlook_attach_to_draft",
+        "Check the argument names: attachment_paths takes file paths, attachments takes "
+        "{name, content_base64} items.",
+    )
 
     # Confine every path before touching the filesystem, then validate existence.
     attachment_paths = [

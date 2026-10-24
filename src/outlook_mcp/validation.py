@@ -558,6 +558,13 @@ def validate_inline_attachment(item: object, where: str) -> tuple[str, str | Non
         raise ValueError(
             f"{where} needs a name: a non-empty file name on one line, without control characters."
         )
+    name = name.strip()
+    if name in {".", ".."}:
+        raise ValueError(f"{where} name {name!r} is not a file name.")
+    if len(name) > 255:
+        raise ValueError(
+            f"{where} name is {len(name)} characters long; a file name takes at most 255."
+        )
     if "/" in name or "\\" in name:
         raise ValueError(
             f"{where} name {name!r} is a path. It is only the attachment's file name and reads "
