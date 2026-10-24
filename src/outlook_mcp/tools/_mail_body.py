@@ -35,13 +35,15 @@ _BLANK_LINE = re.compile(r"\n[ \t]*\n")
 _MD_BULLET = re.compile(r"^\s*[-*+]\s+(\S.*)$")
 _MD_NUMBERED = re.compile(r"^\s*(\d{1,9})[.)]\s+(\S.*)$")
 # Markdown's inline marks, tried in this order at each position: a backslash
-# escape, a code span, a link, bold, italic. No mark's text can hold its own
-# closing mark, so a line is scanned in linear time whatever it holds. Underscores
-# are not emphasis here: snake_case names are common in mail an agent writes.
+# escape, a code span, a link (an image's leading "!" taken with it, so the image
+# becomes a link rather than "!" and a link), bold, italic. No mark's text can hold
+# its own closing mark, so a line is scanned in linear time whatever it holds.
+# Underscores are not emphasis here: snake_case names are common in mail an agent
+# writes.
 _MD_INLINE = re.compile(
     r"\\(?P<esc>[\\`*_\[\]()#+.!>-])"
     r"|`(?P<code>[^`\n]+)`"
-    r"|\[(?P<label>[^\[\]\n]+)\]\((?P<url>[^()\s]+)\)"
+    r"|!?\[(?P<label>[^\[\]\n]+)\]\((?P<url>[^()\s]+)\)"
     r"|\*\*(?P<bold>[^\s*](?:(?:[^*\n]|\*(?!\*))*[^\s*])?)\*\*"
     r"|(?<![\w*])\*(?P<em>[^\s*](?:[^\n*]*?[^\s*])?)\*(?![\w*])"
 )
@@ -88,7 +90,8 @@ def markdown_to_html(text: str) -> str:
     Paragraphs and line breaks as in :func:`text_to_html` (a single line break
     stays one, as in the text), ``-``/``*``/``+`` and numbered lists, ``**bold**``,
     ``*italic*``, ``[text](url)`` links to ``https:`` and ``mailto:`` addresses
-    only, ``code`` spans and backslash escapes. No raw HTML passes through:
+    only (an image, ``![alt](url)``, becomes a link to it with ``alt`` as its
+    text), ``code`` spans and backslash escapes. No raw HTML passes through:
     ``<b>`` is shown, not applied, and so is a link to any other scheme.
     """
     text = text.replace("\r\n", "\n").replace("\r", "\n")

@@ -173,6 +173,20 @@ class TestMarkdownToHtml:
             assert "<a" not in out, out
             assert out.startswith("<p>[x](") and out.endswith(")</p>"), out
 
+    def test_an_image_becomes_a_link_without_its_bang(self):
+        """`![alt](url)` would otherwise read as "!" and a link."""
+        assert markdown_to_html("See ![the chart](https://example.com/c.png).") == (
+            '<p>See <a href="https://example.com/c.png">the chart</a>.</p>'
+        )
+        # Anything that is not a link stays as written, its "!" too.
+        assert markdown_to_html("![x](http://example.com/c.png) and ![](https://e.com)") == (
+            "<p>![x](http://example.com/c.png) and ![](https://e.com)</p>"
+        )
+        # An escaped "!" is text, and the link after it still a link.
+        assert markdown_to_html("Hi\\![x](https://example.com)") == (
+            '<p>Hi!<a href="https://example.com">x</a></p>'
+        )
+
     def test_a_link_address_cannot_break_out_of_its_attribute(self):
         assert markdown_to_html('[x](https://example.com/"onmouseover="a)') == (
             '<p><a href="https://example.com/&quot;onmouseover=&quot;a">x</a></p>'
