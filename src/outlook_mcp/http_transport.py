@@ -34,8 +34,8 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import os
-import stat
 import re
+import stat
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -110,7 +110,8 @@ def _allowed_hosts(environ: Mapping[str, str]) -> tuple[str, ...]:
             r"(?:\[[0-9a-f:.]+\]|[a-z0-9][a-z0-9.-]*)(?::(?:[0-9]{1,5}|\*))?", host
         ):
             raise ValueError(
-                f"{ALLOWED_HOSTS_ENV} needs comma-separated hostnames or IPs, optionally with a port; no URLs."
+                f"{ALLOWED_HOSTS_ENV} needs comma-separated hostnames or IPs, "
+                "optionally with a port; no URLs."
             )
         port = (
             host.rpartition(":")[2]
@@ -174,7 +175,9 @@ def _token(value: str) -> str:
     if token and (not _TOKEN_SHAPE.fullmatch(token) or len(set(token.rstrip("="))) < 8):
         raise ValueError(
             f"{TOKEN_ENV} is not usable. A token needs at least 32 characters from A-Z, "
-            f"a-z, 0-9 and -._~+/, with at least 8 distinct characters. This rejects obvious low-variety values, not all predictable tokens. Generate one with: "
+            "a-z, 0-9 and -._~+/, with at least 8 distinct characters. "
+            "This rejects obvious low-variety values, not all predictable tokens. "
+            "Generate one with: "
             f"{_TOKEN_RECIPE}"
         )
     return token
