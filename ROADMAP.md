@@ -75,7 +75,7 @@ For the population installing this from the MCP registry, not for Neo. stdio sta
 - ~~**`tools/list` caching** — SEP-2549 `ttlMs` / `cacheScope`~~ — ✅ shipped in v1.20.0. The precondition landed: `mcp` 2.1.1 emits both fields and `MCPServer(cache_hints=...)` sets them. Five minutes, private.
 - **Cross-provider / multi-account** — a competing server already unifies M365 + Outlook.com + Google in one MCP. Several mailboxes are already served by one process per account (`OUTLOOK_MCP_CONFIG_DIR`); anything beyond that is new design. Real but new; secondary to Tier 0.
 
-**Caveat:** several Tier-1 surfaces are release-candidate / draft spec (statelessness RC, SEP-2549) — don't build against them until Claude / Cursor / OpenClaw actually honor them.
+**Caveat:** several Tier-1 surfaces are release-candidate / draft spec (SEP-2549) — don't build against them until Claude / Cursor / OpenClaw actually honor them. The stateless HTTP transport above is not one of them: it uses nothing beyond the released spec.
 
 ### Tier 2 — deferred (hosting- or client-gated; revisit when the precondition lands)
 - **Change-notification webhooks** as the delta trigger (near-real-time, avoids polling/throttling) — needs a public HTTPS endpoint; N/A for stdio/local. Rich-mode notifications carry the changed object inline (a token lever) but need an encryption cert. Recommended end-state is delta-tokens **+** webhooks.
