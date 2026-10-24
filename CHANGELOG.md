@@ -29,6 +29,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   that ends past 250 carries `incomplete`: older matches may be missing, and adding
   `received<=` with the last message's date reaches them.
 
+- **Oversized inline attachment input is refused before whitespace normalization** (#129).
+  The exact decoded-size check remains, preceded by a cheap raw-length bound so a
+  whitespace-heavy argument cannot allocate a large split list before being refused.
+
 ### Changed
 
 - **Where Graph honours the filter, `outlook_changes_since` follows mail received since its
