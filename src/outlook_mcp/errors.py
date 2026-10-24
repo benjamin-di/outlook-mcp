@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from mcp.server.mcpserver.exceptions import ToolError
+
+if TYPE_CHECKING:
+    import httpx
 
 # Closes every refusal that names a setting. These strings reach the model, and
 # the clients this server runs under give the agent file tools: a refusal that
@@ -349,6 +354,13 @@ _HINT_TABLE: dict[tuple[int, str | None], str] = {
         "Rate limited by Microsoft Graph. Back off and retry; respect any Retry-After header."
     ),
     (503, None): ("Microsoft Graph is temporarily unavailable. Retry after a short delay."),
+    # Only a delta cursor gets a 410: Graph no longer holds the sync state it
+    # names (syncStateNotFound), because it aged out of Graph's cache or the sync
+    # was reset. No retry brings it back, so the exit is a fresh sync.
+    (410, None): (
+        "The sync state this delta_token points to is gone (it expired or was reset). "
+        "Discard the cursor and start a fresh sync by calling again with no delta_token."
+    ),
 }
 
 
@@ -421,4 +433,71 @@ def wrap_graph_error(exc: Exception) -> GraphAPIError:
         error_code,
         message,
         action=hint,
+    )
+
+
+def wrap_http_status_error(exc: Exception) -> GraphAPIError:
+    """Convert a raw-httpx ``HTTPStatusError`` into a ``GraphAPIError``.
+
+    The delta tools and ``outlook_read_messages`` reach Graph through httpx,
+    not the SDK, so a refusal there arrives as ``httpx.HTTPStatusError``.
+    ``wrap_graph_error`` does not recognise it, and the MCP SDK reports any
+    unrecognised exception to the model as a bare ``Error executing tool
+    <name>``. Graph's error body has the same ``{"error": {"code", "message"}}``
+    shape on both paths, so this returns what the SDK path would, hint included.
+
+    Built from the status and the body only. ``str(exc)`` names the request
+    URL, and on the delta paths that URL is the caller's cursor.
+    """
+    response = exc.response  # type: ignore[attr-defined]
+    status_code: int = response.status_code
+
+    try:
+        body = response.json()
+    except ValueError:  # a gateway's HTML page, or no body at all
+        body = None
+    error = body.get("error") if isinstance(body, dict) else None
+
+    error_code: str | None = None
+    message: str | None = None
+    if isinstance(error, dict):
+        if isinstance(error.get("code"), str) and error["code"]:
+            error_code = error["code"]
+        if isinstance(error.get("message"), str) and error["message"]:
+            message = error["message"]
+
+    error_code = error_code or "UnknownError"
+    message = message or f"Graph API error (status {status_code})"
+    return GraphAPIError(
+        status_code, error_code, message, action=_lookup_hint(status_code, error_code)
+    )
+
+
+def graph_json(response: httpx.Response) -> dict[str, Any]:
+    """Read a raw-httpx Graph reply: the JSON object it carries, or ``GraphAPIError``.
+
+    For the paths that reach Graph without the SDK (delta and ``$batch``),
+    after ``raise_for_status()``. A bare ``response.json()`` raises
+    ``JSONDecodeError`` (or ``UnicodeDecodeError`` for bytes that are not
+    UTF-8), both ``ValueError``s, which ``_wrap_tool_errors`` reports as the
+    caller's invalid input; and JSON that is not an object fails on its first
+    ``.get()`` as a crash. Neither is a mistake in the arguments, and the reply
+    may not be Graph's at all.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict):
+        return body
+    status_code = response.status_code
+    raise GraphAPIError(
+        status_code,
+        "UnreadableResponse",
+        f"The reply (HTTP {status_code}) was not a JSON object, so it could not be read "
+        "as a Microsoft Graph response.",
+        action=(
+            "Retry after a short delay. If it keeps happening, something between this "
+            "server and Microsoft Graph, such as a proxy, may be answering in its place."
+        ),
     )

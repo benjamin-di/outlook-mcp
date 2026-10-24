@@ -139,6 +139,22 @@ def _is_consent_dead_end(exc: BaseException) -> bool:
     return _AADSTS70000_MARKER in str(exc)
 
 
+def error_for_failed_refresh(exc: BaseException) -> OutlookMCPError:
+    """The error a token refresh that fails mid-session surfaces as.
+
+    Startup (``try_cached_token``) sorts a failed refresh with the same two
+    checks, and this gives each outcome the same remedy: the cache cannot be
+    stored safely, the session can never grant the scopes (AADSTS70000), or
+    the sign-in has simply lapsed (a revoked or idle-expired refresh token,
+    or azure-identity asking for interaction), which `outlook-mcp auth` fixes.
+    """
+    if _is_azure_unencrypted_refusal(exc):
+        return UnencryptedTokenCacheError()
+    if _is_consent_dead_end(exc):
+        return StaleConsentError()
+    return AuthRequiredError()
+
+
 # The Graph SDK always requests .default scope internally, so silent refresh
 # must acquire and cache tokens under the same scope — it is the cache key the
 # SDK's calls land on. On a session that already consented concrete scopes,
