@@ -144,6 +144,13 @@ CHARS_PER_TOKEN = 4
 #
 # 14,210 after clarifying that stored token dictionaries must be replaced,
 # not merged (+5); still covered by the 14,350 ceiling.
+#
+# 13,662 with include_sender_auth on the two read tools (#130, +76 on main
+# at 13,586). The existing 13,700 ceiling covers the optional authentication
+# field; guidance is in INSTRUCTIONS, paid once per session.
+#
+# 14,272 with sender authentication on current main (14,197); the existing
+# 14,350 ceiling covers the opt-in read without a raise.
 TOOL_SURFACE_CEILING = 14_350
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
