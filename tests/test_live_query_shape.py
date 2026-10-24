@@ -303,9 +303,11 @@ async def test_search_rejects_query_that_sanitizes_to_empty(real_graph_client):
         await search_mail(real_graph_client.sdk_client, query="*", count=5)
 
 
-# ── $search paging: Graph pages a search by $skiptoken ──
-# The failure is silent. No typed request builder has a `$skiptoken` field, so
-# a cursor that loses the token fetches page one again with has_more still true.
+# ── $search paging: Graph pages by $skiptoken, and stops a little past 250 ──
+# Both failure modes are silent. No typed request builder has a `$skiptoken`
+# field, so a cursor that loses the token fetches page one again with has_more
+# still true. And Graph ends a long search with no nextLink and no error, which
+# reads exactly like the end of a complete one.
 
 # Matches every message, so the result size is the folder's size.
 _SEARCH_EVERYTHING = "received>=2000-01-01"
@@ -333,6 +335,54 @@ async def test_search_cursor_moves_to_the_next_page(real_graph_client, folder):
         f"page two repeated {len(repeated)} of page one's {len(seen)} messages: the "
         "$skiptoken did not reach Graph"
     )
+
+
+async def test_a_search_graph_cut_short_says_so(real_graph_client):
+    """Walk a search of the whole Inbox to its end and hold it to the Inbox's own count.
+
+    The folder's `totalItemCount` is the answer key: Graph counts it without
+    searching. On an Exchange Online mailbox Graph stopped every search at 275
+    (255-275 by page size), so an Inbox past 300 messages always ends short and
+    the last page must say so. The other direction is a claim about the
+    constant: if Graph returns all of an Inbox past 300 and the tool still says
+    `incomplete`, this account type's limit is not just past 250, and
+    `SEARCH_STOPS_AFTER` needs its number. The 300 margin keeps a few messages
+    the index has not caught up with from deciding either way.
+    """
+    from outlook_mcp.tools.mail_read import SEARCH_STOPS_AFTER
+
+    client = real_graph_client.sdk_client
+    inbox = await client.me.mail_folders.by_mail_folder_id("inbox").get()
+    total = inbox.total_item_count or 0
+    if total <= 300:
+        pytest.skip(f"the Inbox holds {total} messages, too few to reach Graph's search limit")
+
+    ids: set[str] = set()
+    walked, cursor = 0, None
+    for _ in range(15):  # 1,500 results, bounded; Graph's documentation says up to 1,000
+        page = await search_mail(
+            client, query=_SEARCH_EVERYTHING, count=100, folder="inbox", cursor=cursor
+        )
+        walked += page["count"]
+        ids.update(m["id"] for m in page["messages"])
+        cursor = page["cursor"]
+        if cursor is None:
+            break
+    else:
+        pytest.skip(f"Graph was still paging after {walked} results: no limit to observe here")
+
+    assert len(ids) == walked, f"the walk returned {walked} results but only {len(ids)} ids"
+    if walked < total:
+        assert "incomplete" in page, (
+            f"Graph ended the search at {walked} of the Inbox's {total} messages and the "
+            "tool said nothing, so a caller takes the result as complete"
+        )
+    else:
+        assert "incomplete" not in page, (
+            f"Graph returned all {total} Inbox messages and the tool still called the "
+            f"search incomplete: this account type's limit is not just past "
+            f"{SEARCH_STOPS_AFTER}, so SEARCH_STOPS_AFTER needs its number"
+        )
 
 
 # ── contacts: what $select actually brings back ──
