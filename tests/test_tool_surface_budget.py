@@ -80,6 +80,13 @@ CHARS_PER_TOKEN = 4
 # date, YYYY-MM-DD. `outlook_get_contact` already returned it; nothing could write
 # it. Two arguments do not fit the ~39 tokens left, so this is a deliberate raise to
 # 13,500: ~1% headroom, as before.
+#
+# 13,337 with `include_sender_auth` on `outlook_read_message` and
+# `outlook_read_messages` and the read tool's one-line description of it (+76):
+# the agent could not tell a spoofed From line from a real one (#130). The
+# guidance on when to use it is in INSTRUCTIONS, paid once per session. That is
+# 37 over 13,300, so the ceiling rises to 13,400: deliberate, for a security
+# field, and ~63 tokens of headroom.
 TOOL_SURFACE_CEILING = 13_500
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow

@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 import httpx
 
+from outlook_mcp import sender_auth
 from outlook_mcp.errors import graph_json
 from outlook_mcp.folder_resolver import (
     fetch_all_child_folders,
@@ -63,6 +64,20 @@ def _concise_summary(summary: dict) -> dict:
 SUMMARY_SELECT = (
     "id,subject,from,receivedDateTime,isRead,importance,"
     "bodyPreview,hasAttachments,categories,flag,conversationId,inferenceClassification"
+)
+
+
+# The read tools' `$select` for `include_sender_auth` (#130). Graph returns
+# `internetMessageHeaders` only when `$select` names it, and once `$select` names
+# anything Graph returns only what it names, so this names every property the
+# read formatters read as well. It is sent only on that opt-in: the default read sends
+# no `$select` and stays exactly what it was. `attachments` is not here: it is a
+# relationship, which Graph returns only for `$expand`, and the default read does
+# not expand it either. `test_select_covers_the_formatter.py` pins the list
+# against both formatters.
+_SENDER_AUTH_SELECT = (
+    "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,isRead,"
+    "importance,hasAttachments,categories,flag,conversationId,internetMessageHeaders"
 )
 
 
@@ -227,7 +242,12 @@ async def list_inbox(
 
 
 def _format_read_message_from_sdk(
-    msg: Any, format: str, concise: bool, deferred_value: str | None, include_deferred_send: bool
+    msg: Any,
+    format: str,
+    concise: bool,
+    deferred_value: str | None,
+    include_deferred_send: bool,
+    include_sender_auth: bool = False,
 ) -> dict:
     """Build the ``read_message`` wire shape from an SDK ``Message`` object.
 
@@ -317,11 +337,19 @@ def _format_read_message_from_sdk(
     if include_deferred_send:
         result["deferred_send_datetime"] = deferred_value
 
+    if include_sender_auth:
+        headers = [(h.name or "", h.value or "") for h in msg.internet_message_headers or []]
+        result["sender_authentication"] = sender_auth.sender_authentication(headers, from_addr)
+
     return result
 
 
 def _format_read_message_from_raw(
-    raw: dict, format: str, concise: bool, include_deferred_send: bool
+    raw: dict,
+    format: str,
+    concise: bool,
+    include_deferred_send: bool,
+    include_sender_auth: bool = False,
 ) -> dict:
     """Build the ``read_message`` wire shape from a raw Graph JSON dict.
 
@@ -419,6 +447,13 @@ def _format_read_message_from_raw(
                 break
         result["deferred_send_datetime"] = deferred_value
 
+    if include_sender_auth:
+        headers = [
+            ((h or {}).get("name") or "", (h or {}).get("value") or "")
+            for h in raw.get("internetMessageHeaders") or []
+        ]
+        result["sender_authentication"] = sender_auth.sender_authentication(headers, from_addr)
+
     return result
 
 
@@ -477,6 +512,7 @@ async def read_message(
     format: str = "text",
     include_deferred_send: bool = False,
     concise: bool = False,
+    include_sender_auth: bool = False,
 ) -> dict:
     """Read a single message by ID, or by its Message-ID (see ``resolve_message_id``).
 
@@ -489,6 +525,10 @@ async def read_message(
     and surface a single-line ``body_preview`` (first 200 chars, whitespace
     collapsed). Headers (from/to/cc/subject/received/importance/...) are
     preserved. Default False keeps the existing shape.
+
+    Pass ``include_sender_auth=True`` to add ``sender_authentication``,
+    Microsoft's verdict on the From domain (``sender_auth``). It selects
+    ``internetMessageHeaders``, which Graph returns only when asked for.
     """
     message_id = await resolve_message_id(graph_client, message_id)
 
@@ -523,6 +563,8 @@ async def read_message(
             f"?$expand=singleValueExtendedProperties("
             f"$filter={encoded_filter})"
         )
+        if include_sender_auth:
+            raw_url += f"&$select={_SENDER_AUTH_SELECT}"
 
         info = RequestInformation()
         info.http_method = Method.GET
@@ -546,15 +588,29 @@ async def read_message(
             if (prop.id or "").lower() == target:
                 deferred_value = prop.value
                 break
+    elif include_sender_auth:
+        from msgraph.generated.users.item.messages.item.message_item_request_builder import (
+            MessageItemRequestBuilder,
+        )
+
+        req_config = build_request_config(
+            MessageItemRequestBuilder.MessageItemRequestBuilderGetQueryParameters,
+            {"$select": _SENDER_AUTH_SELECT},
+        )
+        msg = await graph_client.me.messages.by_message_id(message_id).get(
+            request_configuration=req_config
+        )
     else:
         msg = await graph_client.me.messages.by_message_id(message_id).get()
 
     return _format_read_message_from_sdk(
-        msg, format, concise, deferred_value, include_deferred_send
+        msg, format, concise, deferred_value, include_deferred_send, include_sender_auth
     )
 
 
-def _build_read_subrequest_url(message_id: str, include_deferred_send: bool) -> str:
+def _build_read_subrequest_url(
+    message_id: str, include_deferred_send: bool, include_sender_auth: bool = False
+) -> str:
     """Build the per-sub-request URL path for ``read_messages``.
 
     Matches what ``read_message`` requests:
@@ -563,17 +619,20 @@ def _build_read_subrequest_url(message_id: str, include_deferred_send: bool) -> 
     - ``include_deferred_send=True``: adds the singleValueExtendedProperties
       expansion filtered to ``PR_DEFERRED_SEND_TIME``, same as the raw URL
       ``read_message`` builds via Kiota's ``RAW_URL_KEY`` path.
+    - ``include_sender_auth=True``: adds ``$select=_SENDER_AUTH_SELECT``.
     """
     safe_id = quote(message_id, safe="")
-    if not include_deferred_send:
-        return f"/me/messages/{safe_id}"
+    query = []
+    if include_deferred_send:
+        from outlook_mcp.tools.mail_drafts import _PR_DEFERRED_SEND_TIME_ID
 
-    from outlook_mcp.tools.mail_drafts import _PR_DEFERRED_SEND_TIME_ID
-
-    filter_expr = f"id eq '{_PR_DEFERRED_SEND_TIME_ID}'"
-    # Match ``read_message``: keep ``= '`` literal, percent-encode the rest.
-    encoded_filter = quote(filter_expr, safe="= '")
-    return f"/me/messages/{safe_id}?$expand=singleValueExtendedProperties($filter={encoded_filter})"
+        filter_expr = f"id eq '{_PR_DEFERRED_SEND_TIME_ID}'"
+        # Match ``read_message``: keep ``= '`` literal, percent-encode the rest.
+        encoded_filter = quote(filter_expr, safe="= '")
+        query.append(f"$expand=singleValueExtendedProperties($filter={encoded_filter})")
+    if include_sender_auth:
+        query.append(f"$select={_SENDER_AUTH_SELECT}")
+    return f"/me/messages/{safe_id}" + ("?" + "&".join(query) if query else "")
 
 
 async def read_messages(
@@ -582,6 +641,7 @@ async def read_messages(
     format: str = "text",
     concise: bool = False,
     include_deferred_send: bool = False,
+    include_sender_auth: bool = False,
 ) -> dict:
     """Read up to 20 messages by ID in a single Graph ``$batch`` round-trip.
 
@@ -604,6 +664,9 @@ async def read_messages(
         include_deferred_send: When True, fetch the
             PR_DEFERRED_SEND_TIME extended property on each message and
             surface it as ``deferred_send_datetime``.
+        include_sender_auth: When True, select each message's
+            ``internetMessageHeaders`` and surface Microsoft's verdict on its
+            From domain as ``sender_authentication``.
 
     Returns:
         ``{messages, failures, requested, succeeded, failed}`` where
@@ -632,7 +695,7 @@ async def read_messages(
             {
                 "id": str(i),
                 "method": "GET",
-                "url": _build_read_subrequest_url(mid, include_deferred_send),
+                "url": _build_read_subrequest_url(mid, include_deferred_send, include_sender_auth),
             }
         )
 
@@ -688,7 +751,9 @@ async def read_messages(
 
         if 200 <= status < 300:
             messages.append(
-                _format_read_message_from_raw(body, format, concise, include_deferred_send)
+                _format_read_message_from_raw(
+                    body, format, concise, include_deferred_send, include_sender_auth
+                )
             )
         else:
             err = body.get("error") or {}

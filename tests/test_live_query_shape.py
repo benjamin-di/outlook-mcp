@@ -45,13 +45,14 @@ import pytest
 from msgraph.generated.models.event_type import EventType
 from msgraph.generated.models.free_busy_status import FreeBusyStatus
 
+from outlook_mcp.sender_auth import NO_FROM, NO_HEADER, UNREADABLE
 from outlook_mcp.tools._delta import parse_graph_datetime, require_graph_url
 from outlook_mcp.tools.calendar_delta import list_events_delta
 from outlook_mcp.tools.calendar_read import list_events
 from outlook_mcp.tools.contacts import list_contacts, search_contacts
 from outlook_mcp.tools.contacts_delta import list_contacts_delta
 from outlook_mcp.tools.mail_delta import list_inbox_delta
-from outlook_mcp.tools.mail_read import list_inbox, search_mail
+from outlook_mcp.tools.mail_read import list_inbox, read_message, read_messages, search_mail
 from outlook_mcp.tools.mail_thread import list_thread
 from outlook_mcp.tools.todo import get_task, list_tasks
 
@@ -891,3 +892,47 @@ async def test_get_task_checklist_expand_is_accepted(real_graph_client):
     assert [(i["is_checked"], i["created"]) for i in again["checklist_items"]] == [
         (i["is_checked"], i["created"]) for i in items
     ]
+
+
+# ── #130: the opt-in read's $select ──
+# Once `$select` names anything, Graph returns only what it names. A field the
+# opt-in select forgot would come back empty only for a caller who asked for
+# sender authentication, and a mock returns whatever it is handed.
+
+
+async def test_the_sender_auth_read_returns_what_the_default_read_does(real_graph_client):
+    page = await list_inbox(real_graph_client.sdk_client, count=5, concise=True)
+    if not page["messages"]:
+        pytest.skip("Mailbox inbox is empty — nothing to read")
+    for summary in page["messages"]:
+        default = await read_message(real_graph_client.sdk_client, summary["id"])
+        opted_in = await read_message(
+            real_graph_client.sdk_client, summary["id"], include_sender_auth=True
+        )
+        opted_in.pop("sender_authentication")
+        assert opted_in == default
+
+
+async def test_microsofts_own_header_parses_on_real_mail(real_graph_client):
+    """Microsoft's stamp always parses; a reading of `unreadable` is a gap in the parser.
+
+    Also checks the `$batch` path selects the same headers: its sub-request URLs
+    carry the `$select` as text, where the single read goes through kiota.
+    """
+    page = await list_inbox(real_graph_client.sdk_client, count=10, concise=True)
+    ids = [m["id"] for m in page["messages"]]
+    if not ids:
+        pytest.skip("Mailbox inbox is empty — nothing to read")
+    single = [
+        (await read_message(real_graph_client.sdk_client, i, include_sender_auth=True))[
+            "sender_authentication"
+        ]
+        for i in ids
+    ]
+    batched = await read_messages(real_graph_client, ids, include_sender_auth=True)
+    assert [m["sender_authentication"] for m in batched["messages"]] == single
+
+    reasons = [v["reason"] for v in single]
+    assert UNREADABLE not in reasons, reasons
+    if all(r in (NO_HEADER, NO_FROM) for r in reasons):
+        pytest.skip(f"none of the newest {len(ids)} messages carries Microsoft's header")
