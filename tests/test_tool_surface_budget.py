@@ -96,6 +96,10 @@ CHARS_PER_TOKEN = 4
 # 13,594 after the digest describes has_more and preserving the whole token
 # dictionary (#156, +8 on main at 13,586). The ignored-filter fallback and
 # bootstrap context add response metadata, not schema fields. No ceiling raise.
+#
+# 13,662 with include_sender_auth on the two read tools (#130, +76 on main
+# at 13,586). The existing 13,700 ceiling covers the optional authentication
+# field; guidance is in INSTRUCTIONS, paid once per session.
 TOOL_SURFACE_CEILING = 13_700
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
