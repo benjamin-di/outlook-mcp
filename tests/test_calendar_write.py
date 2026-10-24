@@ -1301,7 +1301,8 @@ class TestEventTimezone:
             config=_CFG_LA,
         )
 
-        assert "request_configuration" not in builder.patch.call_args.kwargs
+        config_sent = builder.patch.call_args.kwargs["request_configuration"]
+        assert not config_sent.headers.get("If-Match")
 
     @pytest.mark.parametrize(
         "change",

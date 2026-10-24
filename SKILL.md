@@ -24,7 +24,7 @@ Provides AI agents with full access to mail, calendar, contacts, and tasks via M
 
 ## Agent-friendly
 
-Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`, `outlook_read_messages`, `outlook_search_mail`, `outlook_list_events`, `outlook_list_thread`) to drop large body fields — ~10× fewer tokens for triage scans. Graph errors come back as tool errors whose text carries Graph's message and a recovery hint (re-auth on 401, ROADMAP link on 403/ErrorAccessDenied, re-list on 404, back-off on 429, retry on 503). v1.9.1 docstring audit: every `@mcp.tool()` docstring rewritten to a consistent shape with contrastive pointers for ambiguous pairs and concrete syntax examples, designed to reduce wrong-tool selection by LLMs.
+Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`, `outlook_read_messages`, `outlook_search_mail`, `outlook_list_events`, `outlook_list_thread`) to drop large body fields — ~10× fewer tokens for triage scans. Graph errors come back as tool errors whose text carries Graph's message and a recovery hint (re-auth on 401, ROADMAP link on 403/ErrorAccessDenied, re-list on 404, back-off on 429, retry on 503). The exception is a 5xx from a tool that can email someone (mail, an invitation, an event update, an RSVP): it may already have gone through, so check Sent Items or the calendar before calling it again. v1.9.1 docstring audit: every `@mcp.tool()` docstring rewritten to a consistent shape with contrastive pointers for ambiguous pairs and concrete syntax examples, designed to reduce wrong-tool selection by LLMs.
 
 ## Important
 

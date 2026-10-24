@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from outlook_mcp.config import Config
-from outlook_mcp.errors import LEAVE_SETTINGS_TO_THE_USER
+from outlook_mcp.errors import LEAVE_SETTINGS_TO_THE_USER, MESSAGE_MAY_HAVE_BEEN_SENT
 from outlook_mcp.permissions import (
     CATEGORY_MAIL_DRAFTS,
     CATEGORY_MAIL_SEND,
     check_permission,
 )
+from outlook_mcp.throttle import call_without_replay
 from outlook_mcp.tools.mail_drafts import require_draft
 from outlook_mcp.validation import sanitize_output, validate_email, validate_graph_id
 
@@ -388,7 +389,10 @@ async def send_with_attachments(
         request_body.message = msg
         request_body.save_to_sent_items = True
 
-        await graph_client.me.send_mail.post(request_body)
+        await call_without_replay(
+            lambda once: graph_client.me.send_mail.post(request_body, request_configuration=once),
+            outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
+        )
     else:
         # Has large files — create draft, attach via upload sessions, then send
         from msgraph.generated.models.attachment_item import AttachmentItem
@@ -423,7 +427,11 @@ async def send_with_attachments(
             await _upload_large_file(session.upload_url, file_path, file_size)
 
         # Send the draft
-        await graph_client.me.messages.by_message_id(draft.id).send.post()
+        send_builder = graph_client.me.messages.by_message_id(draft.id).send
+        await call_without_replay(
+            lambda once: send_builder.post(request_configuration=once),
+            outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
+        )
 
     return {
         "status": "sent",
