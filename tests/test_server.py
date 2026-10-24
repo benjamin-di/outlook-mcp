@@ -354,6 +354,68 @@ class TestUpdateContactArgumentOrder:
         assert contact.company_name is None
         assert contact.title is None
 
+    @pytest.mark.asyncio
+    async def test_middle_name_alone_lands_in_middle_name(self):
+        contact = await self._update(middle_name="Quincy")
+        assert contact.middle_name == "Quincy"
+        assert contact.personal_notes is None
+        assert contact.given_name is None
+
+    @pytest.mark.asyncio
+    async def test_personal_notes_alone_land_in_personal_notes(self):
+        contact = await self._update(personal_notes="Met at the fair")
+        assert contact.personal_notes == "Met at the fair"
+        assert contact.middle_name is None
+
+    @pytest.mark.asyncio
+    async def test_categories_alone_land_in_categories(self):
+        contact = await self._update(categories=["Suppliers"])
+        assert contact.categories == ["Suppliers"]
+        assert contact.personal_notes is None
+
+
+class TestCreateContactArgumentOrder:
+    """The same positional hand-off on create: `middle_name` and `personal_notes`
+    are neighbouring `str | None` slots after `birthday`, and a swap would file a
+    note as a name, or a name as a note, with nothing raised."""
+
+    @staticmethod
+    async def _create(**fields):
+        from unittest.mock import AsyncMock
+
+        from outlook_mcp import server as server_mod
+        from outlook_mcp.config import Config
+
+        sdk = MagicMock()
+        sdk.me.contacts.post = AsyncMock(return_value=MagicMock(id="C1"))
+        client = MagicMock()
+        client.sdk_client = sdk
+
+        with (
+            patch.object(server_mod, "_get_graph_client", return_value=client),
+            patch.object(server_mod, "_get_config", return_value=Config(client_id="test")),
+        ):
+            await server_mod.outlook_create_contact(MagicMock(), first_name="Jane", **fields)
+        return sdk.me.contacts.post.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_middle_name_alone_lands_in_middle_name(self):
+        contact = await self._create(middle_name="Quincy")
+        assert contact.middle_name == "Quincy"
+        assert contact.personal_notes is None
+
+    @pytest.mark.asyncio
+    async def test_personal_notes_alone_land_in_personal_notes(self):
+        contact = await self._create(personal_notes="Met at the fair")
+        assert contact.personal_notes == "Met at the fair"
+        assert contact.middle_name is None
+
+    @pytest.mark.asyncio
+    async def test_categories_alone_land_in_categories(self):
+        contact = await self._create(categories=["Suppliers"])
+        assert contact.categories == ["Suppliers"]
+        assert contact.personal_notes is None
+
 
 class TestCalendarWriteArgumentOrder:
     """`server.py` hands both calendar write tools their arguments positionally.
