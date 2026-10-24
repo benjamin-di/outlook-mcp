@@ -1441,20 +1441,25 @@ async def outlook_list_drafts(
 @_wrap_tool_errors
 async def outlook_create_draft(
     ctx: Context,
-    to: list[str],
-    subject: str,
     body: str,
+    to: list[str] | None = None,
+    subject: str | None = None,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
     is_html: bool = False,
     importance: str = "normal",
     reply_to: list[str] | None = None,
     deferred_send_datetime: str | None = None,
+    reply_to_message_id: str | None = None,
+    reply_all: bool = False,
+    forward_message_id: str | None = None,
 ) -> dict:
     """Create a draft email for later review/send (pair with outlook_send_draft).
 
     Use this when a human should review before sending; use outlook_send_message to send
     immediately without review.
+    reply_to_message_id (reply_all=True for all) or forward_message_id drafts in that thread,
+    quoting the original; on a reply, Graph fills to/cc/subject.
     Pass deferred_send_datetime (ISO 8601, e.g. "2026-05-06T08:00:00Z") to schedule delayed
     delivery — Exchange holds the message server-side after outlook_send_draft.
     Pass reply_to to pre-populate the Reply-To header.
@@ -1472,6 +1477,9 @@ async def outlook_create_draft(
         importance,
         reply_to=reply_to,
         deferred_send_datetime=deferred_send_datetime,
+        reply_to_message_id=reply_to_message_id,
+        reply_all=reply_all,
+        forward_message_id=forward_message_id,
         config=config,
     )
 

@@ -110,6 +110,13 @@ CHARS_PER_TOKEN = 4
 # 13,819 after rebasing #129 onto main with #174 and #176 (+233 on 13,586).
 # The added contact fields lifted main's ceiling to 13,700; this independent
 # attachment feature needs a deliberate 14,000 ceiling (~1.3% headroom).
+#
+# 13,724 with reply and forward drafts on `outlook_create_draft` (#143, +138 on
+# 13,586): `reply_to_message_id`, `reply_all` and `forward_message_id` (+80), `to`
+# and `subject` made optional because Graph fills a reply's (+20), and one docstring
+# line saying so (+38). A new tool for it would have cost a whole second schema.
+# Raised to 13,900 as one ceiling for this and #168 (`is_markdown`, stacked on
+# this), which together measure ~13,820: ~0.6% headroom over the pair.
 TOOL_SURFACE_CEILING = 14_000
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
