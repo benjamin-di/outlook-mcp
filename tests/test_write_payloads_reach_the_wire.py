@@ -1063,6 +1063,7 @@ class TestContacts:
             last_name="SentinelLast2",
             email="sentinel.contact2@example.com",
             phone="+15555550101",
+            company="SENTINEL-COMPANY-b16",
             job_title="SENTINEL-JOBTITLE-b14",
             home_address={
                 "street": "SentinelStreet2",
@@ -1083,6 +1084,7 @@ class TestContacts:
             "SentinelLast2",
             "sentinel.contact2@example.com",
             "+15555550101",
+            '"companyName": "SENTINEL-COMPANY-b16"',
             '"jobTitle": "SENTINEL-JOBTITLE-b14"',
             # An address is a nested model, so "reaches the wire" also means
             # kiota serialized the child object under the right camelCase keys —
@@ -1096,6 +1098,21 @@ class TestContacts:
             '"otherAddress": {"city": "SentinelOtherCity2"}',
             '"birthday": "1988-07-06T11:59:00+00:00"',
         )
+
+    async def test_update_contact_can_change_the_company(self):
+        """Create sets `company`; update could not, so a job change left the old employer."""
+        builder = MagicMock()
+        builder.patch = AsyncMock()
+        client = MagicMock()
+        client.me.contacts.by_contact_id.return_value = builder
+
+        await contacts.update_contact(
+            client, contact_id="AAMkAG123=", company="Contoso Ltd", config=_CFG
+        )
+
+        body = wire(builder.patch.call_args[0][0])
+        assert '"companyName": "Contoso Ltd"' in body
+        assert '"jobTitle"' not in body
 
     async def test_update_contact_can_correct_the_name_prefix(self):
         """#119 follow-up: a job stuck in the prefix was only fixable by recreating."""

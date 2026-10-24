@@ -85,6 +85,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   was validated as an id and nothing else, so "Junk Email" was refused locally and a user
   folder's name reached Graph as an id. It now goes through the same resolver as every other
   folder argument, paths included.
+- **A contact's company can be changed.** `outlook_create_contact` takes `company` and
+  `outlook_get_contact` returns it, but `outlook_update_contact` could not write it, so a contact
+  who moved to another employer kept the old one unless it was deleted and recreated (#173).
+  `outlook_update_contact` now takes `company` (Graph's `companyName`), changed only when given,
+  like the tool's other fields.
 
 ### Added
 

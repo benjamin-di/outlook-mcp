@@ -143,6 +143,10 @@ CHARS_PER_TOKEN = 4
 # and `outlook_update_draft`, about 20 each for the boolean's schema. No docstring
 # grew: the supported subset is one INSTRUCTIONS bullet, sent once per session.
 # Ceiling raised to 13,400, ~40 tokens of room as before.
+#
+# 13,397 with `company` on `outlook_update_contact` (+25 on today's main, 13,372):
+# create set it and update could not, so a contact who changed employer kept the
+# old one (#173). The argument alone, no new words. No raise.
 TOOL_SURFACE_CEILING = 13_750
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
