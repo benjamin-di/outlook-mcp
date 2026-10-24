@@ -565,8 +565,8 @@ async def fetch_attachment(
         kind = getattr(attachment, "odata_type", None)
         kind = f" ({kind})" if isinstance(kind, str) else ""
         raise ValueError(
-            f"Attachment {attachment_id} has no file content to save{kind} — it may "
-            "be an attached email or a link to a cloud file. Nothing was written."
+            f"Attachment {attachment_id} has no file content to read or download{kind} — it may "
+            "be an attached email or a link to a cloud file."
         )
 
     return attachment, content

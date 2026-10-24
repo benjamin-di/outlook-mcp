@@ -642,7 +642,7 @@ class TestDownloadWritesSafely:
         existing.write_bytes(b"the copy already here")
         client, _ = _client_returning(_file_attachment(None))
 
-        with pytest.raises(ValueError, match="Nothing was written"):
+        with pytest.raises(ValueError, match="no file content to read or download"):
             await download_attachment(
                 client,
                 message_id="AAMkAG123=",
