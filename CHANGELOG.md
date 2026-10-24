@@ -68,6 +68,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `outlook_search_mail`'s cursor now counts what it has served, and the last page of a search
   that ends past 250 carries `incomplete`: older matches may be missing, and adding
   `received<=` with the last message's date reaches them.
+- **A reply keeps its paragraphs, line breaks and the quoted original.** `outlook_reply` sent
+  plain text as the reply action's `comment`, and on an HTML message Graph joins its lines
+  with spaces, so a multi-paragraph reply with a list arrived as one run-on paragraph; on a
+  plain-text message the reply also turned into HTML. `is_html=True` sent `message.body`
+  instead, which replaces the whole body: the reply went out without the original (#167).
+  `outlook_forward`'s `comment` had the first problem. Both now create the reply or forward
+  draft with no text, patch the text in above the quote Graph wrote and send the draft: on an
+  HTML message right after the draft's `<body>` tag, plain text converted first (blank lines to
+  paragraphs, line breaks kept, `- ` or `* ` lines to a list, everything else escaped); on a
+  plain-text message as plain text. Checked against an Exchange Online mailbox. The send runs
+  without kiota's replay (#131). If the patch fails or Graph refuses the send, the draft is
+  deleted; after a 5xx it is left in Drafts and the error says to check Sent Items first. A
+  forward without a comment is still one call. The tool surface is unchanged.
 
 ### Added
 
