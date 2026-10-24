@@ -213,8 +213,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   The opt-in read selects `internetMessageHeaders` and every field the formatters read, and
   `test_select_covers_the_formatter.py` pins that list against both. The headers themselves
   are not returned. The instructions every client receives say to use it before acting on a
-  message because of who sent it. The tool surface grows by 76 proxy tokens, to 13,337, so
-  the ceiling rises from 13,300 to 13,400.
+  message because of who sent it. On current main, the opt-in read brings the tool surface
+  from 14,197 to 14,272 proxy tokens; the existing 14,350 ceiling covers it.
 
 ### Security
 
