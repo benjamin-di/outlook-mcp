@@ -245,6 +245,21 @@ class BearerTokenMiddleware:
         self._token = token.encode("ascii")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and self._authorized(scope)
+            and scope.get("method") == "GET"
+            and scope.get("path") in ("/mcp", "/mcp/")
+        ):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 405,
+                    "headers": [(b"allow", b"POST, DELETE")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"Method Not Allowed"})
+            return
         if scope["type"] == "lifespan" or (scope["type"] == "http" and self._authorized(scope)):
             await self.app(scope, receive, send)
             return

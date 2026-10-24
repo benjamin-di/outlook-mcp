@@ -550,3 +550,18 @@ def test_unusable_token_file_refuses_without_echoing_path_or_content(tmp_path, c
     with pytest.raises(ValueError, match="OUTLOOK_MCP_HTTP_TOKEN") as exc:
         settings_from_env(env)
     assert str(path) not in str(exc.value) and TOKEN not in str(exc.value)
+
+
+@pytest.mark.parametrize("path", ["/mcp", "/mcp/"])
+def test_authenticated_get_cannot_hold_an_empty_event_stream(base_url, path):
+    response = httpx2.get(
+        base_url + path,
+        headers={"Authorization": f"Bearer {TOKEN}", "Accept": "text/event-stream"},
+        timeout=2,
+    )
+    assert response.status_code == 405
+    assert "POST" in response.headers["allow"]
+    assert (
+        httpx2.get(base_url + path, headers={"Accept": "text/event-stream"}, timeout=2).status_code
+        == 401
+    )
