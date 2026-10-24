@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from outlook_mcp.config import Config
+from outlook_mcp.errors import MESSAGE_MAY_HAVE_BEEN_SENT
 from outlook_mcp.pagination import apply_pagination, build_request_config, wrap_nextlink
 from outlook_mcp.permissions import CATEGORY_MAIL_DRAFTS, CATEGORY_MAIL_SEND, check_permission
+from outlook_mcp.throttle import call_without_replay
 from outlook_mcp.tools.mail_read import SUMMARY_SELECT, _format_message_summary
 from outlook_mcp.validation import validate_datetime, validate_email, validate_graph_id
 
@@ -324,7 +326,11 @@ async def send_draft(
     check_permission(config, CATEGORY_MAIL_SEND, "outlook_send_draft")
     draft_id = validate_graph_id(draft_id)
 
-    await graph_client.me.messages.by_message_id(draft_id).send.post()
+    send_builder = graph_client.me.messages.by_message_id(draft_id).send
+    await call_without_replay(
+        lambda once: send_builder.post(request_configuration=once),
+        outcome_unknown=MESSAGE_MAY_HAVE_BEEN_SENT,
+    )
 
     return {
         "status": "sent",
