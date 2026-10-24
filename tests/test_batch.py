@@ -271,6 +271,29 @@ class TestBatchTriageActions:
         )
         assert body["requests"][0]["body"] == {"destinationId": "AAMkAG_tldr_folder="}
 
+    async def test_move_resolves_a_folder_path(self):
+        travel = MagicMock(id="AAMkTravelFolder=", display_name="Travel", child_folder_count=0)
+        mock_client = _mock_client_with_batch_response(_make_batch_response([201]))
+        inbox = MagicMock()
+        inbox.child_folders.get = AsyncMock(
+            return_value=MagicMock(value=[travel], odata_next_link=None)
+        )
+        mock_client.me.mail_folders.by_mail_folder_id = MagicMock(return_value=inbox)
+
+        await batch_triage(
+            mock_client,
+            message_ids=["AAMkAG1="],
+            action="move",
+            value="Inbox/Travel",
+            config=_CFG,
+        )
+
+        mock_client.me.mail_folders.by_mail_folder_id.assert_called_once_with("inbox")
+        body = json.loads(
+            mock_client.request_adapter.send_primitive_async.call_args.args[0].content
+        )
+        assert body["requests"][0]["body"] == {"destinationId": "AAMkTravelFolder="}
+
 
 class TestBatchTriageErrorHandling:
     async def test_per_item_failure_captured(self):
