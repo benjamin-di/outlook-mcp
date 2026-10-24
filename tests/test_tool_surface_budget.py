@@ -137,6 +137,12 @@ CHARS_PER_TOKEN = 4
 # same number without its country code found nothing. A separate find-by-phone
 # tool would pay the scaffolding every schema carries for the same rows. Over the
 # ~39 tokens left, so a deliberate raise to 13,500: ~1% headroom, as before.
+#
+# 13,359 with `is_markdown` on the five tools that write a mail body (#168, +98):
+# `outlook_send_message`, `outlook_reply`, `outlook_forward`, `outlook_create_draft`
+# and `outlook_update_draft`, about 20 each for the boolean's schema. No docstring
+# grew: the supported subset is one INSTRUCTIONS bullet, sent once per session.
+# Ceiling raised to 13,400, ~40 tokens of room as before.
 TOOL_SURFACE_CEILING = 13_750
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
