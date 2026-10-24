@@ -31,6 +31,20 @@ _METHOD = re.compile(r"^[a-z][a-z0-9_-]*(?:/[0-9]+)?$")
 _RESULT = re.compile(r"^[a-z][a-z0-9_-]*$")
 # `ptype.property`, plus `reason` and Microsoft's own `action` on the dmarc clause.
 _PROPERTY = re.compile(r"^[a-z][a-z0-9_.-]*$")
+_KNOWN_RESULTS = frozenset(
+    {
+        "none",
+        "pass",
+        "fail",
+        "softfail",
+        "neutral",
+        "policy",
+        "temperror",
+        "permerror",
+        "bestguesspass",
+        "softpass",
+    }
+)
 
 NO_FROM = "no From address"
 NO_HEADER = "no Microsoft Authentication-Results header"
@@ -203,6 +217,10 @@ def _tokenize(value: str) -> list[list[str]] | None:
                 depth += 1 if ch == "(" else -1
             continue
         if ch == '"':
+            # Method and result are keywords, never quoted strings. Property
+            # values may be quoted; preserve the existing handling for those.
+            if len(clauses[-1]) < 3:
+                return None
             if word is None:
                 word = []
             quoted = True
@@ -233,13 +251,17 @@ def _parse_result(tokens: list[str]) -> _Result | None:
     if len(tokens) < 3 or tokens[1] != "=":
         return None
     method, result = tokens[0], tokens[2]
-    if not (_METHOD.match(method) and _RESULT.match(result)):
+    if not (_METHOD.fullmatch(method) and _RESULT.fullmatch(result)):
         return None
+    if result not in _KNOWN_RESULTS:
+        result = "unknown"
     props: dict[str, list[str]] = {}
     index = 3
     while index < len(tokens):
         if not (
-            index + 1 < len(tokens) and tokens[index + 1] == "=" and _PROPERTY.match(tokens[index])
+            index + 1 < len(tokens)
+            and tokens[index + 1] == "="
+            and _PROPERTY.fullmatch(tokens[index])
         ):
             return None
         # A property with an empty value (`smtp.mailfrom=;`) is two tokens.

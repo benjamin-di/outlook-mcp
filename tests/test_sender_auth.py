@@ -377,3 +377,27 @@ def test_a_lookalike_domain_can_authenticate_only_itself():
     result = auth("dkim=pass header.d=rnicrosoft.com", sender="alice@rnicrosoft.com")
     assert result["authenticated"] is True
     assert result["from_domain"] == "rnicrosoft.com"
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        'dmarc="fail\n" header.from=contoso.com',
+        '"dmarc"=fail header.from=contoso.com',
+        'dmarc="fail" header.from=contoso.com',
+        'dm"arc"=fail header.from=contoso.com',
+        'dmarc=fa"il" header.from=contoso.com',
+        'dmarc=fail header."from\n"=contoso.com',
+    ],
+)
+def test_quoted_keywords_cannot_hide_a_failure_beside_aligned_dkim(clause):
+    verdict = auth(clause + "; dkim=pass header.d=contoso.com")
+    assert verdict["authenticated"] is False
+    assert verdict["reason"] == UNREADABLE
+
+
+@pytest.mark.parametrize("method", ["dkim", "dmarc", "compauth"])
+def test_an_unrecognized_result_is_reported_as_unknown(method):
+    verdict = auth(f"{method}=future-result header.d=contoso.com header.from=contoso.com")
+    assert verdict[method] == "unknown"
+    assert verdict["authenticated"] is False
