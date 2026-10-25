@@ -443,7 +443,9 @@ contents remain untrusted data.
 Worksheet metadata (`sheets`) is returned only at offset 0, and only when its serialized list
 plus at least one text character fits `max_chars`; otherwise the list is omitted and worksheet
 names remain in the paged text. A workbook above 100 sheets is refused; displayed sheet names
-are cut to Excel's 31-character limit. `max_chars` budgets text plus serialized worksheet metadata;
+are cut to Excel's 31-character limit, with `… [N]` marking a cut name and its one-based
+worksheet position so shared prefixes remain distinguishable. Names within the limit are unchanged.
+`max_chars` budgets text plus serialized worksheet metadata;
 the fixed response envelope and bounded warnings are separate. A PDF slice starting mid-line
 receives a `| ` presentation prefix when it fits. `continuation_prefix` identifies that prefix:
 strip it before joining chunks to reconstruct the text. Offsets and `total_chars` count the

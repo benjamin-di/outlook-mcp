@@ -68,10 +68,51 @@ async def test_real_workbook_long_sheet_names_are_cut_without_losing_cells():
     book.save(stream)
     sdk, _ = graph(stream.getvalue(), "sheets.xlsx", "application/octet-stream")
     result = await mail_attachment_read.read_attachment(sdk, **ARGS)
-    assert result["sheets"] == [{"name": name[:31], "state": "visible"}]
-    assert result["text"].startswith(f"[Sheet {json.dumps(name[:31])}; visible]\n")
+    label = name[:26] + "… [1]"
+    assert result["sheets"] == [{"name": label, "state": "visible"}]
+    assert result["text"].startswith(f"[Sheet {json.dumps(label)}; visible]\n")
     assert name not in result["text"]
     assert 'A1: "retained cell" | number_format="General"' in result["text"]
+    assert result["complete"]
+
+
+@pytest.mark.parametrize("count", [2, 10, 100])
+async def test_real_workbook_cut_labels_distinguish_shared_prefixes(count):
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    book.remove(book.active)
+    prefix = "Synthetic shared worksheet name "
+    with pytest.warns(UserWarning, match="31 characters"):
+        for position in range(1, count + 1):
+            sheet = book.create_sheet(prefix + f"extended {position}")
+            sheet["A1"] = f"retained cell {position}"
+    stream = BytesIO()
+    book.save(stream)
+    sdk, _ = graph(stream.getvalue(), "sheets.xlsx", "application/octet-stream")
+    result = await mail_attachment_read.read_attachment(sdk, **ARGS, max_chars=50000)
+    names = [sheet["name"] for sheet in result["sheets"]]
+    assert len(names) == len(set(names)) == count
+    for position, name in enumerate(names, 1):
+        assert len(name) <= 31
+        assert name.endswith(f"… [{position}]")
+        assert f"[Sheet {json.dumps(name)}; visible]" in result["text"]
+        assert f'A1: "retained cell {position}" | number_format="General"' in result["text"]
+    assert result["complete"]
+
+
+@pytest.mark.parametrize("length", [30, 31])
+async def test_real_workbook_legal_sheet_names_remain_exact(length):
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    name = "s" * length
+    book.active.title = name
+    book.active["A1"] = "retained cell"
+    stream = BytesIO()
+    book.save(stream)
+    sdk, _ = graph(stream.getvalue(), "sheets.xlsx", "application/octet-stream")
+    result = await mail_attachment_read.read_attachment(sdk, **ARGS)
+    assert result["sheets"] == [{"name": name, "state": "visible"}]
+    assert result["text"].startswith(f"[Sheet {json.dumps(name)}; visible]\n")
     assert result["complete"]
 
 

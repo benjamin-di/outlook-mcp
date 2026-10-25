@@ -91,13 +91,16 @@ def xlsx(data: bytes) -> dict:
         values = load_workbook(BytesIO(data), read_only=True, data_only=True, keep_links=False)
         stack.callback(values.close)
         parts, sheets, count, length = [], [], 0, 0
-        for sheet in formulas:
+        for position, sheet in enumerate(formulas, 1):
             sheet.reset_dimensions()  # a stale declared range must not hide populated cells
             cached = values[sheet.title]
             cached.reset_dimensions()
-            # Some writers allow names beyond Excel's limit. Bound their
-            # presentation without refusing the workbook or changing lookup.
-            name = sheet.title[:31]
+            # Some writers exceed Excel's name limit. Keep a bounded display
+            # label, marking the cut and its position so common prefixes differ.
+            name = sheet.title
+            if len(name) > 31:
+                suffix = f"… [{position}]"
+                name = name[: 31 - len(suffix)] + suffix
             sheets.append({"name": name, "state": sheet.sheet_state})
             length = append(parts, f"[Sheet {json.dumps(name)}; {sheet.sheet_state}]", length)
             for row, saved in zip(sheet.iter_rows(), cached.iter_rows(), strict=True):
