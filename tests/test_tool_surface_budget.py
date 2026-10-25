@@ -21,6 +21,7 @@ import json
 import pytest
 from mcp.client import Client
 
+from outlook_mcp import toolsets
 from outlook_mcp.server import mcp
 
 # A chars/4 proxy. This is NOT the same measure as the ~8,644 o200k figure in
@@ -188,6 +189,14 @@ CHARS_PER_TOKEN = 4
 # The existing 14,850 ceiling covers it; no raise.
 TOOL_SURFACE_CEILING = 14_850
 
+# 14,776 on the 71-tool default surface before the latest rebase;
+# 14,954 with the optional documents group enabled (+178 for its one reader).
+# Re-measured 14,813 / 14,991 after main c832373 picked up #183's download
+# descriptions (+37 on both surfaces); the document reader still adds 178.
+# The default ceiling stays 14,850. Documents have a separate 15,150 ceiling
+# (~1.3% headroom), so an opt-in tool cannot raise every user's per-turn cost.
+DOCUMENT_SURFACE_CEILING = 15_150
+
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
 # stops being true, the guidance has moved back into a place that is paid for
@@ -204,7 +213,9 @@ async def test_the_tool_surface_stays_within_budget():
     async with Client(mcp) as client:
         tools = (await client.list_tools()).tools
 
-    cost = _proxy_tokens([t.model_dump(exclude_none=True, by_alias=True) for t in tools])
+    default = [t for t in tools if toolsets.TOOL_GROUPS.get(t.name) not in toolsets.OPTIONAL_GROUPS]
+    assert len(default) == 71
+    cost = _proxy_tokens([t.model_dump(exclude_none=True, by_alias=True) for t in default])
 
     assert cost <= TOOL_SURFACE_CEILING, (
         f"The 71-tool surface now costs ~{cost} proxy tokens per turn, over the "
@@ -288,4 +299,4 @@ asyncio.run(main())
     )
     measured = json.loads(result.stdout)
     assert measured["count"] == 72
-    assert measured["cost"] <= 15_150, measured
+    assert measured["cost"] <= DOCUMENT_SURFACE_CEILING, measured

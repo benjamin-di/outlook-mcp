@@ -32,14 +32,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
+          version: "0.13.5"
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
       - run: uv run ruff check src/ tests/ scripts/
       # `ruff check` passing says nothing about formatting: a separate tool with
       # a separate verdict. With nothing running this, 49 of 105 files had
       # drifted from the documented formatter (#78).
       - run: uv run ruff format --check src/ tests/ scripts/
       - run: uv run pytest --cov=outlook_mcp -v
+      # Opt-in tools must pass the same registry, wrapper and annotation guards
+      # as the default surface; installing parser extras alone does not load them.
+      - name: Test with every toolset loaded
+        # Windows defaults to PowerShell; this assignment needs bash everywhere.
+        shell: bash
+        run: |
+          OUTLOOK_MCP_TOOLSETS="$(uv run python -c 'from outlook_mcp import toolsets; print(",".join(sorted(set(toolsets.TOOL_GROUPS.values()))))')" \
+            uv run pytest -q
 
   documents-macos:
     if: github.event_name != 'schedule'
@@ -49,8 +58,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
+          version: "0.13.5"
           python-version: "3.13"
-      - run: uv sync --all-extras
+      - run: uv sync --locked --all-extras
       - run: uv run pytest tests/test_readable_attachments.py -v
 
   # Guards the failure mode that shipped 1.12.0 and 1.13.0 broken for five weeks:
@@ -69,6 +79,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
+          version: "0.13.5"
           python-version: "3.13"
       - name: Build wheel
         run: uv build
@@ -150,6 +161,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
         with:
+          version: "0.13.5"
           python-version: "3.13"
       - name: Install the latest published release from PyPI
         run: |

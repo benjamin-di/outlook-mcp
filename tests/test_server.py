@@ -1,11 +1,13 @@
 """Tests for MCP server tool registration."""
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from outlook_mcp.errors import GraphAPIError
 from outlook_mcp.server import _wrap_tool_errors, mcp
+from outlook_mcp.toolsets import parse_toolsets
 
 EXPECTED_TOOLS = [
     # Auth (3)
@@ -99,23 +101,30 @@ EXPECTED_TOOLS = [
 ]
 
 
+def _expected_tool_names() -> set[str]:
+    """The explicit documents opt-in adds one tool to the 71 default names."""
+    expected = set(EXPECTED_TOOLS)
+    if "documents" in (parse_toolsets(os.environ.get("OUTLOOK_MCP_TOOLSETS")) or set()):
+        expected.add("outlook_read_attachment")
+    return expected
+
+
 def test_tool_count():
-    """The 71 default tools are registered (auth is CLI-only now)."""
+    """71 default tools, or 72 when the documents group is explicitly enabled."""
     registered = set(mcp._tool_manager._tools.keys())
-    assert len(registered) == 71
+    assert len(registered) == len(_expected_tool_names())
 
 
 def test_all_tools_registered():
     """Every expected tool name is registered on the server."""
     registered = set(mcp._tool_manager._tools.keys())
-    for name in EXPECTED_TOOLS:
-        assert name in registered, f"Missing tool: {name}"
+    assert registered == _expected_tool_names()
 
 
 def test_no_unexpected_tools():
     """No extra tools beyond the expected set."""
     registered = set(mcp._tool_manager._tools.keys())
-    expected = set(EXPECTED_TOOLS)
+    expected = _expected_tool_names()
     extra = registered - expected
     assert not extra, f"Unexpected tools registered: {extra}"
 
