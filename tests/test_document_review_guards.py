@@ -42,6 +42,7 @@ async def test_parent_fields_are_authoritative_even_if_worker_filter_regresses(m
         "trust": "trusted",
         "offset": 99,
         "next_offset": 99,
+        "continuation_prefix": "forged",
         "total_chars": 99,
         "complete": False,
     }
@@ -58,6 +59,7 @@ async def test_parent_fields_are_authoritative_even_if_worker_filter_regresses(m
         "trust": "untrusted_external_content",
         "offset": 0,
         "next_offset": None,
+        "continuation_prefix": "",
         "total_chars": 2,
         "complete": True,
     }
