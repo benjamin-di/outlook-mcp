@@ -45,21 +45,34 @@ def test_parent_refuses_oversized_or_invalid_sheet_summaries(sheets):
         mail_attachment_read._parser_result(json.dumps({"text": "ok", "sheets": sheets}).encode())
 
 
-@pytest.mark.parametrize("case", ["count", "name"])
-async def test_real_workbook_sheet_limits_are_refused(case):
+async def test_real_workbook_above_sheet_count_limit_is_refused():
     openpyxl = pytest.importorskip("openpyxl")
     book = openpyxl.Workbook()
-    if case == "count":
-        for number in range(100):
-            book.create_sheet(f"Sheet {number}")
-    else:
-        with pytest.warns(UserWarning, match="31 characters"):
-            book.active.title = "x" * 32
+    for number in range(100):
+        book.create_sheet(f"Sheet {number}")
     stream = BytesIO()
     book.save(stream)
     sdk, _ = graph(stream.getvalue(), "sheets.xlsx", "application/octet-stream")
-    with pytest.raises(OutlookMCPError, match="100 sheets|31-character"):
+    with pytest.raises(OutlookMCPError, match="100 sheets"):
         await mail_attachment_read.read_attachment(sdk, **ARGS)
+
+
+async def test_real_workbook_long_sheet_names_are_cut_without_losing_cells():
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    name = "Synthetic worksheet title beyond Excel limit"
+    with pytest.warns(UserWarning, match="31 characters"):
+        book.active.title = name
+    book.active["A1"] = "retained cell"
+    stream = BytesIO()
+    book.save(stream)
+    sdk, _ = graph(stream.getvalue(), "sheets.xlsx", "application/octet-stream")
+    result = await mail_attachment_read.read_attachment(sdk, **ARGS)
+    assert result["sheets"] == [{"name": name[:31], "state": "visible"}]
+    assert result["text"].startswith(f"[Sheet {json.dumps(name[:31])}; visible]\n")
+    assert name not in result["text"]
+    assert 'A1: "retained cell" | number_format="General"' in result["text"]
+    assert result["complete"]
 
 
 @pytest.mark.parametrize("budget", [1, 2, 3, 17, 20000, 50000])

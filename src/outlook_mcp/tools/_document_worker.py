@@ -88,8 +88,6 @@ def xlsx(data: bytes) -> dict:
         stack.callback(formulas.close)
         if len(formulas.sheetnames) > MAX_SHEETS:
             raise RefusalError("The spreadsheet exceeds 100 sheets.")
-        if any(len(name) > 31 for name in formulas.sheetnames):
-            raise RefusalError("A spreadsheet sheet name exceeds Excel's 31-character limit.")
         values = load_workbook(BytesIO(data), read_only=True, data_only=True, keep_links=False)
         stack.callback(values.close)
         parts, sheets, count, length = [], [], 0, 0
@@ -97,10 +95,11 @@ def xlsx(data: bytes) -> dict:
             sheet.reset_dimensions()  # a stale declared range must not hide populated cells
             cached = values[sheet.title]
             cached.reset_dimensions()
-            sheets.append({"name": sheet.title, "state": sheet.sheet_state})
-            length = append(
-                parts, f"[Sheet {json.dumps(sheet.title)}; {sheet.sheet_state}]", length
-            )
+            # Some writers allow names beyond Excel's limit. Bound their
+            # presentation without refusing the workbook or changing lookup.
+            name = sheet.title[:31]
+            sheets.append({"name": name, "state": sheet.sheet_state})
+            length = append(parts, f"[Sheet {json.dumps(name)}; {sheet.sheet_state}]", length)
             for row, saved in zip(sheet.iter_rows(), cached.iter_rows(), strict=True):
                 count += len(row)
                 if count > MAX_CELLS:

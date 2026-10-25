@@ -332,6 +332,10 @@ def _readable_text(
     except (LookupError, ValueError):
         return None
     if for_extraction:
+        # A declared codec can decode otherwise valid bytes to lone surrogates
+        # (UTF-7 and unicode_escape both can). Match the parser worker's
+        # replacement before the MCP reply is encoded as UTF-8.
+        text = text.encode("utf-8", errors="replace").decode("utf-8")
         return sanitize_output(text.replace("\r\n", "\n").replace("\r", "\n"), multiline=True)
     if len(text) > _TEXT_CONTENT_MAX_CHARS or has_control_characters(text):
         return None

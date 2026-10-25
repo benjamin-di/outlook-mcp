@@ -106,6 +106,24 @@ def graph(data: bytes, name: str = "note.txt", mime: str = "text/plain"):
     return _mail_client(attachment)
 
 
+@pytest.mark.parametrize("suffix", ["txt", "csv"])
+@pytest.mark.parametrize("charset", ["utf-7", "unicode_escape", "raw_unicode_escape"])
+@pytest.mark.parametrize("surrogate", ["\ud800", "\udc00"])
+async def test_declared_text_codec_surrogates_reach_mcp_as_replacements(
+    suffix, charset, surrogate, monkeypatch
+):
+    content = ("before" + surrogate + "after").encode(charset)
+    sdk, _ = graph(content, f"synthetic.{suffix}", f"text/plain; charset={charset}")
+    monkeypatch.setattr(server, "_get_graph_client", lambda ctx: SimpleNamespace(sdk_client=sdk))
+    async with Client(server.mcp) as client:
+        reply = await client.call_tool("outlook_read_attachment", ARGS)
+    assert not reply.is_error, reply.content
+    result = json.loads(reply.content[0].text)
+    assert result["text"] == "before?after"
+    assert result["total_chars"] == len("before?after") and result["complete"]
+    assert result["text"].encode("utf-8") == b"before?after"
+
+
 async def test_pdf_contents_reach_mcp_with_lossless_paging(monkeypatch, tmp_path):
     data = pdf("Invoice 123", "Due 2026-11-01")
     sdk, get = graph(data, "invoice.pdf", "application/pdf")

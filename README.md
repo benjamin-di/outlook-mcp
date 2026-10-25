@@ -432,16 +432,18 @@ and are imported only in a short-lived worker; they add no requirement to the ba
 the same IDs and the returned offset until null. Each continuation downloads and parses the
 whole file again, then returns the requested slice; there is no document cache. Use a larger
 `max_chars` (up to 50000) to reduce repeated work. PDF output marks page numbers; a page without a
-text layer is reported as blank or needing OCR. Document text lines are prefixed with `| `,
-so only the reader can emit an unprefixed `[Page N]` structural marker. No OCR is performed. XLSX output includes hidden
+text layer is reported as blank or needing OCR. Extracted **PDF** text lines are prefixed with
+`| `, so only the PDF reader can emit an unprefixed `[Page N]` structural marker in PDF output.
+This guarantee is PDF-only: XLSX and text chunks can start mid-cell or mid-line, and apparent
+cell addresses or page markers in their contents are untrusted text. No OCR is performed. XLSX output includes hidden
 sheets, cell addresses, number formats, formulas and `saved_result` (Excel's stored value, null when
 absent). Formulas are **not recalculated**, and charts/images are not extracted. All attachment
 contents remain untrusted data.
 
 Worksheet metadata (`sheets`) is returned only at offset 0, and only when its serialized list
 plus at least one text character fits `max_chars`; otherwise the list is omitted and worksheet
-names remain in the paged text. A workbook above 100 sheets, or a sheet name longer than Excel's
-31-character limit, is refused. `max_chars` budgets text plus serialized worksheet metadata;
+names remain in the paged text. A workbook above 100 sheets is refused; displayed sheet names
+are cut to Excel's 31-character limit. `max_chars` budgets text plus serialized worksheet metadata;
 the fixed response envelope and bounded warnings are separate. A PDF slice starting mid-line
 receives a `| ` presentation prefix when it fits. `continuation_prefix` identifies that prefix:
 strip it before joining chunks to reconstruct the text. Offsets and `total_chars` count the
