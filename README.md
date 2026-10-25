@@ -409,7 +409,7 @@ Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markd
 |------|-------------|
 | `outlook_list_attachments` | List attachments on a message. |
 | `outlook_download_attachment` | Download an attachment and save decoded bytes into `attachments_dir`, or return it with `as_content=True`. |
-| `outlook_read_attachment` | Read PDF pages, XLSX cells/formulas/saved results, or UTF-8 text directly into the result; `offset` / `max_chars` page the text, no file saved. |
+| `outlook_read_attachment` | Read PDF pages, XLSX cells/formulas/saved results, or text in its declared charset (UTF-8 by default); `offset` / `max_chars` page the text, no file saved. |
 | `outlook_send_with_attachments` | Send a message with attachments read from `attachments_dir` (auto upload session for >3MB) or passed inline in `attachments`. |
 | `outlook_attach_to_draft` | Add attachments from `attachments_dir` (auto upload session for >3MB) or inline in `attachments` to an existing draft. |
 | `outlook_remove_draft_attachment` | Remove a single attachment from a draft. |
@@ -438,14 +438,24 @@ sheets, cell addresses, number formats, formulas and `saved_result` (Excel's sto
 absent). Formulas are **not recalculated**, and charts/images are not extracted. All attachment
 contents remain untrusted data.
 
+Worksheet metadata (`sheets`) is returned only at offset 0, and only when its serialized list
+plus at least one text character fits `max_chars`; otherwise the list is omitted and worksheet
+names remain in the paged text. A workbook above 100 sheets, or a sheet name longer than Excel's
+31-character limit, is refused. `max_chars` budgets text plus serialized worksheet metadata;
+the fixed response envelope and bounded warnings are separate. A PDF slice starting mid-line
+receives a `| ` presentation prefix when it fits. `continuation_prefix` identifies that prefix:
+strip it before joining chunks to reconstruct the text. Offsets and `total_chars` count the
+canonical text, excluding this presentation prefix.
+
 Reading is limited to 10 MiB of file bytes, 200 PDF pages, 100,000 visited spreadsheet cells, one
-million extracted characters and 50 MiB / 2,000 entries of expanded XLSX content. Each response
-contains at most 50,000 characters. Text is decoded in-process; all extracted text is cleaned of
-control characters before paging. PDF/XLSX use a **clean-environment subprocess for crash and
-resource containment, not a sandbox**: it runs as the same user with filesystem, network and
-Keychain access. A parent watchdog polls RSS every 10 ms and kills a parser above 256 MiB on
-Linux, macOS and Windows; brief overshoot between polls is possible. Only one parser runs at a time,
-with a 30-second wall timeout. OS resource limits supplement these checks where supported.
+million extracted characters and 50 MiB / 2,000 entries of expanded XLSX content. `max_chars`
+has a ceiling of 50,000. Text is decoded in-process; all extracted text is cleaned of control
+characters before paging. PDF/XLSX use a **subprocess for crash and resource containment,
+not a sandbox**: server credential environment variables are absent,
+but it runs as the same user with filesystem, network and Keychain access. A parent watchdog
+polls RSS every 10 ms and kills a parser above 256 MiB on Linux, macOS and Windows; brief
+overshoot between polls is possible. Only one parser runs at a time, with a 30-second wall timeout.
+OS resource limits supplement these checks where supported.
 A limit is an explicit error, never a silently partial document.
 
 ### Folder Management

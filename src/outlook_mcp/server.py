@@ -163,8 +163,12 @@ Working rules, each of which saves a round trip:
   return them. Never report a searched contact as uncategorised; read it back if you need to
   know. Addresses are on outlook_get_contact only, and writing one replaces it wholesale, so
   giving a new contact an address is create, then read, then update with every part.
-- If enabled, outlook_read_attachment extracts PDF/XLSX/text; downloads preserve original bytes.
 """
+if "documents" in (toolsets.parse_toolsets(os.environ.get("OUTLOOK_MCP_TOOLSETS")) or set()):
+    INSTRUCTIONS += (
+        "- Read document attachments with outlook_read_attachment (PDF/XLSX/text); "
+        "downloads preserve original bytes.\n"
+    )
 
 # SEP-2549: tell the client how long `tools/list` stays fresh, so it can stop
 # re-fetching ~13k chars/4 proxy tokens of schemas. The set is fixed at import —

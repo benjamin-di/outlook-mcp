@@ -77,7 +77,7 @@ EXPECTED_TOOLS = [
     "outlook_update_draft",
     "outlook_send_draft",
     "outlook_delete_draft",
-    # Mail attachments (6)
+    # Mail attachments (5)
     "outlook_list_attachments",
     "outlook_download_attachment",
     "outlook_send_with_attachments",
@@ -132,6 +132,38 @@ def test_no_unexpected_tools():
 def test_server_metadata():
     """Server has correct name."""
     assert mcp.name == "outlook-mcp"
+
+
+@pytest.mark.parametrize(
+    ("selection", "enabled"),
+    [("", False), ("mail,attachments", False), ("mail,attachments,documents", True)],
+)
+def test_document_instructions_only_reach_clients_with_the_reader(selection, enabled):
+    import json
+    import subprocess
+    import sys
+
+    probe = """import asyncio,json
+from mcp.client import Client
+from outlook_mcp.server import mcp
+async def main():
+    async with Client(mcp) as client:
+        tools=(await client.list_tools()).tools
+        payload={"instructions":client.instructions or "", "tools":[t.name for t in tools]}
+        print(json.dumps(payload))
+asyncio.run(main())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        env={**os.environ, "OUTLOOK_MCP_TOOLSETS": selection},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    received = json.loads(result.stdout.strip().splitlines()[-1])
+    assert ("outlook_read_attachment" in received["instructions"]) is enabled
+    assert ("outlook_read_attachment" in received["tools"]) is enabled
 
 
 def test_tools_have_descriptions():
