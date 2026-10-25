@@ -78,3 +78,10 @@ outlook-mcp is designed with security in mind:
 |---------|-----------|
 | Latest  | Yes       |
 | < Latest | Best effort |
+- **HTTP transport is opt-in, and never runs without a token.** With
+  `OUTLOOK_MCP_TRANSPORT=streamable-http`, one request to the port reaches the mailbox, so the
+  server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN` on any bind, loopback included, and
+  answers `401` to any request without it. It speaks plain HTTP, so TLS belongs to a reverse
+  proxy in front; the README's
+  [Remote / HTTP transport](README.md#remote--http-transport-optional--outlook_mcp_transport)
+  section has the rest.

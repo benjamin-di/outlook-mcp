@@ -22,6 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]>=2",
+    "uvicorn>=0.30",
     "msgraph-sdk>=1.55",
     # A floor, not a cap. kiota 1.13.0 (2026-09-18) moved per-request options
     # from a monkey-patched `request.options` attribute to

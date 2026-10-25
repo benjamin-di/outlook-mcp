@@ -51,7 +51,7 @@ The server exposes 71 discrete tools so the agent can compose its own workflow �
 - **[OpenClaw](https://openclaw.ai)** — native MCP support, available via [ClawHub](https://clawhub.ai/skills?q=outlook-mcp)
 - **[Claude Code](https://claude.com/claude-code)** — add to `~/.claude/settings.json` under `mcpServers`
 - **[Cursor](https://cursor.com)** — MCP-compatible
-- **Any MCP client** — it's a standard stdio MCP server
+- **Any MCP client** — it's a standard stdio MCP server, with an opt-in [streamable-HTTP transport](#remote--http-transport-optional--outlook_mcp_transport) for clients that cannot spawn a local process
 
 Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=mpalermiti) as `io.github.mpalermiti/outlook-mcp`.
 
@@ -512,6 +512,35 @@ Then run `outlook-mcp auth` once per instance, with the same env set, to write e
 
 **Only move the config directory — never `HOME`.** The token cache is not in it: it stays in the OS keyring, and on macOS every azure-identity cache on the host shares one Keychain item, coordinated through a signal file — on this server, `~/.IdentityService/outlook-mcp.nocae` (azure-identity appends `.nocae` to every non-CAE cache name; a CAE cache would be a different file over the same item). Both processes must keep consulting that same signal file so their cache writes lock and merge into the one shared entry — which is exactly what moving the config directory preserves and redirecting `HOME` (or the cache location) would break: two signal files that each believe they own the Keychain item overwrite each other's token. `OUTLOOK_MCP_CONFIG_DIR` deliberately moves only where config.json, the auth record, and attachments live; unset or empty keeps the default `~/.outlook-mcp`.
 
+### Remote / HTTP transport (optional) — `OUTLOOK_MCP_TRANSPORT`
+
+stdio is the default, and every client entry above uses it. For a server that runs on another machine or in a container, or a client that cannot spawn a local process, `OUTLOOK_MCP_TRANSPORT=streamable-http` serves MCP's streamable-HTTP transport at `/mcp` instead:
+
+```bash
+export OUTLOOK_MCP_TRANSPORT=streamable-http
+export OUTLOOK_MCP_HTTP_HOST=127.0.0.1   # default 127.0.0.1
+export OUTLOOK_MCP_HTTP_PORT=8000      # default 8000
+export OUTLOOK_MCP_HTTP_TOKEN=...      # python -c "import secrets; print(secrets.token_urlsafe(32))"
+outlook-mcp serve
+```
+
+The client then connects to `https://<your proxy>/mcp` and sends `Authorization: Bearer <token>`.
+
+For a container, explicitly set `OUTLOOK_MCP_HTTP_HOST=0.0.0.0` and `OUTLOOK_MCP_HTTP_ALLOWED_HOSTS=mcp.example.com` for the public hostname your proxy forwards. Every public bind prints a plain-HTTP warning before it starts. The token protects against other OS users and browser pages; code running as your OS user can read the client configuration or launch the server itself. Forwarded headers are not trusted.
+
+
+A secret file can replace the environment token: set `OUTLOOK_MCP_HTTP_TOKEN_FILE` to a regular file containing only the token (an ending newline is fine), and unset `OUTLOOK_MCP_HTTP_TOKEN`. Both set is refused. On POSIX the file must belong to the server user with no group or other permissions (`chmod 600`); symlinks are refused. On Windows, restrict the file ACL to the server account yourself; the server does not validate Windows ACLs. File contents and paths are never included in token-file errors.
+
+**This changes who can reach the mailbox.** Over stdio, only the process that started the server can. Over HTTP, one request to the port is enough for anything that holds a token, so the token is the whole of the access control:
+
+- **A token is required on every bind, loopback included.** The server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN`. On loopback, a port with no token would let other OS users or browser pages read the mailbox with one HTTP request. Every request must carry `Authorization: Bearer <token>` or gets `401`. The token is one value of at least 32 characters from `A–Z a–z 0–9 -._~+/`; to change it, restart the server with the new one.
+- **Plain HTTP sends the token in the clear.** The server does not terminate TLS. On any bind other machines can reach, the token and everything the tools return cross the network readable by anything on the path, unless a reverse proxy in front of the server terminates TLS. Put it behind one, and let the proxy authenticate callers too if more than one client will reach it.
+- **Host and Origin checks apply to every bind.** Loopback binds accept loopback hosts and origins. `OUTLOOK_MCP_HTTP_ALLOWED_HOSTS` optionally adds comma-separated hostnames or IPs, with an optional port (for example `mcp.example.com` or `mcp.example.com:8443`). On a public bind it selects the permitted hosts; unset permits only the literal bind address. Bare names permit any port. Invalid Host is refused with 421; a supplied Origin must match an allowed host over HTTP or HTTPS, or gets 403. Clients without Origin work. A same-host proxy can send `Host: 127.0.0.1:<port>`.
+- **File paths are on the server.** Attach and send-with-attachments paths resolve inside the server’s `attachments_dir`; a remote client cannot hand over its own local path. A downloaded file and `saved_to` stay on the server, and a path refusal may name the server’s absolute attachments directory.
+- **It is stateless.** The server issues no `Mcp-Session-Id` and answers each request with JSON rather than an event stream. No tool sends anything to the client mid-call, so nothing is lost.
+- **One process still serves one account.** Pair it with `OUTLOOK_MCP_CONFIG_DIR`, as for stdio (one process, one port and one settings directory per mailbox), and run `outlook-mcp auth` where the server runs, with the same environment. A container usually has no keyring; see [Token cache stored unencrypted (Linux)](#token-cache-stored-unencrypted-linux).
+- No token, request URL or request line is logged.
+
 ### What `read_only` does and does not do
 
 `read_only: true` stops outlook-mcp's write tools from running. Ask it to send mail and it
@@ -613,6 +642,7 @@ When `allow_categories` is set, any tool in a non-allowed category returns a per
 - **No logging of sensitive data.** Message bodies, recipient addresses, and tokens are never logged.
 - **Config permissions.** On macOS and Linux the config directory is created `0700` and the config file `0600`, and a loose mode on the file is repaired on load. On Windows those POSIX modes cannot be enforced — `os.chmod` there sets only the read-only attribute — so access is governed by the path's Windows ACL, including whatever it inherits from the directory it was created under, which this server neither applies nor verifies. Symlinked configs are rejected on every platform.
 - **Input validation.** All user inputs (email addresses, Graph IDs, OData filters, KQL queries, datetimes) are validated and sanitized before reaching the Graph API.
+- **HTTP transport (opt-in).** It changes who can reach the mailbox: a bearer token is required on every bind and checked on every request, and the server speaks plain HTTP, so TLS belongs to a proxy in front. The whole security story is in [Remote / HTTP transport](#remote--http-transport-optional--outlook_mcp_transport).
 
 ---
 
