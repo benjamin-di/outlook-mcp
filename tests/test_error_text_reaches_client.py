@@ -25,6 +25,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from outlook_mcp.errors import (
+    AccountMismatchError,
     AuthRequiredError,
     GraphAPIError,
     NotFoundError,
@@ -57,6 +58,16 @@ async def _text_the_model_sees(raiser) -> tuple[bool, str]:
 @pytest.mark.parametrize(
     ("raiser", "expected_fragments"),
     [
+        pytest.param(
+            AccountMismatchError,
+            [
+                "expected_username",
+                "outlook-mcp auth",
+                "or correct expected_username if it is wrong",
+                "do not change",
+            ],
+            id="account_mismatch",
+        ),
         pytest.param(
             AuthRequiredError,
             ["Not authenticated", "outlook-mcp auth"],

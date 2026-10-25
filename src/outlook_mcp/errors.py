@@ -215,6 +215,18 @@ class StaleConsentError(OutlookMCPError):
         )
 
 
+class AccountMismatchError(OutlookMCPError):
+    """A sign-in does not belong to the username configured for this instance."""
+
+    def __init__(self):
+        super().__init__(
+            "account_mismatch",
+            "The sign-in does not match expected_username in config.json, so it was not used.",
+            "Run `outlook-mcp auth` on the host and sign in as this instance's expected user, "
+            "or correct expected_username if it is wrong. " + LEAVE_SETTINGS_TO_THE_USER,
+        )
+
+
 class ClientIdMismatchError(OutlookMCPError):
     """Raised when the saved sign-in was made with a different app registration.
 
