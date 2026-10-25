@@ -124,7 +124,7 @@ async def test_pdf_contents_reach_mcp_with_lossless_paging(monkeypatch, tmp_path
             part = json.loads(reply.content[0].text)
             prefix = part["continuation_prefix"]
             assert part["text"].startswith(prefix) and len(part["text"]) <= 17
-            pieces.append(part["text"][len(prefix):])
+            pieces.append(part["text"][len(prefix) :])
             assert part["offset"] == offset
             offset = part["next_offset"]
     text = "".join(pieces)
