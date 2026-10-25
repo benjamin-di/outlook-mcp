@@ -46,6 +46,10 @@ _LARGE_FILE_THRESHOLD = 3 * 1024 * 1024
 _INLINE_BASE64_MAX = 2 * 4 * ((_LARGE_FILE_THRESHOLD + 2) // 3)
 # Chunk size for upload sessions (320 KiB aligned, as required by Graph)
 _UPLOAD_CHUNK_SIZE = 320 * 1024 * 10  # 3.2 MB chunks
+_UPLOAD_NOT_ATTACHED = (
+    "This file was not attached and nothing was sent. Try again; if it keeps failing, send the "
+    "file another way."
+)
 
 # Where resolving a path can reach the network — see _network_path_outside.
 _WINDOWS = os.name == "nt"
@@ -583,23 +587,85 @@ async def _upload_large_file(
 ) -> None:
     """Upload a large file in chunks via an upload session.
 
-    Uses httpx to PUT chunks to the upload URL provided by Graph.
+    Uses httpx to PUT chunks to the upload URL provided by Graph. Every chunk's reply is
+    checked (#125): a refused chunk raises ``httpx.HTTPStatusError``, which
+    ``_wrap_tool_errors`` reports as Graph's own error (the upload URL, which carries its own
+    authorization, stays out of it), and an upload whose last reply is not a completed one
+    (200 or 201), or a file that comes up short while it is read, raises ``GraphAPIError``.
+    Either way the caller stops before it sends the draft or reports the attachment as added.
     """
     import httpx
 
+    from outlook_mcp.errors import GraphAPIError
+
+    status = None
     async with httpx.AsyncClient() as client:
         offset = 0
         with open(file_path, "rb") as f:
             while offset < file_size:
                 chunk = f.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    # The file shrank after its size was read. An empty PUT would carry a
+                    # backwards Content-Range, and a 2xx reply to it would never move ``offset``.
+                    raise GraphAPIError(
+                        0,
+                        "IncompleteUpload",
+                        f"The file changed while it was being uploaded: it ended after "
+                        f"{offset:,} of the {file_size:,} bytes Graph was told to expect.",
+                        action=_UPLOAD_NOT_ATTACHED,
+                    )
                 chunk_size = len(chunk)
                 end = offset + chunk_size - 1
                 headers = {
                     "Content-Range": f"bytes {offset}-{end}/{file_size}",
                     "Content-Length": str(chunk_size),
                 }
-                await client.put(upload_url, content=chunk, headers=headers)
+                response = await client.put(upload_url, content=chunk, headers=headers)
+                response.raise_for_status()
+                status = response.status_code
                 offset += chunk_size
+    if status not in (200, 201):
+        raise GraphAPIError(
+            status or 0,
+            "IncompleteUpload",
+            f"Graph did not report the attachment upload as complete (last reply: {status}).",
+            action=_UPLOAD_NOT_ATTACHED,
+        )
+
+
+def _draft_left_behind(exc: Exception, draft_id: str) -> Exception:
+    """``exc`` from a failed upload in ``send_with_attachments``, naming the draft it left.
+
+    The draft (recipients, body, any files that did upload) stays in Drafts, and without its
+    id an agent's natural retry makes a second one. Graph's refusals (SDK or raw httpx),
+    ``IncompleteUpload`` and an interrupted connection come back as ``GraphAPIError`` with the
+    draft in the action; anything else is a crash and is returned unchanged.
+    """
+    import httpx
+
+    from outlook_mcp.errors import GraphAPIError, wrap_graph_error, wrap_http_status_error
+
+    if isinstance(exc, GraphAPIError):
+        error = exc
+    elif isinstance(exc, httpx.HTTPStatusError):
+        error = wrap_http_status_error(exc)
+    elif isinstance(exc, httpx.TransportError):
+        # Type only: the exception's text can name the upload URL.
+        error = GraphAPIError(
+            0, "UploadInterrupted", f"The upload did not finish ({type(exc).__name__})."
+        )
+    else:
+        try:
+            error = wrap_graph_error(exc)
+        except TypeError:
+            return exc
+    action = (
+        f"Nothing was sent. The message is saved in Drafts (id {draft_id}); delete it, or "
+        "attach the file there with outlook_attach_to_draft."
+    )
+    if error.action and error.error_code != "IncompleteUpload":
+        action = f"{action} {error.action}"
+    return GraphAPIError(error.status_code, error.error_code, error.message, action=action)
 
 
 async def send_with_attachments(
@@ -723,23 +789,30 @@ async def send_with_attachments(
         # Create draft message
         draft = await graph_client.me.messages.post(msg)
 
-        # Upload each large file
-        for file_path, file_size in large_files:
-            content_type, _ = mimetypes.guess_type(file_path)
-            att_item = AttachmentItem()
-            att_item.attachment_type = AttachmentType.File
-            att_item.name = os.path.basename(file_path)
-            att_item.size = file_size
-            att_item.content_type = content_type or "application/octet-stream"
+        # Upload each large file. A failure from here on leaves the draft in Drafts, so the
+        # error names it (see _draft_left_behind).
+        try:
+            for file_path, file_size in large_files:
+                content_type, _ = mimetypes.guess_type(file_path)
+                att_item = AttachmentItem()
+                att_item.attachment_type = AttachmentType.File
+                att_item.name = os.path.basename(file_path)
+                att_item.size = file_size
+                att_item.content_type = content_type or "application/octet-stream"
 
-            upload_body = CreateUploadSessionPostRequestBody()
-            upload_body.attachment_item = att_item
+                upload_body = CreateUploadSessionPostRequestBody()
+                upload_body.attachment_item = att_item
 
-            session = await graph_client.me.messages.by_message_id(
-                draft.id
-            ).attachments.create_upload_session.post(upload_body)
+                session = await graph_client.me.messages.by_message_id(
+                    draft.id
+                ).attachments.create_upload_session.post(upload_body)
 
-            await _upload_large_file(session.upload_url, file_path, file_size)
+                await _upload_large_file(session.upload_url, file_path, file_size)
+        except Exception as exc:
+            named = _draft_left_behind(exc, draft.id)
+            if named is exc:
+                raise
+            raise named from exc
 
         # Send the draft
         send_builder = graph_client.me.messages.by_message_id(draft.id).send
