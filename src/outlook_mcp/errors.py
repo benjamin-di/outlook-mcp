@@ -222,8 +222,8 @@ class AccountMismatchError(OutlookMCPError):
         super().__init__(
             "account_mismatch",
             "The sign-in does not match expected_username in config.json, so it was not used.",
-            "Run `outlook-mcp auth` on the host and sign in as this instance's expected user. "
-            + LEAVE_SETTINGS_TO_THE_USER,
+            "Run `outlook-mcp auth` on the host and sign in as this instance's expected user, "
+            "or correct expected_username if it is wrong. " + LEAVE_SETTINGS_TO_THE_USER,
         )
 
 

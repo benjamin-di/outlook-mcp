@@ -60,7 +60,12 @@ async def _text_the_model_sees(raiser) -> tuple[bool, str]:
     [
         pytest.param(
             AccountMismatchError,
-            ["expected_username", "outlook-mcp auth", "do not change"],
+            [
+                "expected_username",
+                "outlook-mcp auth",
+                "or correct expected_username if it is wrong",
+                "do not change",
+            ],
             id="account_mismatch",
         ),
         pytest.param(

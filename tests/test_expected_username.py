@@ -117,6 +117,8 @@ def test_status_shows_mismatch_remedy_without_either_username(tmp_path, monkeypa
     text = output.out + output.err
     assert "not authenticated" in text and "expected_username" in text
     assert "outlook-mcp auth" in text
+    assert "or correct expected_username if it is wrong" in text
+    assert "do not change" in text
     assert "owner@example.com" not in text and "other@example.com" not in text
     make.assert_not_called()
 
@@ -127,20 +129,54 @@ def test_exact_misspelling_stops_real_entry_points(tmp_path, command):
     import os
     import subprocess
     import sys
+    from pathlib import Path
 
     config_dir = tmp_path / "settings"
     config_dir.mkdir()
     (config_dir / "config.json").write_text(
         json.dumps({"client_id": "test-id", "expected_usename": "owner@example.com"})
     )
+    attempted_side_effect = tmp_path / "attempted-side-effect"
+    # Install the barriers inside the child, before outlook_mcp imports either
+    # Azure constructor. A broken config guard must not construct a credential,
+    # touch OS token-cache persistence, resolve a host or make a connection.
+    child = """
+import os
+import socket
+from pathlib import Path
+
+import azure.identity
+
+def forbidden(*args, **kwargs):
+    Path(os.environ["OUTLOOK_MCP_TEST_SIDE_EFFECT"]).write_text("attempted")
+    raise SystemExit(97)
+
+azure.identity.DeviceCodeCredential = forbidden
+azure.identity.TokenCachePersistenceOptions = forbidden
+socket.getaddrinfo = forbidden
+socket.create_connection = forbidden
+socket.socket.connect = forbidden
+socket.socket.connect_ex = forbidden
+
+from outlook_mcp.cli import main
+main()
+"""
     result = subprocess.run(
-        [sys.executable, "-c", "from outlook_mcp.cli import main; main()", command],
-        env={**os.environ, "HOME": str(tmp_path), "OUTLOOK_MCP_CONFIG_DIR": str(config_dir)},
+        [sys.executable, "-c", child, command],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path),
+            "OUTLOOK_MCP_CONFIG_DIR": str(config_dir),
+            "OUTLOOK_MCP_TEST_SIDE_EFFECT": str(attempted_side_effect),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
         capture_output=True,
         text=True,
         timeout=15,
     )
     assert result.returncode == 1
+    assert "misspelt" in result.stderr
     assert "expected_usename" in result.stderr and "expected_username" in result.stderr
     assert "owner@example.com" not in result.stdout + result.stderr
     assert "Traceback" not in result.stderr
+    assert not attempted_side_effect.exists(), "credential, persistence or network was attempted"
