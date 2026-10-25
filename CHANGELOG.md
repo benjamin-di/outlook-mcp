@@ -20,6 +20,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   auth/serve/status; no automatic file writeback, new dependency, tool or scope. File-only
   loading is unchanged.
 
+### Fixed
+
+- **HTTP startup explains a wildcard bind without allowed client hosts, and token-file
+  content errors name the token format instead of file permissions.** Wildcard-port
+  allow-list entries also accept the bare Host/Origin used on default HTTP/HTTPS ports;
+  the refused GET event stream advertises only POST.
+
 ## [1.28.0] — 2026-10-25
 
 ### Added
