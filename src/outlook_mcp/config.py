@@ -9,7 +9,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from outlook_mcp.permissions import VALID_CATEGORIES
 
@@ -82,22 +89,31 @@ def _squash(key: str) -> str:
     return "".join(ch for ch in key.lower() if ch.isalnum())
 
 
-def _misspelt_safety_key(key: str) -> str | None:
+def _misspelt_safety_key(key: str, keys: tuple[str, ...] = _SAFETY_KEYS) -> str | None:
     """The safety key an unknown `key` plainly means, or None.
 
     A different spelling of the same words, or a one-or-two-letter slip
     (`difflib` ratio 0.8 or better). Deliberately narrow: only these keys,
-    so every other unknown key keeps loading with a warning.
+    so every other unknown key keeps loading with a warning in file configuration.
     """
-    for safety_key in _SAFETY_KEYS:
+    for safety_key in keys:
         if _squash(key) == _squash(safety_key):
             return safety_key
-    close = difflib.get_close_matches(key.lower(), _SAFETY_KEYS, n=1, cutoff=0.8)
+    close = difflib.get_close_matches(key.lower(), keys, n=1, cutoff=0.8)
     return close[0] if close else None
+
+
+class EnvironmentConfigError(ValueError):
+    """An explicitly supplied environment value is invalid or would loosen policy."""
 
 
 class Config(BaseModel):
     """Outlook MCP server configuration."""
+
+    # A narrowed environment directory must stay inside the file's resolved root
+    # at use time too: a child can become a symlink after configuration loads.
+    # This is runtime policy metadata, never another persisted configuration key.
+    _attachments_file_root: str | None = PrivateAttr(default=None)
 
     client_id: str | None = Field(default=None, description="Azure AD app client ID (BYOID)")
     tenant_id: str = Field(default=DEFAULT_TENANT_ID)
@@ -283,7 +299,12 @@ def config_repair_lines(exc: Exception) -> list[str]:
     is something the operator can act on.
     """
     lines: list[str]
-    if isinstance(exc, ValidationError):
+    if isinstance(exc, EnvironmentConfigError):
+        lines = [
+            f"Cannot load environment configuration — the server cannot start: {exc}",
+            "Fix the named variable in the launch environment and restart the server.",
+        ]
+    elif isinstance(exc, ValidationError):
         lines = ["The config file is invalid — the server cannot start:"]
         for e in exc.errors():
             field = ".".join(str(p) for p in e["loc"]) or "config"
@@ -336,7 +357,15 @@ def _refuse_non_directory(config_dir: str) -> None:
 
 
 def load_config(config_dir: str = DEFAULT_CONFIG_DIR) -> Config:
-    """Load config from disk. Returns defaults if no config file exists."""
+    """Load valid file/default settings, then non-persistent environment inputs."""
+    baseline = _load_file_config(config_dir)
+    from outlook_mcp._config_env import apply_environment
+
+    return apply_environment(baseline, os.environ)
+
+
+def _load_file_config(config_dir: str) -> Config:
+    """The existing file loader; environment input never bypasses its refusals."""
     _refuse_non_directory(config_dir)
     file_path = Path(config_dir) / "config.json"
 

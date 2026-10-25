@@ -542,6 +542,44 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 | `allow_categories` | `list[string]` | `[]` | Optional. Restrict write tools to specific categories (see below). Empty list = all writes allowed when `read_only: false`. |
 | `allow_unencrypted_token_cache` | `bool` | `false` | Permit the OAuth token cache to be written in cleartext when the platform has no encrypted store (Linux without libsecret). Off by default: authentication stops with an explanation rather than silently persisting a reusable Graph token in plaintext. macOS and Windows always encrypt and are unaffected. |
 
+### Environment configuration (optional)
+
+`auth`, `serve` and `status` share the same loader. It first loads and validates `config.json`
+(or the existing defaults when no file exists), then reads these optional variables. A bad,
+unreadable or symlinked config still refuses startup; environment values cannot bypass it.
+No override is automatically written back to the file.
+
+| Variable | Input | Relation to the file/default value |
+|----------|-------|-----------------------------------|
+| `OUTLOOK_MCP_CLIENT_ID` | Nonempty string | Supplies `client_id` only when the file has none; a different app registration is refused |
+| `OUTLOOK_MCP_TENANT_ID` | Nonempty string | Overrides `tenant_id` |
+| `OUTLOOK_MCP_TIMEZONE` | IANA timezone | Overrides `timezone` |
+| `OUTLOOK_MCP_READ_ONLY` | `true` or `false` | May enable a restriction; cannot disable one |
+| `OUTLOOK_MCP_READ_ONLY_CONSENT` | `true` or `false` | May enable read-only consent; requires effective `read_only: true` |
+| `OUTLOOK_MCP_ALLOW_CATEGORIES` | JSON array of category names | May narrow the permitted categories; cannot widen them |
+| `OUTLOOK_MCP_ATTACHMENTS_DIR` | Directory path | Must resolve to the configured directory or a descendant |
+| `OUTLOOK_MCP_ALLOW_UNENCRYPTED_TOKEN_CACHE` | `true` or `false` | May prohibit plaintext storage; cannot enable it unless the file already permits it |
+
+Unset variables do nothing. A supported variable set to an empty value refuses startup,
+including an empty Compose `${VAR}` pass-through. Booleans accept only `true`/`false`
+(case-insensitive, surrounding whitespace allowed); list input must be JSON, for example
+`["mail_drafts","contacts_write"]`.
+An empty category list means **all categories**, so it cannot replace a restricted file list.
+Each security setting is checked independently: enabling read-only mode does not excuse widening
+another setting. Security permissions that require explicit consent in the file still require it.
+
+Attachment roots are expanded and resolved without creating a directory. An override is kept as
+the checked absolute path; `..`, sibling prefixes and symlinks cannot escape the configured root.
+Every attachment path check rechecks that root, including when a directory becomes a symlink
+after startup.
+On Windows, a different drive/share or an unapproved UNC/device location is refused before
+resolution can contact it.
+Invalid inputs, misspelt security variables and attempts to loosen policy stop startup and name
+the variable to fix in the launch environment. Existing `OUTLOOK_MCP_CONFIG_DIR`, toolset and
+transport variables retain their meanings. With none of the new variables, file loading is unchanged.
+These checks guard the supported setting variables, not the launch environment as a whole:
+anyone who controls it can also retarget the settings file with `OUTLOOK_MCP_CONFIG_DIR` or `HOME`.
+
 ### Toolset selection (optional) — `OUTLOOK_MCP_TOOLSETS`
 
 The 71 default tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.

@@ -105,7 +105,9 @@ def _starts_with_two_separators(path: str) -> bool:
     return len(path) >= 2 and path[0] in "\\/" and path[1] in "\\/"
 
 
-def resolve_attachment_path(path: str, attachments_dir: str) -> str:
+def resolve_attachment_path(
+    path: str, attachments_dir: str, *, file_root: str | None = None
+) -> str:
     """Resolve ``path`` inside ``attachments_dir``, or refuse.
 
     These tools take a filesystem path from the model, and the model takes
@@ -127,11 +129,20 @@ def resolve_attachment_path(path: str, attachments_dir: str) -> str:
     away before it is resolved, because there resolving is itself the harm (see
     ``_network_path_outside``). That check only ever adds a refusal — whatever
     it lets through still has to resolve inside the directory.
+
+    An environment-narrowed directory also carries the file's frozen resolved
+    ``file_root``. Recheck the base on every call, before creating anything:
+    a child directory can become an escaping symlink after settings load.
     """
     if not path or not path.strip() or "\x00" in path:
         raise ValueError("Attachment path must be a non-empty path containing no null bytes.")
 
     configured = Path(os.path.expanduser(attachments_dir))
+    if file_root is not None and not configured.resolve().is_relative_to(Path(file_root)):
+        raise ValueError(
+            "The resolved attachments_dir is outside the file's configured root. "
+            + LEAVE_SETTINGS_TO_THE_USER
+        )
     base = configured
     created = not base.exists()
     base.mkdir(parents=True, exist_ok=True)
@@ -142,6 +153,11 @@ def resolve_attachment_path(path: str, attachments_dir: str) -> str:
         # the note above `_ensure_dir` in config.py (#85).
         base.chmod(0o700)
     base = base.resolve()
+    if file_root is not None and not base.is_relative_to(Path(file_root)):
+        raise ValueError(
+            "The resolved attachments_dir is outside the file's configured root. "
+            + LEAVE_SETTINGS_TO_THE_USER
+        )
 
     expanded = os.path.expanduser(path)
     # Before resolve(), which on Windows is what makes the connection.
@@ -280,7 +296,7 @@ async def list_attachments(
 
 
 def download_destination(
-    save_path: str | None, as_content: bool, attachments_dir: str
+    save_path: str | None, as_content: bool, attachments_dir: str, *, file_root: str | None = None
 ) -> str | None:
     """Where a download goes: a confined file, or None when it is returned as content.
 
@@ -299,7 +315,7 @@ def download_destination(
             "Pass save_path to save the attachment inside attachments_dir, or "
             "as_content=True to receive it in the result."
         )
-    save_path = resolve_attachment_path(save_path, attachments_dir)
+    save_path = resolve_attachment_path(save_path, attachments_dir, file_root=file_root)
     return _validated_download_target(save_path, attachments_dir)
 
 
@@ -513,7 +529,9 @@ async def download_attachment(
     """
     message_id = validate_graph_id(message_id)
     attachment_id = validate_graph_id(attachment_id)
-    save_path = download_destination(save_path, as_content, config.attachments_dir)
+    save_path = download_destination(
+        save_path, as_content, config.attachments_dir, file_root=config._attachments_file_root
+    )
 
     attachment, content = await fetch_attachment(graph_client, message_id, attachment_id)
     name = sanitize_output(attachment.name or "")
@@ -706,7 +724,10 @@ async def send_with_attachments(
 
     # Confine every path before touching the filesystem, then validate existence.
     attachment_paths = [
-        resolve_attachment_path(path, config.attachments_dir) for path in attachment_paths or []
+        resolve_attachment_path(
+            path, config.attachments_dir, file_root=config._attachments_file_root
+        )
+        for path in attachment_paths or []
     ]
     for path in attachment_paths:
         if not os.path.isfile(path):
@@ -857,7 +878,10 @@ async def attach_to_draft(
 
     # Confine every path before touching the filesystem, then validate existence.
     attachment_paths = [
-        resolve_attachment_path(path, config.attachments_dir) for path in attachment_paths or []
+        resolve_attachment_path(
+            path, config.attachments_dir, file_root=config._attachments_file_root
+        )
+        for path in attachment_paths or []
     ]
     for path in attachment_paths:
         if not os.path.isfile(path):

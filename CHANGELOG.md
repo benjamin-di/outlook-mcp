@@ -13,6 +13,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   sign-in checks the returned record before saving or using it. No change when
   unset, no tool-surface change, and no deletion of another instance's shared tokens.
 
+- **Optional `OUTLOOK_MCP_` inputs for existing configuration fields** (#180). Client ID input
+  may supply an app when the file has none; tenant/timezone inputs may override. Security
+  inputs may only tighten the valid file's policy or its defaults. Attempted loosening and
+  malformed or misspelt security inputs refuse startup and name the variable. Shared by
+  auth/serve/status; no automatic file writeback, new dependency, tool or scope. File-only
+  loading is unchanged.
+
 ## [1.28.0] — 2026-10-25
 
 ### Added

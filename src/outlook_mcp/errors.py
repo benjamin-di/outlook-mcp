@@ -241,14 +241,14 @@ class ClientIdMismatchError(OutlookMCPError):
         super().__init__(
             "client_id_mismatch",
             f"The saved sign-in was made with a different app registration "
-            f"(client_id {saved[:8]}…) than the one now in config.json "
+            f"(client_id {saved[:8]}…) than the effective client_id "
             f"({configured[:8]}…), so it was not used.",
             "Run `outlook-mcp auth` on the host to sign in with the configured app.",
         )
 
 
 class ConfigLoadError(OutlookMCPError):
-    """The settings file could not be loaded; the server booted fail-safe.
+    """File or environment configuration was refused; the server booted fail-safe.
 
     ``main`` validates the config before the transport starts and exits with
     the repair on stderr. This error is the lifespan's backstop for the same
@@ -258,6 +258,16 @@ class ConfigLoadError(OutlookMCPError):
     """
 
     def __init__(self, reason: Exception, config_dir: str):
+        from outlook_mcp.config import EnvironmentConfigError
+
+        if isinstance(reason, EnvironmentConfigError):
+            super().__init__(
+                "config_load_failed",
+                f"Environment configuration was refused ({reason}); the server booted read-only.",
+                "Fix the named variable in the launch environment and restart the server. "
+                + LEAVE_SETTINGS_TO_THE_USER,
+            )
+            return
         super().__init__(
             "config_load_failed",
             f"The settings file could not be loaded ({reason}); the server booted read-only.",
