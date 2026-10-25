@@ -335,71 +335,78 @@ async def test_worker_cannot_overwrite_parent_owned_fields(monkeypatch, tmp_path
     assert result["offset"] == 0 and result["bytes"] == len(b"not a real PDF")
 
 
-async def test_clean_environment_and_single_worker(monkeypatch, tmp_path):
+def test_clean_environment_and_single_worker(tmp_path):
+    # Import the actual production semaphore in one fresh event loop: do not
+    # substitute a Semaphore(1), which would hide a changed production capacity.
+    import subprocess
+
+    marker = tmp_path / "occupied"
     worker = tmp_path / "worker.py"
     worker.write_text(
         "import json,os,sys,time\n"
+        "from pathlib import Path\n"
         "sys.stdin.buffer.read()\n"
-        "time.sleep(.15)\n"
-        'print(json.dumps({"text":str("PRIVATE_TEST_CREDENTIAL" in os.environ)}))\n'
-        ""
+        f"marker=Path({str(marker)!r})\n"
+        "try:\n"
+        " with marker.open('x'): pass\n"
+        "except FileExistsError:\n"
+        " print(json.dumps({'text':'overlap'}))\n"
+        "else:\n"
+        " time.sleep(.15)\n"
+        " print(json.dumps({'text':str('PRIVATE_TEST_CREDENTIAL' in os.environ)}))\n"
+        " marker.unlink()\n"
     )
-    monkeypatch.setattr(mail_attachment_read, "WORKER", worker)
-    monkeypatch.setenv("PRIVATE_TEST_CREDENTIAL", "must-not-reach-parser")
-    # Event-loop-local semaphore also makes this test independent of pytest's loop scope.
-    monkeypatch.setattr(mail_attachment_read, "_WORKERS", asyncio.Semaphore(1))
-    original = asyncio.create_subprocess_exec
-    active, peak = 0, 0
-
-    async def spawn(*args, **kwargs):
-        nonlocal active, peak
-        active += 1
-        peak = max(peak, active)
-        proc = await original(*args, **kwargs)
-
-        async def done():
-            nonlocal active
-            await proc.wait()
-            active -= 1
-
-        asyncio.create_task(done())
-        return proc
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
-    results = await asyncio.gather(*(mail_attachment_read.extract(b"abc", "pdf") for _ in range(3)))
-    assert all(r["text"] == "False" for r in results) and peak == 1
+    code = (
+        "import asyncio,sys\n"
+        "from pathlib import Path\n"
+        "from outlook_mcp.tools import mail_attachment_read as reader\n"
+        "reader.WORKER=Path(sys.argv[1])\n"
+        "async def main():\n"
+        " results=await asyncio.gather(*(reader.extract(b'abc','pdf') for _ in range(3)))\n"
+        " assert all(result['text']=='False' for result in results), results\n"
+        "asyncio.run(main())\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", code, str(worker)],
+        env={**os.environ, "PRIVATE_TEST_CREDENTIAL": "must-not-reach-parser"},
+        capture_output=True,
+        text=True,
+        timeout=8,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
 
 
 async def test_parent_rss_watchdog_without_os_limits(monkeypatch, tmp_path):
     worker = tmp_path / "memory.py"
+    # At most 80 MiB, then an ordinary successful result. Removing the watchdog
+    # must fail this test, rather than allocate until the host runs out of RAM.
     worker.write_text(
-        "import sys,time\n"
+        "import json,sys,time\n"
         "sys.stdin.buffer.read()\n"
         "blocks=[]\n"
-        "while True:\n"
+        "for _ in range(20):\n"
         " blocks.append(bytearray(4*2**20))\n"
-        " time.sleep(.01)\n"
-        ""
+        " time.sleep(.02)\n"
+        "print(json.dumps({'text':'bounded allocation completed'}))\n"
     )
     monkeypatch.setattr(mail_attachment_read, "WORKER", worker)
     monkeypatch.setattr(mail_attachment_read, "MEMORY_LIMIT", 48 * 2**20)
     with pytest.raises(OutlookMCPError, match="memory limit"):
-        await asyncio.wait_for(mail_attachment_read.extract(b"abc", "pdf"), timeout=10)
+        await asyncio.wait_for(mail_attachment_read.extract(b"abc", "pdf"), timeout=4)
 
 
-async def test_hostile_pdf_expansion_is_refused():
+async def test_hostile_pdf_expansion_is_refused(monkeypatch, tmp_path):
     pypdf = pytest.importorskip("pypdf")
+    import time
     import zlib
 
     from pypdf.generic import EncodedStreamObject, NameObject
 
     writer = pypdf.PdfWriter()
-    # Distinct, compressed streams; small on the wire, >1 GiB when retained decoded.
-    compressor = zlib.compressobj()
-    chunks = [compressor.compress(b" " * 65536) for _ in range(1024)]
-    compressed = b"".join(chunks) + compressor.flush()
-    spaces = zlib.decompress(compressed)
-    for number in range(20):
+    # 32MiB total decoded streams, rather than a >1GiB bomb. A lower test
+    # watchdog line trips during actual PDF decoding, before CPU/OS limits.
+    spaces = b" " * (8 * 2**20)
+    for number in range(4):
         page = writer.add_blank_page(width=300, height=300)
         content = EncodedStreamObject()
         content[NameObject("/Filter")] = NameObject("/FlateDecode")
@@ -409,9 +416,24 @@ async def test_hostile_pdf_expansion_is_refused():
     out = BytesIO()
     writer.write(out)
     assert len(out.getvalue()) < mail_attachment_read.MAX_BYTES
+    # Disable OS fallback limits so they cannot mask a removed RSS watchdog.
+    # The fixture itself has only 32 MiB decoded streams and a 3 s wall ceiling.
+    driver = tmp_path / "pdf_driver.py"
+    driver.write_text(
+        "import runpy\n"
+        f"scope=runpy.run_path({str(mail_attachment_read.WORKER)!r})\n"
+        "main=scope['main']\n"
+        "main.__globals__['resource_limits']=lambda:None\n"
+        "main()\n"
+    )
+    monkeypatch.setattr(mail_attachment_read, "WORKER", driver)
+    monkeypatch.setattr(mail_attachment_read, "MEMORY_LIMIT", 48 * 2**20)
+    monkeypatch.setattr(mail_attachment_read, "WALL_SECONDS", 3)
     sdk, _ = graph(out.getvalue(), "expanded.pdf", "application/pdf")
-    with pytest.raises(OutlookMCPError, match="memory limit|resource limit"):
+    started = time.monotonic()
+    with pytest.raises(OutlookMCPError, match="memory limit"):
         await mail_attachment_read.read_attachment(sdk, **ARGS)
+    assert time.monotonic() - started < 2.5
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group cleanup")
@@ -440,17 +462,30 @@ async def test_timeout_and_cancellation_kill_descendant_holding_stdout(
         assert time.monotonic() < deadline
         await asyncio.sleep(0.01)
     descendant = psutil.Process(int(pidfile.read_text()))
-    if cancel:
-        task.cancel()
-    with pytest.raises(asyncio.CancelledError if cancel else asyncio.TimeoutError):
-        await asyncio.wait_for(task, timeout=4)
-    for _ in range(100):
-        if not descendant.is_running() or descendant.status() == psutil.STATUS_ZOMBIE:
-            break
-        await asyncio.sleep(0.01)
-    else:
-        descendant.kill()
-        pytest.fail("orphan survived cleanup")
+    try:
+        if cancel:
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError if cancel else asyncio.TimeoutError):
+            await asyncio.wait_for(task, timeout=4)
+        for _ in range(100):
+            # One process-state read, with exit treated as success. is_running()
+            # followed by status() races process termination, notably on macOS.
+            try:
+                if descendant.status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            pytest.fail("orphan survived cleanup")
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        try:
+            descendant.kill()
+        except psutil.NoSuchProcess:
+            pass
 
 
 def test_macos_does_not_attempt_unsupported_address_space_limit(monkeypatch):
