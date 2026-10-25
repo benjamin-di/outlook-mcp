@@ -191,8 +191,8 @@ TOOL_SURFACE_CEILING = 14_850
 
 # 14,776 on the 71-tool default surface before the latest rebase;
 # 14,954 with the optional documents group enabled (+178 for its one reader).
-# Re-measured 14,813 / 14,991 after main c832373 picked up #183's download
-# descriptions (+37 on both surfaces); the document reader still adds 178.
+# Re-measured 14,813 / 14,991 after rebasing onto main c832373 (+37 on both
+# surfaces from the digest and reply-draft descriptions); the reader still adds 178.
 # The default ceiling stays 14,850. Documents have a separate 15,150 ceiling
 # (~1.3% headroom), so an opt-in tool cannot raise every user's per-turn cost.
 DOCUMENT_SURFACE_CEILING = 15_150
