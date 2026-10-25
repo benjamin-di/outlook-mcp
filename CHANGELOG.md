@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Long worksheet names remain distinguishable after display truncation.** A cut name
+  ends in its one-based worksheet position, within the same 31-character bound, so
+  names sharing a prefix no longer label different sheets alike. Original names
+  still select the workbook data; names already within the limit are unchanged.
 - **An empty recipient list clears the recipients, instead of being read as "not mentioned".**
   A reply-all draft arrives with Graph's own `to` and `cc` already on it, and `if cc:` dropped
   `cc=[]`, so the draft kept people the caller had explicitly removed — sending it mailed them.
