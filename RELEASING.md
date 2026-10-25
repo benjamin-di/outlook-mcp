@@ -198,7 +198,7 @@ This is the step that proves the release. `uv.lock` keeps every CI job and devel
 And confirm the MCP registry shows the new version as `(latest)`:
 
 ```bash
-curl -s 'https://registry.modelcontextprotocol.io/v0/servers?search=mpalermiti&limit=20' | python3 -c "import json,sys; [print(s['server'].get('version'), '(latest)' if s.get('_meta',{}).get('io.modelcontextprotocol.registry/official',{}).get('isLatest') else '') for s in json.load(sys.stdin).get('servers', [])]"
+curl -s 'https://registry.modelcontextprotocol.io/v0/servers?search=mpalermiti&version=latest' | python3 -c "import json,sys; [print(s['server'].get('version'), '(latest)' if s.get('_meta',{}).get('io.modelcontextprotocol.registry/official',{}).get('isLatest') else '') for s in json.load(sys.stdin).get('servers', [])]"
 ```
 
 

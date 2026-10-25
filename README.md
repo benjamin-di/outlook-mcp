@@ -534,7 +534,7 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 |-------|------|---------|-------------|
 | `client_id` | `string` | `null` | Azure AD application (client) ID. Required for auth. |
 | `tenant_id` | `string` | `"consumers"` | Azure AD tenant. Use `"consumers"` for personal Microsoft accounts. |
-| `expected_username` | `string` | `null` | Since 1.28: optional sign-in username for this instance. A saved sign-in for another username is refused before refreshing it; a new sign-in is checked before saving its record or using its credential. Case-insensitive; compares Microsoft's sign-in username literally, without resolving aliases. Unset keeps the existing behaviour. Older versions ignore this key with a warning and do not enforce the guard. |
+| `expected_username` | `string` | `null` | Since 1.29: optional sign-in username for this instance. A saved sign-in for another username is refused before refreshing it; a new sign-in is checked before saving its record or using its credential. Case-insensitive; compares Microsoft's sign-in username literally, without resolving aliases. Unset keeps the existing behaviour. Older versions ignore this key with a warning and do not enforce the guard. |
 | `timezone` | `string` | `"UTC"` | IANA timezone (e.g. `"America/New_York"`). Interprets zone-less dates, **and anchors every event you create** — a recurring event is expanded in this zone, so on the default `"UTC"` a 09:00 weekly meeting shifts an hour when the clocks change. Set it to where you are. |
 | `read_only` | `bool` | `false` | When `true`, all write tools (send, reply, move, delete, create, update, RSVP) return an error. Gates the tools, not the Microsoft token -- see below. |
 | `read_only_consent` | `bool` | `false` | When `true`, `outlook-mcp auth` asks Microsoft for the read permissions only, instead of the read-write set. For a second, read-only app registration -- see [What `read_only` does and does not do](#what-read_only-does-and-does-not-do). Requires `read_only: true`; the config is refused without it. |
@@ -586,7 +586,7 @@ Then run `outlook-mcp auth` once per instance, with the same env set, to write e
 
 **Only move the config directory — never `HOME`.** The token cache is not in it: it stays in the OS keyring, and on macOS every azure-identity cache on the host shares one Keychain item, coordinated through a signal file — on this server, `~/.IdentityService/outlook-mcp.nocae` (azure-identity appends `.nocae` to every non-CAE cache name; a CAE cache would be a different file over the same item). Both processes must keep consulting that same signal file so their cache writes lock and merge into the one shared entry — which is exactly what moving the config directory preserves and redirecting `HOME` (or the cache location) would break: two signal files that each believe they own the Keychain item overwrite each other's token. `OUTLOOK_MCP_CONFIG_DIR` deliberately moves only where config.json, the auth record, and attachments live; unset or empty keeps the default `~/.outlook-mcp`.
 
-Since 1.28, to require a particular sign-in for an instance, add
+Since 1.29, to require a particular sign-in for an instance, add
 `"expected_username": "owner@example.com"` to that instance's `config.json`. Older versions ignore
 this key with a warning and do not enforce the guard. This optional guard compares Microsoft's
 saved sign-in username case-insensitively; it does not resolve email aliases. A cached mismatch is
