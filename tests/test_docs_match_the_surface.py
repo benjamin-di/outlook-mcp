@@ -14,7 +14,10 @@ Prose descriptions are deliberately not pinned. Only facts the code settles are.
 """
 
 import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,14 +31,38 @@ ROOT = Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 SKILL = (ROOT / "SKILL.md").read_text(encoding="utf-8")
 
-DEFAULT_REGISTERED = set(mcp._tool_manager._tools)
+LOADED = set(mcp._tool_manager._tools)
 REGISTERED = {
     name for name in vars(server) if name.startswith("outlook_") and callable(getattr(server, name))
 }
 
 
 def test_default_surface_omits_only_optional_groups():
-    assert DEFAULT_REGISTERED == toolsets.select_kept_tools(list(REGISTERED), None)
+    """Pin a fresh default process even when this suite enables every group."""
+    probe = (
+        "import json\n"
+        "from outlook_mcp.server import mcp\n"
+        "print(json.dumps(sorted(mcp._tool_manager._tools)))\n"
+    )
+    env = {**os.environ}
+    env.pop("OUTLOOK_MCP_TOOLSETS", None)
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    default = set(json.loads(result.stdout.strip().splitlines()[-1]))
+    assert len(default) == 71
+    assert default == toolsets.select_kept_tools(list(REGISTERED), None)
+    assert "outlook_read_attachment" not in default
+
+
+def test_current_surface_follows_the_requested_toolsets():
+    selected = toolsets.parse_toolsets(os.environ.get("OUTLOOK_MCP_TOOLSETS"))
+    assert LOADED == toolsets.select_kept_tools(list(REGISTERED), selected)
 
 
 # The README's "Features" list names its categories in words; their counts are
