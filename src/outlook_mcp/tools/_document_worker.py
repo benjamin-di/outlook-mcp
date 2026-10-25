@@ -1,9 +1,10 @@
-"""Bounded PDF/XLSX extraction, run as a separate process without server credentials.
+"""Bounded PDF/XLSX extraction without inheriting credential environment variables.
 
 No OCR or formula evaluation: absent text and formula caches are reported explicitly.
 A clean-environment subprocess for crash and resource containment, not a sandbox.
 No server package is imported when this file runs as a script. The parent enforces
 RSS and wall limits on every platform; OS resource limits are best-effort extras.
+The worker retains the same user's filesystem, network and credential-store access.
 """
 
 from __future__ import annotations
@@ -41,10 +42,7 @@ def resource_limits() -> None:
 def append(parts: list[str], text: str, length: int) -> int:
     length += len(text) + bool(parts)
     if length > MAX_CHARS:
-        raise RefusalError(
-            "The document exceeds one million extracted characters. "
-            "Download it for local extraction."
-        )
+        raise RefusalError("The document exceeds one million extracted characters.")
     parts.append(text)
     return length
 
@@ -54,9 +52,9 @@ def pdf(data: bytes) -> dict:
 
     reader = PdfReader(BytesIO(data))
     if reader.is_encrypted and not reader.decrypt(""):
-        raise RefusalError("This PDF needs a password. Download and unlock it before reading.")
+        raise RefusalError("This PDF needs a password and must be unlocked before extraction.")
     if len(reader.pages) > 200:
-        raise RefusalError("This PDF exceeds 200 pages. Download it for local extraction.")
+        raise RefusalError("This PDF exceeds 200 pages.")
     parts, empty, length = [], [], 0
     for number, page in enumerate(reader.pages, 1):
         text = page.extract_text(extraction_mode="layout", layout_mode_strip_rotated=False) or ""
@@ -65,10 +63,14 @@ def pdf(data: bytes) -> dict:
         if not text.strip():
             empty.append(number)
     if len(empty) == len(reader.pages):
-        raise RefusalError(
-            "This PDF has no extractable text. It may be scanned: download it and use OCR."
+        raise RefusalError("This PDF has no extractable text (blank or scanned); it may need OCR.")
+    warnings = []
+    if empty:
+        sample = empty[:8]
+        omitted = f"; {len(empty) - len(sample)} more omitted" if len(empty) > len(sample) else ""
+        warnings.append(
+            f"{len(empty)} pages without extractable text (blank or need OCR): {sample}{omitted}."
         )
-    warnings = [f"Pages without extractable text (blank or need OCR): {empty}"] if empty else []
     return {"text": "\n".join(parts), "pages": len(reader.pages), "warnings": warnings}
 
 
@@ -80,10 +82,7 @@ def xlsx(data: bytes) -> dict:
             len(archive.infolist()) > 2000
             or sum(i.file_size for i in archive.infolist()) > 50 * 2**20
         ):
-            raise RefusalError(
-                "The spreadsheet expands beyond the reading limit. "
-                "Download it for local extraction."
-            )
+            raise RefusalError("The spreadsheet expands beyond the reading limit.")
     with ExitStack() as stack:
         formulas = load_workbook(BytesIO(data), read_only=True, data_only=False, keep_links=False)
         stack.callback(formulas.close)
@@ -105,10 +104,7 @@ def xlsx(data: bytes) -> dict:
             for row, saved in zip(sheet.iter_rows(), cached.iter_rows(), strict=True):
                 count += len(row)
                 if count > MAX_CELLS:
-                    raise RefusalError(
-                        "The spreadsheet exceeds 100,000 visited cells. "
-                        "Download it for local extraction."
-                    )
+                    raise RefusalError("The spreadsheet exceeds 100,000 visited cells.")
                 for cell, value in zip(row, saved, strict=True):
                     if cell.value is None:
                         continue
@@ -170,10 +166,7 @@ def main() -> None:
     except RefusalError as exc:
         result = {"error": str(exc)}
     except Exception as exc:
-        result = {
-            "error": f"Could not extract this document ({type(exc).__name__}). "
-            "Download the original."
-        }
+        result = {"error": f"Could not extract this document ({type(exc).__name__})."}
     else:
         sys.stdout.buffer.write(output + b"\n")
         return
