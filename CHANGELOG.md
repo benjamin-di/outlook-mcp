@@ -8,6 +8,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **An empty recipient list clears the recipients, instead of being read as "not mentioned".**
+  A reply-all draft arrives with Graph's own `to` and `cc` already on it, and `if cc:` dropped
+  `cc=[]`, so the draft kept people the caller had explicitly removed — sending it mailed them.
+  Omitted (`None`) still leaves Graph's choice alone; `[]` now reaches the create call as an
+  empty collection, which is what Graph receives.
+- **A truncated image comes back as a resource, not as `ImageContent`.** Detection stopped at
+  the signature, so a PNG cut before its IEND was sent as an image; a client that cannot open
+  it can reject the whole tool result. Each type must now finish the way it starts: PNG ends
+  with the IEND chunk itself (CRC included — the four letters alone were enough before), GIF
+  with its trailer, WEBP with a RIFF length that fits the bytes present. JPEG walks the
+  segments to the first scan and requires end-of-image after it, so a photo carrying a Samsung
+  trailer or a Motion Photo's appended video is still an image: decoders stop at EOI, and
+  refusing those would make a phone photo unviewable.
 - **`outlook_create_folder`'s `parent_folder` takes a name, as its description always said.** It
   was validated as an id and nothing else, so "Junk Email" was refused locally and a user
   folder's name reached Graph as an id. It now goes through the same resolver as every other

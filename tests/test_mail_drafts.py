@@ -22,8 +22,16 @@ from outlook_mcp.tools.mail_drafts import (
     send_draft,
     update_draft,
 )
+from tests.test_write_payloads_reach_the_wire import assert_on_wire
 
 _CFG = Config(client_id="test")
+
+_WIRE_NAMES = {
+    "to_recipients": "toRecipients",
+    "cc_recipients": "ccRecipients",
+    "bcc_recipients": "bccRecipients",
+    "reply_to": "replyTo",
+}
 _CFG_RO = Config(client_id="test", read_only=True)
 
 
@@ -699,6 +707,61 @@ class TestCreateDraftInThread:
         assert source.create_reply_all.post.call_args.args[0].comment is None
         assert result["cc"] == ["other@example.com"]
 
+    @pytest.mark.parametrize(
+        ("field", "attribute"),
+        [
+            ("to", "to_recipients"),
+            ("cc", "cc_recipients"),
+            ("bcc", "bcc_recipients"),
+            ("reply_to", "reply_to"),
+        ],
+    )
+    async def test_an_empty_recipient_list_clears_what_graph_prefilled(self, field, attribute):
+        """`cc=[]` on a reply-all must remove them, not leave Graph's list alone.
+
+        Graph prefills to/cc on a reply-all draft, so treating an empty list as
+        "not mentioned" kept recipients the caller had explicitly removed — and
+        sending that draft mailed them.
+        """
+        client, source, _ = _thread_client(_thread_draft())
+
+        kwargs = {"to": None, field: []} if field != "to" else {"to": []}
+        await create_draft(
+            client,
+            subject=None,
+            body="Agreed.",
+            reply_to_message_id="AAMkOriginal=",
+            reply_all=True,
+            config=_CFG,
+            **kwargs,
+        )
+
+        sent = source.create_reply_all.post.call_args.args[0].message
+        assert getattr(sent, attribute) == []
+        # On the wire too: Kiota does emit an empty collection, so the clear is what
+        # Graph receives rather than an attribute that never serialized.
+        assert_on_wire(sent, f'"{_WIRE_NAMES[attribute]}": []')
+
+    @pytest.mark.parametrize("field", ["to", "cc", "bcc", "reply_to"])
+    async def test_an_omitted_recipient_list_leaves_graphs_alone(self, field):
+        """Omitted is not empty: leaving the field out keeps the thread's recipients."""
+        client, source, _ = _thread_client(_thread_draft())
+
+        await create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="Agreed.",
+            reply_to_message_id="AAMkOriginal=",
+            reply_all=True,
+            config=_CFG,
+        )
+
+        sent = source.create_reply_all.post.call_args.args[0].message
+        assert not getattr(sent, "cc_recipients", None)
+        assert not getattr(sent, "bcc_recipients", None)
+        assert not getattr(sent, "reply_to", None)
+
     async def test_forward_uses_create_forward_with_the_recipients(self):
         client, source, new_draft = _thread_client(_thread_draft(to=("fwd@example.com",)))
 
@@ -843,7 +906,11 @@ class TestCreateDraftInThread:
         assert [r.email_address.address for r in message.reply_to] == ["alias@example.com"]
         assert message.importance.value == "high"
 
-    async def test_a_reply_without_recipients_leaves_them_to_graph(self):
+    async def test_an_empty_to_clears_the_recipients_graph_would_have_chosen(self):
+        """`to=[]` is a request to clear, and omitting the list is the way to accept
+        Graph's choice. This used to treat `[]` as "not mentioned", which is how a
+        reply-all kept recipients the caller had removed.
+        """
         client, source, _ = _thread_client()
 
         await create_draft(
@@ -857,8 +924,23 @@ class TestCreateDraftInThread:
 
         message = source.create_reply.post.call_args.args[0].message
         assert message.subject is None
-        assert message.to_recipients is None
+        assert message.to_recipients == []
         assert message.cc_recipients is None
+
+    async def test_an_omitted_to_leaves_the_recipients_to_graph(self):
+        client, source, _ = _thread_client()
+
+        await create_draft(
+            client,
+            to=None,
+            subject=None,
+            body="x",
+            reply_to_message_id="AAMkOriginal=",
+            config=_CFG,
+        )
+
+        message = source.create_reply.post.call_args.args[0].message
+        assert message.to_recipients is None
 
 
 class TestHtmlReplyDraft:
