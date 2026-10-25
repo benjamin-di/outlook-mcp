@@ -175,6 +175,17 @@ CHARS_PER_TOKEN = 4
 #
 # 14,272 with sender authentication on current main (14,197); the existing
 # 14,350 ceiling covers the opt-in read without a raise.
+# 13,594 after the digest describes has_more and preserving the whole token
+# dictionary (#156, +8 on main at 13,586). The ignored-filter fallback and
+# bootstrap context add response metadata, not schema fields. No ceiling raise.
+#
+# 14,205 with the digest bootstrap fix on current main (14,197); the
+# existing 14,350 ceiling covers it without a raise.
+#
+# 14,210 after clarifying that stored token dictionaries must be replaced,
+# not merged (+5); still covered by the 14,350 ceiling.
+# 14,790 measured after rebasing the digest onto current main.
+# The existing 14,850 ceiling covers it; no raise.
 TOOL_SURFACE_CEILING = 14_850
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
