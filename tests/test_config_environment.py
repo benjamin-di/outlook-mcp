@@ -277,6 +277,48 @@ def test_attachment_override_does_not_create_directories_through_a_late_symlink(
     assert not (outside / "new").exists()
 
 
+@pytest.mark.parametrize("filename", ["secret.txt", "new.txt"])
+def test_attachment_root_is_rechecked_after_mkdir(tmp_path, monkeypatch, filename):
+    root, outside = tmp_path / "attachments", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    secret = outside / "secret.txt"
+    secret.write_text("synthetic outside content")
+    outside_mode = outside.stat().st_mode
+    child = root / "child"
+    child.mkdir()
+    file = stored(tmp_path, attachments_dir=str(root))
+    before = file.read_bytes()
+    monkeypatch.setenv("OUTLOOK_MCP_ATTACHMENTS_DIR", str(child))
+    actual = load_config(str(tmp_path))
+    original_mkdir = Path.mkdir
+    swapped = False
+
+    def swap_on_mkdir(path, *args, **kwargs):
+        nonlocal swapped
+        if path != child:
+            return original_mkdir(path, *args, **kwargs)
+        # The initial confinement check has passed. Simulate replacement before
+        # the second resolve/check, without creating anything outside the root.
+        child.rmdir()
+        try:
+            child.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            pytest.skip("symlink privilege unavailable")
+        swapped = True
+
+    monkeypatch.setattr(Path, "mkdir", swap_on_mkdir)
+    with pytest.raises(ValueError, match="file's configured root"):
+        resolve_attachment_path(
+            filename, actual.attachments_dir, file_root=actual._attachments_file_root
+        )
+    assert swapped
+    assert sorted(path.name for path in outside.iterdir()) == ["secret.txt"]
+    assert secret.read_text() == "synthetic outside content"
+    assert outside.stat().st_mode == outside_mode
+    assert file.read_bytes() == before
+
+
 def test_attachment_file_root_is_private_and_survives_runtime_config_copies(tmp_path, monkeypatch):
     root = tmp_path / "attachments"
     stored(tmp_path, attachments_dir=str(root), _attachments_file_root="/")
