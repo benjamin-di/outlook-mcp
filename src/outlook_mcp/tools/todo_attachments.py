@@ -181,7 +181,9 @@ async def download_task_attachment(
     """
     task_id = validate_graph_id(task_id)
     attachment_id = validate_graph_id(attachment_id)
-    save_path = download_destination(save_path, as_content, config.attachments_dir)
+    save_path = download_destination(
+        save_path, as_content, config.attachments_dir, file_root=config._attachments_file_root
+    )
     resolved_id = await _resolve_list_id(graph_client, list_id)
 
     attachment = await (
@@ -227,7 +229,9 @@ async def upload_task_attachment(
     check_permission(config, CATEGORY_TODO_WRITE, "outlook_upload_task_attachment")
     task_id = validate_graph_id(task_id)
 
-    file_path = resolve_attachment_path(file_path, config.attachments_dir)
+    file_path = resolve_attachment_path(
+        file_path, config.attachments_dir, file_root=config._attachments_file_root
+    )
     if not os.path.isfile(file_path):
         # ValueError, not FileNotFoundError: _wrap_tool_errors only forwards
         # ValueError text to the model, and the path is the thing it needs.

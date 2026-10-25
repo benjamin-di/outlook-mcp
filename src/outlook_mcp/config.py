@@ -9,7 +9,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from outlook_mcp.permissions import VALID_CATEGORIES
 
@@ -102,6 +109,11 @@ class EnvironmentConfigError(ValueError):
 
 class Config(BaseModel):
     """Outlook MCP server configuration."""
+
+    # A narrowed environment directory must stay inside the file's resolved root
+    # at use time too: a child can become a symlink after configuration loads.
+    # This is runtime policy metadata, never another persisted configuration key.
+    _attachments_file_root: str | None = PrivateAttr(default=None)
 
     client_id: str | None = Field(default=None, description="Azure AD app client ID (BYOID)")
     tenant_id: str = Field(default=DEFAULT_TENANT_ID)

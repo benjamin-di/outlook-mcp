@@ -1,4 +1,4 @@
-"""Optional environment input: plain overrides, security values that only tighten."""
+"""Optional environment input constrained by the valid file's security policy."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from outlook_mcp.config import Config, EnvironmentConfigError, _misspelt_safety_key
+from outlook_mcp.config import Config, EnvironmentConfigError, _misspelt_safety_key, _squash
+from outlook_mcp.permissions import VALID_CATEGORIES
 
 PREFIX = "OUTLOOK_MCP_"
 PLAIN_FIELDS = ("client_id", "tenant_id", "timezone")
@@ -50,7 +51,7 @@ def _parse(variable: str, field: str, value: str) -> object:
     return value
 
 
-def _narrow_attachment_root(value: str, baseline: str) -> str:
+def _narrow_attachment_root(value: str, baseline: str) -> tuple[str, str]:
     """Resolve without creating directories; refuse wider roots and symlink escapes.
 
     A new Windows UNC/device location is rejected lexically before resolution can
@@ -88,14 +89,16 @@ def _narrow_attachment_root(value: str, baseline: str) -> str:
             raise
         raise _refuse(variable, "the directory could not be resolved safely.") from None
     # Keep the checked absolute root, independent of later working-directory changes.
-    return str(candidate)
+    return str(candidate), str(root)
 
 
 def apply_environment(baseline: Config, environ: Mapping[str, str]) -> Config:
     """Validate the file first, then apply only explicit, non-persistent inputs."""
+    prefix = _squash(PREFIX)
     for variable in environ:
-        if variable.startswith(PREFIX) and variable not in ENV_FIELDS:
-            meant = _misspelt_safety_key(variable[len(PREFIX) :], SECURITY_FIELDS)
+        normalized = _squash(variable.casefold())
+        if normalized.startswith(prefix) and variable not in ENV_FIELDS:
+            meant = _misspelt_safety_key(normalized[len(prefix) :], SECURITY_FIELDS)
             if meant:
                 raise _refuse(
                     variable, f"a security setting appears misspelt; use {PREFIX + meant.upper()}."
@@ -107,6 +110,14 @@ def apply_environment(baseline: Config, environ: Mapping[str, str]) -> Config:
     }
     if not updates:
         return baseline
+    if (
+        "client_id" in updates
+        and baseline.client_id
+        and updates["client_id"].casefold() != baseline.client_id.casefold()
+    ):
+        raise _refuse(
+            PREFIX + "CLIENT_ID", "cannot change the app registration set by config.json."
+        )
     # Config remains the only settings model and validator for field values and
     # relationships. Environment values cannot rescue an invalid config file.
     try:
@@ -119,7 +130,10 @@ def apply_environment(baseline: Config, environ: Mapping[str, str]) -> Config:
             "read_only", baseline.read_only
         ):
             reason = "read_only_consent requires read_only to be true."
+        elif "allow_categories" in fields:
+            reason = "use valid permission categories: " + ", ".join(sorted(VALID_CATEGORIES)) + "."
         raise _refuse(", ".join(variables), reason) from None
+    effective._attachments_file_root = baseline._attachments_file_root
     for field in ("read_only", "read_only_consent"):
         if field in updates and getattr(baseline, field) and not getattr(effective, field):
             raise _refuse(PREFIX + field.upper(), "cannot disable a restriction from config.json.")
@@ -141,9 +155,10 @@ def apply_environment(baseline: Config, environ: Mapping[str, str]) -> Config:
                 "cannot widen the file's allowed categories; an empty list means all categories.",
             )
     if "attachments_dir" in updates:
-        effective.attachments_dir = _narrow_attachment_root(
+        effective.attachments_dir, root = _narrow_attachment_root(
             effective.attachments_dir, baseline.attachments_dir
         )
+        effective._attachments_file_root = baseline._attachments_file_root or root
     if "timezone" in updates:
         # Reuse the existing timezone resolver, without changing file-only loading.
         from outlook_mcp.validation import resolve_timezone

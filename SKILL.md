@@ -201,6 +201,8 @@ when `OUTLOOK_MCP_TOOLSETS` names it (see Notes).
 
 
 Optional configuration environment input: `OUTLOOK_MCP_CLIENT_ID`, `OUTLOOK_MCP_TENANT_ID` and
-`OUTLOOK_MCP_TIMEZONE` may override the valid file/default settings. Security environment values
-may only tighten them; attempted loosening is refused at startup. Values remain in memory.
+`OUTLOOK_MCP_TIMEZONE` supply launcher settings. Client ID input may supply an app only when the
+file has none; tenant/timezone inputs may override. Security environment values
+may only tighten the valid file/default settings; attempted loosening is refused at startup.
+Values remain in memory.
 See README “Environment configuration” for the supported variables and strict boolean/list syntax.

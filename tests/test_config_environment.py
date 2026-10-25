@@ -7,11 +7,15 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
+from mcp.client import Client
 
 from outlook_mcp import _config_env
 from outlook_mcp.config import Config, EnvironmentConfigError, config_repair_lines, load_config
+from outlook_mcp.permissions import VALID_CATEGORIES
+from outlook_mcp.tools.mail_attachments import resolve_attachment_path
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +35,7 @@ def stored(tmp_path, **settings):
 def test_plain_settings_override_file_without_writing_or_creating_directories(
     tmp_path, monkeypatch
 ):
-    file = stored(tmp_path, client_id="file-client", tenant_id="consumers", timezone="UTC")
+    file = stored(tmp_path, tenant_id="consumers", timezone="UTC")
     before = file.read_bytes()
     for name, value in [
         ("CLIENT_ID", "env-client"),
@@ -56,6 +60,36 @@ def test_missing_file_keeps_overrides_in_memory(tmp_path, monkeypatch):
     actual = load_config(str(tmp_path))
     assert actual.client_id == "env-client" and actual.read_only is True
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("settings", [{}, {"client_id": None}, {"client_id": ""}])
+def test_environment_can_supply_an_app_when_file_has_none(tmp_path, monkeypatch, settings):
+    file = stored(tmp_path, **settings)
+    before = file.read_bytes()
+    monkeypatch.setenv("OUTLOOK_MCP_CLIENT_ID", "env-client")
+    assert load_config(str(tmp_path)).client_id == "env-client"
+    assert file.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "security", [{}, {"read_only": True}, {"read_only": True, "read_only_consent": True}]
+)
+def test_environment_cannot_change_an_app_set_in_any_file(tmp_path, monkeypatch, security):
+    file = stored(tmp_path, client_id="file-client", **security)
+    before = file.read_bytes()
+    monkeypatch.setenv("OUTLOOK_MCP_CLIENT_ID", "env-client")
+    with pytest.raises(EnvironmentConfigError, match="OUTLOOK_MCP_CLIENT_ID") as exc:
+        load_config(str(tmp_path))
+    assert "app registration" in str(exc.value)
+    assert "env-client" not in str(exc.value) and "file-client" not in str(exc.value)
+    assert file.read_bytes() == before
+
+
+@pytest.mark.parametrize("client_id", ["file-client", "FILE-CLIENT"])
+def test_environment_can_repeat_the_same_app_registration(tmp_path, monkeypatch, client_id):
+    stored(tmp_path, client_id="file-client")
+    monkeypatch.setenv("OUTLOOK_MCP_CLIENT_ID", client_id)
+    assert load_config(str(tmp_path)).client_id.casefold() == "file-client"
 
 
 def test_no_new_variables_preserve_file_configuration(tmp_path):
@@ -192,6 +226,114 @@ def test_attachment_symlink_escape_is_refused(tmp_path, monkeypatch):
         load_config(str(tmp_path))
 
 
+@pytest.mark.parametrize("existing", [False, True])
+def test_attachment_override_cannot_become_an_outside_symlink_after_load(
+    tmp_path, monkeypatch, existing
+):
+    root, outside = tmp_path / "attachments", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("synthetic outside content")
+    child = root / "later"
+    if existing:
+        child.mkdir()
+    stored(tmp_path, attachments_dir=str(root))
+    monkeypatch.setenv("OUTLOOK_MCP_ATTACHMENTS_DIR", str(child))
+    actual = load_config(str(tmp_path))
+    if existing:
+        # The same already-used Config must recheck the directory on the next call.
+        assert resolve_attachment_path(
+            "new.txt", actual.attachments_dir, file_root=actual._attachments_file_root
+        ) == str(child / "new.txt")
+        child.rmdir()
+    try:
+        child.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink privilege unavailable")
+    with pytest.raises(ValueError, match="file's configured root"):
+        resolve_attachment_path(
+            "secret.txt", actual.attachments_dir, file_root=actual._attachments_file_root
+        )
+    assert sorted(p.name for p in outside.iterdir()) == ["secret.txt"]
+
+
+def test_attachment_override_does_not_create_directories_through_a_late_symlink(
+    tmp_path, monkeypatch
+):
+    root, outside = tmp_path / "attachments", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    stored(tmp_path, attachments_dir=str(root))
+    monkeypatch.setenv("OUTLOOK_MCP_ATTACHMENTS_DIR", str(root / "later" / "new"))
+    actual = load_config(str(tmp_path))
+    try:
+        (root / "later").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink privilege unavailable")
+    with pytest.raises(ValueError, match="file's configured root"):
+        resolve_attachment_path(
+            "new.txt", actual.attachments_dir, file_root=actual._attachments_file_root
+        )
+    assert not (outside / "new").exists()
+
+
+def test_attachment_file_root_is_private_and_survives_runtime_config_copies(tmp_path, monkeypatch):
+    root = tmp_path / "attachments"
+    stored(tmp_path, attachments_dir=str(root), _attachments_file_root="/")
+    monkeypatch.setenv("OUTLOOK_MCP_ATTACHMENTS_DIR", str(root / "child"))
+    actual = load_config(str(tmp_path))
+    for result in (
+        actual,
+        actual.model_copy(),
+        Config.model_validate(actual),
+        _config_env.apply_environment(actual, {"OUTLOOK_MCP_TIMEZONE": "Europe/London"}),
+    ):
+        assert result._attachments_file_root == str(root)
+        assert "_attachments_file_root" not in result.model_dump()
+        assert "_attachments_file_root" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("mail.download_attachment", ["MSG=", "ATT=", "secret.txt"]),
+        ("mail.send_with_attachments", [["reader@example.com"], "subject", "body", ["secret.txt"]]),
+        ("mail.attach_to_draft", ["DRAFT=", ["secret.txt"]]),
+        ("calendar.attach_to_event", ["EVENT=", ["secret.txt"]]),
+        ("todo.download_task_attachment", ["TASK=", "ATT=", "secret.txt"]),
+        ("todo.upload_task_attachment", ["TASK=", "secret.txt"]),
+    ],
+)
+async def test_every_attachment_tool_preserves_the_file_root_before_graph(
+    tmp_path, monkeypatch, tool, args
+):
+    from outlook_mcp.tools import calendar_attachments, mail_attachments, todo_attachments
+
+    root, outside = tmp_path / "attachments", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("synthetic outside content")
+    stored(tmp_path, attachments_dir=str(root))
+    monkeypatch.setenv("OUTLOOK_MCP_ATTACHMENTS_DIR", str(root / "later"))
+    config = load_config(str(tmp_path))
+    try:
+        (root / "later").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink privilege unavailable")
+    module, name = tool.split(".")
+    operation = getattr(
+        {"mail": mail_attachments, "calendar": calendar_attachments, "todo": todo_attachments}[
+            module
+        ],
+        name,
+    )
+    graph = MagicMock()
+    with pytest.raises(ValueError, match="file's configured root"):
+        await operation(graph, *args, config=config)
+    assert graph.mock_calls == []
+    assert (outside / "secret.txt").read_text() == "synthetic outside content"
+
+
 def test_relative_attachment_override_is_frozen_after_checking(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     stored(tmp_path, attachments_dir=str(tmp_path / "attachments"))
@@ -246,8 +388,34 @@ def test_invalid_inputs_name_the_variable_without_echoing_values(
 ):
     variable = "OUTLOOK_MCP_" + field
     monkeypatch.setenv(variable, value)
-    with pytest.raises(EnvironmentConfigError, match=variable):
+    with pytest.raises(EnvironmentConfigError, match=variable) as exc:
         load_config(str(tmp_path))
+    if value.strip():
+        # Check the diagnostic payload, not the variable spelling (e.g. CLIENT_ID).
+        reason = str(exc.value).split(": ", 1)[1]
+        assert value not in reason
+
+
+@pytest.mark.parametrize(
+    "field", ["READ_ONLY", "READ_ONLY_CONSENT", "ALLOW_UNENCRYPTED_TOKEN_CACHE"]
+)
+def test_invalid_boolean_value_is_not_echoed_in_repair_lines(tmp_path, monkeypatch, field):
+    value = "private-boolean-value"
+    monkeypatch.setenv("OUTLOOK_MCP_" + field, value)
+    with pytest.raises(EnvironmentConfigError) as exc:
+        load_config(str(tmp_path))
+    assert value not in str(exc.value)
+    assert value not in "\n".join(config_repair_lines(exc.value))
+
+
+def test_unknown_categories_name_valid_choices_without_echoing_the_input(tmp_path, monkeypatch):
+    value = "private-unknown-category"
+    monkeypatch.setenv("OUTLOOK_MCP_ALLOW_CATEGORIES", json.dumps([value]))
+    with pytest.raises(EnvironmentConfigError) as exc:
+        load_config(str(tmp_path))
+    message = str(exc.value)
+    assert value not in message
+    assert all(category in message for category in VALID_CATEGORIES)
 
 
 @pytest.mark.parametrize(
@@ -269,10 +437,32 @@ def test_misspelt_environment_security_key_stops_startup(tmp_path, monkeypatch, 
         load_config(str(tmp_path))
 
 
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "outlook_mcp_read_only",
+        "Outlook_Mcp_READ_ONLY",
+        "OUTLOOKMCP_READ_ONLY",
+        "OutlookMcpReadOnly",
+        "outlook-mcp-allow-categories",
+        "outlookmcpattachmentsdir",
+    ],
+)
+def test_misspelt_environment_prefix_cannot_silently_drop_security_value(variable):
+    # A literal mapping preserves the spellings on Windows too. os.environ
+    # uppercases names there, making a lowercase canonical name valid input.
+    with pytest.raises(EnvironmentConfigError) as exc:
+        _config_env.apply_environment(Config(), {variable: "true"})
+    assert variable in str(exc.value)
+    assert "appears misspelt" in str(exc.value)
+
+
 def test_transport_and_toolset_variables_keep_their_existing_meaning(tmp_path, monkeypatch):
     for variable in (
         "TRANSPORT",
+        "CONFIG_DIR",
         "HTTP_HOST",
+        "HTTP_PORT",
         "HTTP_TOKEN",
         "HTTP_TOKEN_FILE",
         "HTTP_ALLOWED_HOSTS",
@@ -311,7 +501,7 @@ def test_environment_cannot_rescue_an_invalid_or_unreadable_file(tmp_path, monke
 
 @pytest.mark.parametrize("command", ["serve", "status", "auth"])
 def test_invalid_environment_stops_real_entry_points_before_credentials(tmp_path, command):
-    stored(tmp_path, client_id="file-client")
+    stored(tmp_path)
     code = """from outlook_mcp import auth,cli
 class ForbiddenAuth:
     def __init__(self,*a,**kw): raise AssertionError("credentials must not be built")
@@ -335,11 +525,108 @@ cli.main()
     assert "Traceback" not in result.stderr
 
 
+@pytest.mark.parametrize("read_only_consent", [False, True])
+@pytest.mark.parametrize("command", ["serve", "status", "auth"])
+def test_an_environment_app_change_stops_real_entry_points_before_credentials(
+    tmp_path, command, read_only_consent
+):
+    stored(tmp_path, client_id="file-client", read_only=True, read_only_consent=read_only_consent)
+    code = """from outlook_mcp import auth,cli
+class ForbiddenAuth:
+    def __init__(self,*a,**kw): raise AssertionError("credentials must not be built")
+auth.AuthManager=cli.AuthManager=ForbiddenAuth
+cli.main()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, command],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path),
+            "OUTLOOK_MCP_CONFIG_DIR": str(tmp_path),
+            "OUTLOOK_MCP_CLIENT_ID": "env-client",
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "OUTLOOK_MCP_CLIENT_ID" in result.stderr and "launch environment" in result.stderr
+    assert "env-client" not in result.stderr
+    assert "credentials must not" not in result.stderr and "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "variable,value",
+    [
+        ("OUTLOOK_MCP_READ_ONLY", "private-boolean-value"),
+        ("OUTLOOK_MCP_CLIENT_ID", "private-env-app"),
+    ],
+)
+async def test_lifespan_environment_refusal_reaches_real_mcp_tools_with_the_right_remedy(
+    tmp_path, monkeypatch, variable, value
+):
+    from outlook_mcp import server
+
+    stored(tmp_path, client_id="file-client")
+    monkeypatch.setenv(variable, value)
+    monkeypatch.setattr(server, "load_config", lambda: load_config(str(tmp_path)))
+    monkeypatch.setattr(
+        server.AuthManager,
+        "try_cached_token",
+        lambda _: pytest.fail("an invalid configuration must not try credentials"),
+    )
+    async with Client(server.mcp) as client:
+        status = await client.call_tool("outlook_auth_status", {})
+        read = await client.call_tool("outlook_whoami", {})
+    assert status.is_error is False
+    payload = json.loads("".join(part.text for part in status.content if hasattr(part, "text")))
+    assert payload["authenticated"] is False
+    assert payload["read_only"] is True
+    assert read.is_error is True
+    for message in (
+        payload["action_required"],
+        " ".join(part.text for part in read.content if hasattr(part, "text")),
+    ):
+        assert variable in message
+        assert "Fix the named variable in the launch environment" in message
+        assert "settings file could not" not in message
+        assert "config.json and restart the server" not in message
+        assert value not in message
+
+
+def test_saved_sign_in_mismatch_names_effective_app_when_file_has_no_app(tmp_path, monkeypatch):
+    from azure.identity import AuthenticationRecord
+
+    from outlook_mcp.auth import AuthManager
+    from outlook_mcp.errors import ClientIdMismatchError
+
+    monkeypatch.setenv("OUTLOOK_MCP_CLIENT_ID", "env-client")
+    auth = AuthManager(load_config(str(tmp_path)))
+    record = AuthenticationRecord(
+        tenant_id="consumers",
+        client_id="other-client",
+        authority="https://login.microsoftonline.com/consumers",
+        home_account_id="synthetic-home",
+        username="reader@example.com",
+    )
+    with (
+        patch("outlook_mcp.auth._load_auth_record", return_value=record),
+        patch("outlook_mcp.auth._unencrypted_fallback_will_be_used", return_value=False),
+        patch("outlook_mcp.auth.DeviceCodeCredential") as credential,
+    ):
+        assert auth.try_cached_token() is False
+    credential.assert_not_called()
+    assert isinstance(auth.startup_error, ClientIdMismatchError)
+    assert "effective client_id" in str(auth.startup_error)
+    assert "config.json" not in str(auth.startup_error)
+
+
 @pytest.mark.parametrize("entry", ["auth", "status", "serve"])
 def test_all_entry_points_use_the_same_effective_settings(tmp_path, monkeypatch, entry):
     from outlook_mcp import cli, server
 
-    stored(tmp_path, client_id="file-client")
+    stored(tmp_path)
     monkeypatch.setenv("OUTLOOK_MCP_CLIENT_ID", "env-client")
     monkeypatch.setenv("OUTLOOK_MCP_READ_ONLY", "true")
     seen = []
@@ -408,10 +695,11 @@ def test_existing_windows_unc_root_can_narrow_without_real_network(monkeypatch):
     monkeypatch.setattr(
         _config_env, "Path", lambda path: SimpleNamespace(resolve=lambda: PureWindowsPath(path))
     )
-    value = _config_env._narrow_attachment_root(
+    value, root = _config_env._narrow_attachment_root(
         r"\\files.example\share\root\child", r"\\files.example\share\root"
     )
     assert PureWindowsPath(value) == PureWindowsPath(r"\\files.example\share\root\child")
+    assert PureWindowsPath(root) == PureWindowsPath(r"\\files.example\share\root")
 
 
 def test_same_share_network_sibling_is_refused_before_resolution(monkeypatch):

@@ -32,7 +32,9 @@ from outlook_mcp.tools.mail_attachments import (
 from outlook_mcp.validation import validate_graph_id
 
 
-def _confined_files(attachment_paths: list[str], attachments_dir: str) -> list[tuple[str, int]]:
+def _confined_files(
+    attachment_paths: list[str], attachments_dir: str, *, file_root: str | None = None
+) -> list[tuple[str, int]]:
     """Each path resolved inside ``attachments_dir``, with its size; refused otherwise.
 
     Every path is checked before anything is sent, so one bad entry attaches
@@ -44,7 +46,7 @@ def _confined_files(attachment_paths: list[str], attachments_dir: str) -> list[t
         raise ValueError("Pass at least one file in attachment_paths.")
     files = []
     for path in attachment_paths:
-        resolved = resolve_attachment_path(path, attachments_dir)
+        resolved = resolve_attachment_path(path, attachments_dir, file_root=file_root)
         if not os.path.isfile(resolved):
             raise ValueError(
                 f"Not a file: {resolved}. Pass files inside {attachments_dir}; nothing "
@@ -81,7 +83,9 @@ async def attach_to_event(
     """
     check_permission(config, CATEGORY_CALENDAR_WRITE, "outlook_attach_to_event")
     event_id = validate_graph_id(event_id)
-    files = _confined_files(attachment_paths, config.attachments_dir)
+    files = _confined_files(
+        attachment_paths, config.attachments_dir, file_root=config._attachments_file_root
+    )
 
     builder = graph_client.me.events.by_event_id(event_id)
     if mail_send_withheld(config) and _has_attendees(await builder.get()):
