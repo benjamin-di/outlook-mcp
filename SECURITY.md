@@ -66,6 +66,14 @@ outlook-mcp is designed with security in mind:
   parsed as RFC 8601, a pass must be aligned with the From domain, and a header
   that names another service, fails DMARC or composite authentication, states
   either twice, or cannot be parsed authenticates nothing.
+- **HTTP transport is opt-in, and never runs without a token.** With
+  `OUTLOOK_MCP_TRANSPORT=streamable-http`, one request to the port reaches the mailbox, so the
+  server refuses to start without a token on any bind, loopback included, and answers `401` to
+  any request without it. The token comes from `OUTLOOK_MCP_HTTP_TOKEN`, or from
+  `OUTLOOK_MCP_HTTP_TOKEN_FILE`, an owner-only file that is not a symlink. It speaks plain
+  HTTP, so TLS belongs to a reverse proxy in front; the README's
+  [Remote / HTTP transport](README.md#remote--http-transport-optional--outlook_mcp_transport)
+  section has the rest.
 - **Input validation:** All Graph IDs, emails, dates, KQL queries, and folder names are validated before use
 - **Atomic writes:** Config files are written atomically to prevent corruption
 - **Symlink rejection:** Config loader refuses symlinked files
@@ -78,10 +86,3 @@ outlook-mcp is designed with security in mind:
 |---------|-----------|
 | Latest  | Yes       |
 | < Latest | Best effort |
-- **HTTP transport is opt-in, and never runs without a token.** With
-  `OUTLOOK_MCP_TRANSPORT=streamable-http`, one request to the port reaches the mailbox, so the
-  server refuses to start without `OUTLOOK_MCP_HTTP_TOKEN` on any bind, loopback included, and
-  answers `401` to any request without it. It speaks plain HTTP, so TLS belongs to a reverse
-  proxy in front; the README's
-  [Remote / HTTP transport](README.md#remote--http-transport-optional--outlook_mcp_transport)
-  section has the rest.
