@@ -16,6 +16,7 @@ from zipfile import ZipFile
 
 MAX_CHARS = 1_000_000
 MAX_CELLS = 100_000
+MAX_SHEETS = 100
 
 
 class RefusalError(Exception):
@@ -86,6 +87,10 @@ def xlsx(data: bytes) -> dict:
     with ExitStack() as stack:
         formulas = load_workbook(BytesIO(data), read_only=True, data_only=False, keep_links=False)
         stack.callback(formulas.close)
+        if len(formulas.sheetnames) > MAX_SHEETS:
+            raise RefusalError("The spreadsheet exceeds 100 sheets.")
+        if any(len(name) > 31 for name in formulas.sheetnames):
+            raise RefusalError("A spreadsheet sheet name exceeds Excel's 31-character limit.")
         values = load_workbook(BytesIO(data), read_only=True, data_only=True, keep_links=False)
         stack.callback(values.close)
         parts, sheets, count, length = [], [], 0, 0
@@ -156,6 +161,10 @@ def main() -> None:
         if len(data) > 10 * 2**20:
             raise RefusalError("The attachment exceeds 10 MiB.")
         result = {"pdf": pdf, "xlsx": xlsx}[sys.argv[1]](data)
+        # Parser text can contain an unpaired surrogate from a broken PDF
+        # ToUnicode map. Replace it before writing rather than crashing after
+        # the exception boundary and reporting a misleading resource failure.
+        output = json.dumps(result, ensure_ascii=False).encode("utf-8", errors="replace")
     except MemoryError:
         result = {"error": "The document parser exceeded its memory limit."}
     except RefusalError as exc:
@@ -165,7 +174,10 @@ def main() -> None:
             "error": f"Could not extract this document ({type(exc).__name__}). "
             "Download the original."
         }
-    print(json.dumps(result, ensure_ascii=False))
+    else:
+        sys.stdout.buffer.write(output + b"\n")
+        return
+    print(json.dumps(result, ensure_ascii=True))
 
 
 if __name__ == "__main__":

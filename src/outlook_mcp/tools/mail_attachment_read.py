@@ -17,6 +17,7 @@ from outlook_mcp.tools.mail_attachments import _media_type, _readable_text, fetc
 from outlook_mcp.validation import sanitize_output
 
 MAX_BYTES = 10 * 2**20
+MAX_SHEETS = 100
 WORKER = Path(_document_worker.__file__)
 
 
@@ -54,7 +55,7 @@ def _parser_result(stdout: bytes) -> dict:
             result["pages"] = pages
         if "sheets" in parsed:
             sheets = parsed["sheets"]
-            if not isinstance(sheets, list) or len(sheets) > 2000:
+            if not isinstance(sheets, list) or len(sheets) > MAX_SHEETS:
                 raise ValueError
             result["sheets"] = []
             for sheet in sheets:
@@ -62,9 +63,13 @@ def _parser_result(stdout: bytes) -> dict:
                     isinstance(sheet.get(k), str) for k in ("name", "state")
                 ):
                     raise ValueError
-                result["sheets"].append(
-                    {k: sanitize_output(sheet[k])[:300] for k in ("name", "state")}
-                )
+                if len(sheet["name"]) > 31 or sheet["state"] not in (
+                    "visible",
+                    "hidden",
+                    "veryHidden",
+                ):
+                    raise ValueError
+                result["sheets"].append({k: sanitize_output(sheet[k]) for k in ("name", "state")})
         warnings = parsed.get("warnings", [])
         if (
             not isinstance(warnings, list)
@@ -235,7 +240,7 @@ async def read_attachment(
     try:
         if kind == "text":
             text = _readable_text(
-                media if media != "application/octet-stream" else "text/plain",
+                "text/plain" if suffix in (".txt", ".csv", ".json", ".xml", ".md") else media,
                 charset,
                 data,
                 for_extraction=True,
@@ -258,7 +263,22 @@ async def read_attachment(
     text = parsed.pop("text")
     if offset > len(text):
         raise ValueError(f"offset exceeds the extracted text length ({len(text)} characters).")
-    end = min(offset + max_chars, len(text))
+    # Sheet names are sender-controlled content too. Include their bounded
+    # summary only on the first page when it fits alongside progress in text.
+    sheets = parsed.pop("sheets", None)
+    budget = max_chars
+    if offset == 0 and sheets is not None:
+        size = len(json.dumps(sheets, ensure_ascii=False))
+        if size <= budget - bool(text):
+            parsed["sheets"] = sheets
+            budget -= size
+    # A caller can resume in the middle of a quoted PDF line, even immediately
+    # after '| '. Re-quote the continuation inside the same output budget.
+    # Tiny chunks cannot contain a complete '[Page N]' marker and still advance.
+    prefix = ""
+    if kind == "pdf" and offset and offset < len(text) and text[offset - 1] != "\n" and budget > 2:
+        prefix = "| "
+    end = min(offset + budget - len(prefix), len(text))
     return {
         **parsed,
         "name": name,
@@ -266,7 +286,8 @@ async def read_attachment(
         "bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
         "trust": "untrusted_external_content",
-        "text": text[offset:end],
+        "text": prefix + text[offset:end],
+        "continuation_prefix": prefix,
         "offset": offset,
         "next_offset": end if end < len(text) else None,
         "total_chars": len(text),

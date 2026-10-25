@@ -122,7 +122,9 @@ async def test_pdf_contents_reach_mcp_with_lossless_paging(monkeypatch, tmp_path
             assert all(block.type == "text" for block in reply.content)
             # Dict results are also JSON text for clients without structuredContent.
             part = json.loads(reply.content[0].text)
-            pieces.append(part["text"])
+            prefix = part["continuation_prefix"]
+            assert part["text"].startswith(prefix) and len(part["text"]) <= 17
+            pieces.append(part["text"][len(prefix):])
             assert part["offset"] == offset
             offset = part["next_offset"]
     text = "".join(pieces)
