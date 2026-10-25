@@ -32,9 +32,11 @@ from mcp.client.streamable_http import streamable_http_client
 from outlook_mcp import http_transport, server
 from outlook_mcp.config import Config
 from outlook_mcp.http_transport import (
+    ALLOWED_HOSTS_ENV,
     HOST_ENV,
     PORT_ENV,
     TOKEN_ENV,
+    TOKEN_FILE_ENV,
     TRANSPORT_ENV,
     HttpSettings,
     settings_from_env,
@@ -62,8 +64,16 @@ INITIALIZE = {
 
 
 @pytest.fixture
-def no_transport_env(monkeypatch):
-    for name in (TRANSPORT_ENV, HOST_ENV, PORT_ENV, TOKEN_ENV):
+def inherited_http_env(monkeypatch):
+    # Reproduce a developer shell configured for a different HTTP instance.
+    # The real entrypoint tests below must work regardless of that parent.
+    monkeypatch.setenv(TOKEN_FILE_ENV, "/unused/inherited-token")
+    monkeypatch.setenv(ALLOWED_HOSTS_ENV, "https://inherited.invalid")
+
+
+@pytest.fixture
+def no_transport_env(monkeypatch, inherited_http_env):
+    for name in (TRANSPORT_ENV, HOST_ENV, PORT_ENV, TOKEN_ENV, TOKEN_FILE_ENV, ALLOWED_HOSTS_ENV):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(server, "load_config", lambda: Config())
 
@@ -421,6 +431,8 @@ def test_the_entrypoint_serves_and_logs_no_token_or_request_url(tmp_path):
         }
     )
     env.pop(HOST_ENV, None)
+    env.pop(TOKEN_FILE_ENV, None)
+    env.pop(ALLOWED_HOSTS_ENV, None)
     proc = subprocess.Popen(
         [sys.executable, "-c", "from outlook_mcp.server import main; main()"],
         env=env,
@@ -560,7 +572,7 @@ def test_authenticated_get_cannot_hold_an_empty_event_stream(base_url, path):
         timeout=2,
     )
     assert response.status_code == 405
-    assert "POST" in response.headers["allow"]
+    assert response.headers["allow"] == "POST"
     assert (
         httpx2.get(base_url + path, headers={"Accept": "text/event-stream"}, timeout=2).status_code
         == 401
@@ -572,3 +584,190 @@ def test_obviously_low_variety_tokens_are_refused_without_echo(bad):
     with pytest.raises(ValueError) as exc:
         settings_from_env({**HTTP, TOKEN_ENV: bad})
     assert bad not in str(exc.value)
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::"])
+@pytest.mark.parametrize("source", ["env", "file"])
+def test_wildcard_without_allowed_hosts_warns_before_server_creation(
+    host, source, tmp_path, monkeypatch, capsys
+):
+    env = {**HTTP, HOST_ENV: host}
+    path = tmp_path / "private-token-name"
+    if source == "file":
+        path.write_text(TOKEN)
+        path.chmod(0o600)
+        env[TOKEN_FILE_ENV] = str(path)
+    else:
+        env[TOKEN_ENV] = TOKEN
+    warnings = []
+
+    def create_server(config):
+        # An operator needs the repair before the listener is started.
+        warning = capsys.readouterr().err
+        assert ALLOWED_HOSTS_ENV in warning and "421" in warning
+        assert "Host" in warning and "TLS-terminating" in warning
+        assert TOKEN not in warning and str(path) not in warning
+        warnings.append(warning)
+        from unittest.mock import MagicMock
+
+        return MagicMock()
+
+    monkeypatch.setattr(uvicorn, "Server", create_server)
+    http_transport.serve(server.mcp, settings_from_env(env))
+    assert len(warnings) == 1
+
+
+def test_a_configured_wildcard_warns_only_about_plain_http(monkeypatch, capsys):
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(uvicorn, "Server", MagicMock())
+    settings = settings_from_env(
+        {**HTTP, HOST_ENV: "0.0.0.0", TOKEN_ENV: TOKEN, ALLOWED_HOSTS_ENV: "mcp.example.com"}
+    )
+    http_transport.serve(server.mcp, settings)
+    warning = capsys.readouterr().err
+    assert "TLS-terminating" in warning
+    assert "421" not in warning and ALLOWED_HOSTS_ENV not in warning
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [b"a" * 32, b"\xef\xbb\xbf" + TOKEN.encode(), b"KEY=" + TOKEN.encode(), b"", b"\xff"],
+    ids=["low-variety", "byte-order-mark", "assignment", "empty", "non-ascii"],
+)
+def test_token_file_contents_get_their_own_repair_without_echo(tmp_path, contents):
+    path = tmp_path / "private-token-name"
+    path.write_bytes(contents)
+    path.chmod(0o600)
+    with pytest.raises(ValueError) as exc:
+        settings_from_env({**HTTP, TOKEN_FILE_ENV: str(path)})
+    message = str(exc.value)
+    assert TOKEN_FILE_ENV in message and "contents" in message
+    assert "32 characters" in message and "8 distinct characters" in message
+    assert "permissions" not in message and "owned" not in message
+    assert str(path) not in message and TOKEN not in message
+    if contents:
+        assert contents.decode("utf-8", errors="replace") not in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "host", ["localhost", "localhost:8443", "127.0.0.1", "127.0.0.1:8000", "[::1]", "[::1]:8000"]
+)
+async def test_nonstandard_loopback_bind_accepts_other_loopback_hosts_and_origins(host):
+    app = http_transport.build_app(server.mcp, HttpSettings(host="127.0.0.2", token=TOKEN))
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Authorization": f"Bearer {TOKEN}",
+        "Host": host,
+        "Origin": "https://" + host,
+    }
+    async with app.app.router.lifespan_context(app.app):
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://127.0.0.2"
+        ) as client:
+            response = await client.post("/mcp", json=INITIALIZE, headers=headers)
+    assert response.status_code == 200
+
+
+def test_allowed_hosts_are_trimmed_lowercased_and_empty_entries_ignored():
+    settings = settings_from_env(
+        {
+            **HTTP,
+            TOKEN_ENV: TOKEN,
+            ALLOWED_HOSTS_ENV: " MCP.Example.COM , , [2001:DB8::1]:443, 192.0.2.10:* , ",
+        }
+    )
+    assert settings.allowed_hosts == ("mcp.example.com", "[2001:db8::1]:443", "192.0.2.10:*")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://mcp.example.com",
+        "mcp.example.com/path",
+        "mcp.example.com:0",
+        "mcp.example.com:65536",
+        "[::1]:65536",
+        "*.example.com",
+        "::1",
+        "mcp.example.com:*:*",
+        "mcp.example.com\r\nattacker.example",
+    ],
+)
+def test_malformed_allowed_hosts_refuse_startup_without_echo(value):
+    with pytest.raises(ValueError, match=ALLOWED_HOSTS_ENV) as exc:
+        settings_from_env({**HTTP, TOKEN_ENV: TOKEN, ALLOWED_HOSTS_ENV: value})
+    assert value not in str(exc.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host", ["mcp.example.com", "192.0.2.10", "[2001:db8::1]"])
+@pytest.mark.parametrize("port", ["", ":8443"])
+async def test_wildcard_port_allows_default_https_host_and_explicit_ports(host, port):
+    settings = settings_from_env(
+        {
+            **HTTP,
+            HOST_ENV: "0.0.0.0",
+            TOKEN_ENV: TOKEN,
+            ALLOWED_HOSTS_ENV: host + ":*",
+        }
+    )
+    app = http_transport.build_app(server.mcp, settings)
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Authorization": f"Bearer {TOKEN}",
+        "Host": host + port,
+        "Origin": "https://" + host + port,
+    }
+    async with app.app.router.lifespan_context(app.app):
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="https://mcp.example.com"
+        ) as client:
+            response = await client.post("/mcp", json=INITIALIZE, headers=headers)
+            # Widening the port must not also widen the hostname or origin.
+            wrong_host = await client.post(
+                "/mcp", json=INITIALIZE, headers={**headers, "Host": "attacker.example"}
+            )
+            wrong_origin = await client.post(
+                "/mcp", json=INITIALIZE, headers={**headers, "Origin": "https://attacker.example"}
+            )
+    assert response.status_code == 200
+    assert wrong_host.status_code == 421
+    assert wrong_origin.status_code == 403
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFO check")
+def test_token_file_fifo_refuses_instead_of_blocking_startup(tmp_path):
+    path = tmp_path / "private-fifo-name"
+    os.mkfifo(path, mode=0o600)
+    script = """
+import sys
+from outlook_mcp.http_transport import settings_from_env, TRANSPORT_ENV, TOKEN_FILE_ENV
+try:
+    settings_from_env({TRANSPORT_ENV: "streamable-http", TOKEN_FILE_ENV: sys.argv[1]})
+except ValueError as error:
+    print(error)
+else:
+    raise SystemExit("FIFO was accepted")
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(path)], capture_output=True, text=True, timeout=5
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("token-file startup blocked opening a FIFO instead of refusing it")
+    assert result.returncode == 0
+    assert TOKEN_FILE_ENV in result.stdout
+    assert str(path) not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("path", ["/mcp", "/mcp/"])
+def test_authenticated_delete_cannot_terminate_a_stateless_session(base_url, path):
+    response = httpx2.delete(
+        base_url + path,
+        headers={"Authorization": f"Bearer {TOKEN}"},
+        follow_redirects=True,
+        timeout=2,
+    )
+    assert response.status_code == 405

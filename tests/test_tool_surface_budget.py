@@ -187,6 +187,9 @@ CHARS_PER_TOKEN = 4
 # not merged (+5); still covered by the 14,350 ceiling.
 # 14,790 measured after rebasing the digest onto current main.
 # The existing 14,850 ceiling covers it; no raise.
+# 14,813 on current main with the HTTP follow-ups: transport checks and
+# operator errors add no tools or schema fields. The same measure holds on
+# Python 3.10 and 3.13; no ceiling raise.
 TOOL_SURFACE_CEILING = 14_850
 
 # 14,776 on the 71-tool default surface before the latest rebase;

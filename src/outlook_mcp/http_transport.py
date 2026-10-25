@@ -131,6 +131,10 @@ def _transport_security(settings: HttpSettings) -> TransportSecuritySettings:
     allowed = []
     for name in names:
         allowed.append(name)
+        # HTTPS on its default port sends a bare Host/Origin. A wildcard
+        # port allows that default spelling as well as explicit ports.
+        if name.endswith(":*"):
+            allowed.append(name[:-2])
         # A bare DNS name or bracketed IPv6 address may carry any local port.
         if ":" not in name or name.endswith("]"):
             allowed.append(name + ":*")
@@ -207,19 +211,28 @@ def _token_source(environ: Mapping[str, str]) -> str:
         raw = os.read(fd, 4097)
         if len(raw) > 4096:
             raise ValueError
-        token = _token(raw.decode("ascii"))
-        if not token:
-            raise ValueError
-        return token
     except (OSError, ValueError):
         raise ValueError(
-            f"{TOKEN_FILE_ENV} must name a regular, nonempty token file (at most 4096 bytes). "
+            f"{TOKEN_FILE_ENV} must name a regular token file (at most 4096 bytes). "
             "On POSIX it must be owned by this user and inaccessible to group and others. "
             "Generate a token with: " + _TOKEN_RECIPE
         ) from None
     finally:
         if fd is not None:
             os.close(fd)
+    try:
+        token = _token(raw.decode("ascii"))
+        if not token:
+            raise ValueError
+        return token
+    except ValueError:
+        raise ValueError(
+            f"{TOKEN_FILE_ENV} contents are not a valid token. Supply only a token, "
+            "optionally followed by a newline: at least 32 characters from A-Z, a-z, "
+            "0-9 and -._~+/, with at least 8 distinct characters. "
+            "Do not include a byte-order mark or KEY=value assignment. "
+            "Generate a token with: " + _TOKEN_RECIPE
+        ) from None
 
 
 def _is_loopback(host: str) -> bool:
@@ -258,7 +271,7 @@ class BearerTokenMiddleware:
                 {
                     "type": "http.response.start",
                     "status": 405,
-                    "headers": [(b"allow", b"POST, DELETE")],
+                    "headers": [(b"allow", b"POST")],
                 }
             )
             await send({"type": "http.response.body", "body": b"Method Not Allowed"})
@@ -341,9 +354,18 @@ def serve(server: MCPServer, settings: HttpSettings) -> None:
     import uvicorn
 
     if not _is_loopback(settings.host):
-        print(
+        warning = (
             "Warning: this public bind uses plain HTTP. The bearer token and every tool result "
-            "cross the network unencrypted unless a TLS-terminating reverse proxy is in front.",
+            "cross the network unencrypted unless a TLS-terminating reverse proxy is in front."
+        )
+        if settings.host in ("0.0.0.0", "::") and not settings.allowed_hosts:
+            warning += (
+                f" {ALLOWED_HOSTS_ENV} is unset: this wildcard bind permits only its literal "
+                "bind address as Host, so normal client Host headers receive 421. "
+                "Set the allowed hosts to the names or IPs your clients send."
+            )
+        print(
+            warning,
             file=sys.stderr,
         )
     uvicorn.Server(uvicorn_config(server, settings)).run()
