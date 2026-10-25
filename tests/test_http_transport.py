@@ -64,7 +64,15 @@ INITIALIZE = {
 
 
 @pytest.fixture
-def no_transport_env(monkeypatch):
+def inherited_http_env(monkeypatch):
+    # Reproduce a developer shell configured for a different HTTP instance.
+    # The real entrypoint tests below must work regardless of that parent.
+    monkeypatch.setenv(TOKEN_FILE_ENV, "/unused/inherited-token")
+    monkeypatch.setenv(ALLOWED_HOSTS_ENV, "https://inherited.invalid")
+
+
+@pytest.fixture
+def no_transport_env(monkeypatch, inherited_http_env):
     for name in (TRANSPORT_ENV, HOST_ENV, PORT_ENV, TOKEN_ENV, TOKEN_FILE_ENV, ALLOWED_HOSTS_ENV):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(server, "load_config", lambda: Config())
