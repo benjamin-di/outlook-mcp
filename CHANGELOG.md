@@ -8,6 +8,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **A lone surrogate no longer ends the server** (#186). A lone UTF-16 surrogate has no
+  UTF-8 encoding. A text attachment whose declared charset decodes to one (utf-7 `+2AA-`, for
+  example) came back from `as_content=True` as text, an attachment name could carry one into
+  the same reply, and so could error text naming sender data. Each reached the SDK's stdio
+  writer, which raised, and the server process exited, so one email could end an agent's
+  session. In any other result the call failed with a bare `Error executing tool`. Such
+  attachment text now arrives as an embedded resource holding the original bytes, and
+  `sanitize_output`, error text and every tool's result replace any other lone surrogate with
+  U+FFFD (a split pair is joined back instead). No tool-surface change.
 - **Long worksheet names remain distinguishable after display truncation.** A cut name
   ends in its one-based worksheet position, within the same 31-character bound, so
   names sharing a prefix no longer label different sheets alike. Original names
