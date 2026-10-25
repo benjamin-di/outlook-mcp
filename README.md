@@ -563,7 +563,6 @@ Then run `outlook-mcp auth` once per instance, with the same env set, to write e
 
 **Only move the config directory — never `HOME`.** The token cache is not in it: it stays in the OS keyring, and on macOS every azure-identity cache on the host shares one Keychain item, coordinated through a signal file — on this server, `~/.IdentityService/outlook-mcp.nocae` (azure-identity appends `.nocae` to every non-CAE cache name; a CAE cache would be a different file over the same item). Both processes must keep consulting that same signal file so their cache writes lock and merge into the one shared entry — which is exactly what moving the config directory preserves and redirecting `HOME` (or the cache location) would break: two signal files that each believe they own the Keychain item overwrite each other's token. `OUTLOOK_MCP_CONFIG_DIR` deliberately moves only where config.json, the auth record, and attachments live; unset or empty keeps the default `~/.outlook-mcp`.
 
-
 Since 1.28, to require a particular sign-in for an instance, add
 `"expected_username": "owner@example.com"` to that instance's `config.json`. Older versions ignore
 this key with a warning and do not enforce the guard. This optional guard compares Microsoft's
@@ -574,7 +573,7 @@ is wrong. A new sign-in is checked after Microsoft's interactive sign-in complet
 record is saved or credential used. A refused sign-in leaves the previous auth record unchanged,
 but azure-identity may already have added that account's refresh token to the local shared OS token
 cache. On macOS this is the same Keychain item, with the previous account's tokens still present.
-Nothing in outlook-mcp, including `logout`, removes these cached tokens; they age out on their own.
+Nothing in outlook-mcp, including `logout`, removes these cached tokens.
 Unset/null preserves today's behavior. Blank values and misspellings such as `expected_usename`
 stop startup instead of silently disabling the guard.
 

@@ -134,7 +134,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   are bounded and cleaned, metadata is checked before download, and worker fields are validated.
   Missing text, missing formula caches and parser limits
   are explicit; no OCR or formula recalculation is performed. Byte downloads are unchanged.
-- Optional `expected_username` pins an instance to its sign-in username. A cached
+- **Optional `expected_username` pins an instance to its sign-in username** (#179). A cached
   record for another user is refused before credential construction; interactive
   sign-in checks the returned record before saving or using it. No change when
   unset, no tool-surface change, and no deletion of another instance's shared tokens.

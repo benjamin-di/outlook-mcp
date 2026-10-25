@@ -298,6 +298,8 @@ class AuthManager:
         if expected is None:
             return True
         username = getattr(record, "username", None)
+        # Microsoft usernames are ASCII today, where lower is equivalent; casefold
+        # expresses caseless comparison, without resolving aliases.
         return isinstance(username, str) and username.casefold() == expected.casefold()
 
     def login_interactive(self) -> None:
