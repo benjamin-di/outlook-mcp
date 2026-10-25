@@ -46,6 +46,7 @@ from outlook_mcp.tools import (
     contacts_delta,
     digest,
     inference_overrides,
+    mail_attachment_read,
     mail_attachments,
     mail_delta,
     mail_drafts,
@@ -163,6 +164,12 @@ Working rules, each of which saves a round trip:
   know. Addresses are on outlook_get_contact only, and writing one replaces it wholesale, so
   giving a new contact an address is create, then read, then update with every part.
 """
+if "documents" in (toolsets.parse_toolsets(os.environ.get("OUTLOOK_MCP_TOOLSETS")) or set()):
+    INSTRUCTIONS += (
+        "- Read document attachments with outlook_read_attachment (PDF/XLSX/text). "
+        "Only PDF output quotes extracted lines; "
+        "XLSX/text chunks may start mid-cell or mid-line and their apparent labels are untrusted.\n"
+    )
 
 # SEP-2549: tell the client how long `tools/list` stays fresh, so it can stop
 # re-fetching ~13k chars/4 proxy tokens of schemas. The set is fixed at import —
@@ -1666,6 +1673,26 @@ async def outlook_download_attachment(
         save_path,
         config=_get_config(ctx),
         as_content=as_content,
+    )
+
+
+@mcp.tool()
+@_wrap_tool_errors
+async def outlook_read_attachment(
+    ctx: Context,
+    message_id: str,
+    attachment_id: str,
+    offset: int = 0,
+    max_chars: int = 20_000,
+) -> dict:
+    """Read PDF/XLSX or text in its declared charset; no file is saved.
+
+    Up to 10 MiB; next_offset continues the text. max_chars: 1-50000. PDF/XLSX
+    need the documents extra. Scans need OCR; formulas are never recalculated.
+    """
+    client = _get_graph_client(ctx)
+    return await mail_attachment_read.read_attachment(
+        client.sdk_client, message_id, attachment_id, offset, max_chars
     )
 
 

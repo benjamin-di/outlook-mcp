@@ -23,6 +23,7 @@ from mcp.types import (
 
 from outlook_mcp.config import Config
 from outlook_mcp.errors import LEAVE_SETTINGS_TO_THE_USER, MESSAGE_MAY_HAVE_BEEN_SENT
+from outlook_mcp.pagination import build_request_config
 from outlook_mcp.permissions import (
     CATEGORY_MAIL_DRAFTS,
     CATEGORY_MAIL_SEND,
@@ -312,12 +313,14 @@ def _media_type(content_type: str, name: str) -> tuple[str, str | None]:
     return media, charset
 
 
-def _readable_text(media: str, charset: str | None, content: bytes) -> str | None:
-    """The attachment as text, if it is text a model can be shown unaltered; else None.
+def _readable_text(
+    media: str, charset: str | None, content: bytes, *, for_extraction: bool = False
+) -> str | None:
+    """Decode supported text, returning None when its declared codec cannot decode it.
 
-    Never a lossy decode, so text either decodes cleanly or is not text here. And never
-    altered: where a message body has its control characters stripped, text that carries
-    any (a sender's terminal escapes) goes out whole as a resource instead.
+    Ordinary byte-content delivery leaves decoded text unaltered; control-bearing text
+    goes out whole as a resource instead. Extraction normalizes lines, strips controls
+    and replaces unpaired surrogates before paging.
     """
     if not (
         media.startswith("text/")
@@ -329,6 +332,12 @@ def _readable_text(media: str, charset: str | None, content: bytes) -> str | Non
         text = content.decode(charset or "utf-8-sig")
     except (LookupError, ValueError):
         return None
+    if for_extraction:
+        # A declared codec can decode otherwise valid bytes to lone surrogates
+        # (UTF-7 and unicode_escape both can). Match the parser worker's
+        # replacement before the MCP reply is encoded as UTF-8.
+        text = text.encode("utf-8", errors="replace").decode("utf-8")
+        return sanitize_output(text.replace("\r\n", "\n").replace("\r", "\n"), multiline=True)
     if len(text) > _TEXT_CONTENT_MAX_CHARS or has_control_characters(text):
         return None
     return text
@@ -502,26 +511,7 @@ async def download_attachment(
     attachment_id = validate_graph_id(attachment_id)
     save_path = download_destination(save_path, as_content, config.attachments_dir)
 
-    attachment = (
-        await graph_client.me.messages.by_message_id(message_id)
-        .attachments.by_attachment_id(attachment_id)
-        .get()
-    )
-    # The msgraph SDK (Kiota) already base64-decodes contentBytes into raw bytes
-    # during deserialization, so content_bytes is the raw file content. Decoding
-    # again corrupts binary files / raises UnicodeDecodeError (issue #25).
-    # An attached email or a link to a cloud file is a different model with no
-    # content_bytes at all; a file attachment can come back with None. Either
-    # way there is nothing to save, and nothing is touched.
-    content = getattr(attachment, "content_bytes", None)
-    if content is None:
-        kind = getattr(attachment, "odata_type", None)
-        kind = f" ({kind})" if isinstance(kind, str) else ""
-        raise ValueError(
-            f"Attachment {attachment_id} has no file content to save{kind} — it may "
-            "be an attached email or a link to a cloud file. Nothing was written."
-        )
-
+    attachment, content = await fetch_attachment(graph_client, message_id, attachment_id)
     name = sanitize_output(attachment.name or "")
     content_type = sanitize_output(attachment.content_type or "")
     if save_path is None:
@@ -534,6 +524,56 @@ async def download_attachment(
         "size": attachment.size,
         "content_type": content_type,
     }
+
+
+async def fetch_attachment(
+    graph_client: Any, message_id: str, attachment_id: str, *, max_bytes: int | None = None
+) -> tuple[Any, bytes]:
+    """The SDK attachment and its already-decoded bytes, shared by download and reading."""
+    message_id = validate_graph_id(message_id)
+    attachment_id = validate_graph_id(attachment_id)
+    request = graph_client.me.messages.by_message_id(message_id).attachments.by_attachment_id(
+        attachment_id
+    )
+    if max_bytes is not None:
+        from msgraph.generated.users.item.messages.item.attachments.item import (
+            attachment_item_request_builder as attachment_builder,
+        )
+
+        builder = attachment_builder.AttachmentItemRequestBuilder
+
+        metadata = await request.get(
+            request_configuration=build_request_config(
+                builder.AttachmentItemRequestBuilderGetQueryParameters,
+                {"$select": ["id", "name", "contentType", "size"]},
+            )
+        )
+        size = getattr(metadata, "size", None)
+        if type(size) is not int or size < 0:
+            raise ValueError(
+                "The attachment size is unavailable; download it instead of reading it."
+            )
+        if size > max_bytes:
+            raise ValueError(
+                "This attachment exceeds the 10 MiB reading limit. Download it instead."
+            )
+    attachment = await request.get()
+    # The msgraph SDK (Kiota) already base64-decodes contentBytes into raw bytes
+    # during deserialization, so content_bytes is the raw file content. Decoding
+    # again corrupts binary files / raises UnicodeDecodeError (issue #25).
+    # An attached email or a link to a cloud file is a different model with no
+    # content_bytes at all; a file attachment can come back with None. Either
+    # way there is nothing to save, and nothing is touched.
+    content = getattr(attachment, "content_bytes", None)
+    if content is None:
+        kind = getattr(attachment, "odata_type", None)
+        kind = f" ({kind})" if isinstance(kind, str) else ""
+        raise ValueError(
+            f"Attachment {attachment_id} has no file content to read or download{kind} — it may "
+            "be an attached email or a link to a cloud file. Nothing was written."
+        )
+
+    return attachment, content
 
 
 async def _upload_large_file(
