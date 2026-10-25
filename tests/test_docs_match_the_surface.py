@@ -112,15 +112,16 @@ def test_each_readme_feature_count_matches_its_reference_table():
 
 @pytest.mark.parametrize("doc", ["README.md", "SKILL.md"])
 def test_every_total_tool_count_is_the_registered_count(doc):
-    """`68 tools`, `Tools (68)`, `all 68` and `instead of 68` all mean the whole surface.
+    """`72 tools`, `Tools (72)` and `all 72` describe the full declared surface.
 
     A historical measurement names its own surface with a hyphen (`the 62-tool
-    surface`) and is not matched.
+    surface`) and is not matched. The selected/default comparison is checked
+    separately against those two registrations below.
     """
     text = (ROOT / doc).read_text(encoding="utf-8")
     totals = re.findall(
         r"\b(\d+) (?:typed Graph |discrete )?tools\b(?! instead)"
-        r"|Tools \((\d+)\)|\b[Aa]ll (\d+)\b|instead of (\d+)\b",
+        r"|Tools \((\d+)\)|\b[Aa]ll (\d+)\b",
         text,
     )
     numbers = {int(n) for groups in totals for n in groups if n}
@@ -129,13 +130,14 @@ def test_every_total_tool_count_is_the_registered_count(doc):
 
 
 def test_the_readme_toolset_example_loads_what_it_says():
-    """The example's tool count is what that selection, plus `account`, registers."""
+    """Compare the example's selected and default registrations, including `account`."""
     m = re.search(r'OUTLOOK_MCP_TOOLSETS="([a-z,]+)"', README)
     assert m, "README OUTLOOK_MCP_TOOLSETS example not found"
-    groups = set(m.group(1).split(",")) | toolsets.ALWAYS_ON_GROUPS
-    loaded = sum(1 for g in toolsets.TOOL_GROUPS.values() if g in groups)
-    stated = re.search(r"(\d+) tools instead of", README)
-    assert stated and int(stated.group(1)) == loaded
+    selected = toolsets.select_kept_tools(list(REGISTERED), set(m.group(1).split(",")))
+    default = toolsets.select_kept_tools(list(REGISTERED), None)
+    stated = re.search(r"(\d+) tools instead of (\d+)\b", README)
+    assert stated, "README selected/default tool comparison not found"
+    assert (int(stated.group(1)), int(stated.group(2))) == (len(selected), len(default))
 
 
 def test_the_readme_toolset_groups_are_the_selectable_ones():

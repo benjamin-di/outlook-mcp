@@ -108,6 +108,19 @@ async def test_default_pdf_boundary_cannot_expose_sender_page_marker(monkeypatch
     assert len(second["text"]) <= 20000
 
 
+@pytest.mark.parametrize("line", ["[Page 2]", "| Second synthetic page"])
+async def test_pdf_continuation_at_a_real_line_start_needs_no_added_prefix(line):
+    sdk, _ = graph(
+        pdf("First synthetic page", "Second synthetic page"), "pages.pdf", "application/pdf"
+    )
+    whole = await mail_attachment_read.read_attachment(sdk, **ARGS)
+    offset = whole["text"].index(line)
+    assert offset > 0 and whole["text"][offset - 1] == "\n"
+    result = await mail_attachment_read.read_attachment(sdk, **ARGS, offset=offset, max_chars=32)
+    assert result["continuation_prefix"] == ""
+    assert result["text"] == whole["text"][offset : offset + 32]
+
+
 def test_worker_serializes_lone_surrogates_inside_its_exception_boundary(monkeypatch, capsys):
     pytest.importorskip("pypdf")
     monkeypatch.setattr(_document_worker, "resource_limits", lambda: None)

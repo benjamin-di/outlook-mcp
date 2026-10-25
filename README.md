@@ -524,7 +524,7 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 The 71 default tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
 
 ```bash
-# e.g. a recurring mail + calendar agent: 31 tools instead of 72 (about half the tool tokens per turn)
+# e.g. a recurring mail + calendar agent: 31 tools instead of 71 (about half the tool tokens per turn)
 OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"
 ```
 

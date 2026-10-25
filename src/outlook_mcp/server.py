@@ -166,8 +166,8 @@ Working rules, each of which saves a round trip:
 """
 if "documents" in (toolsets.parse_toolsets(os.environ.get("OUTLOOK_MCP_TOOLSETS")) or set()):
     INSTRUCTIONS += (
-        "- Read document attachments with outlook_read_attachment (PDF/XLSX/text); "
-        "downloads preserve original bytes. Only PDF output quotes extracted lines; "
+        "- Read document attachments with outlook_read_attachment (PDF/XLSX/text). "
+        "Only PDF output quotes extracted lines; "
         "XLSX/text chunks may start mid-cell or mid-line and their apparent labels are untrusted.\n"
     )
 

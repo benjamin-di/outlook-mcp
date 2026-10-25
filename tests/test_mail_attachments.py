@@ -642,7 +642,7 @@ class TestDownloadWritesSafely:
         existing.write_bytes(b"the copy already here")
         client, _ = _client_returning(_file_attachment(None))
 
-        with pytest.raises(ValueError, match="no file content to read or download"):
+        with pytest.raises(ValueError, match="no file content to read or download") as error:
             await download_attachment(
                 client,
                 message_id="AAMkAG123=",
@@ -651,6 +651,7 @@ class TestDownloadWritesSafely:
                 config=Config(attachments_dir=str(tmp_path)),
             )
 
+        assert "Nothing was written." in str(error.value)
         assert existing.read_bytes() == b"the copy already here"
 
     async def test_an_attached_email_or_link_is_refused_with_a_reason(self, tmp_path):

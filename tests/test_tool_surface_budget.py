@@ -193,6 +193,10 @@ TOOL_SURFACE_CEILING = 14_850
 # 14,954 with the optional documents group enabled (+178 for its one reader).
 # Re-measured 14,813 / 14,991 after rebasing onto main c832373 (+37 on both
 # surfaces from the digest and reply-draft descriptions); the reader still adds 178.
+# Re-measured 2026-10-25 after the third document review on Python 3.10 and 3.13:
+# default 71 / 14,813; every group 72 / 14,991; documents-only 3 / 302. Both
+# existing ceilings hold. INSTRUCTIONS are separate, sent once per session:
+# unchanged 3,176 characters by default; 3,379 with PDF-only chunk guidance enabled.
 # The default ceiling stays 14,850. Documents have a separate 15,150 ceiling
 # (~1.3% headroom), so an opt-in tool cannot raise every user's per-turn cost.
 DOCUMENT_SURFACE_CEILING = 15_150

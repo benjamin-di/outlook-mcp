@@ -23,6 +23,7 @@ from mcp.types import (
 
 from outlook_mcp.config import Config
 from outlook_mcp.errors import LEAVE_SETTINGS_TO_THE_USER, MESSAGE_MAY_HAVE_BEEN_SENT
+from outlook_mcp.pagination import build_request_config
 from outlook_mcp.permissions import (
     CATEGORY_MAIL_DRAFTS,
     CATEGORY_MAIL_SEND,
@@ -315,11 +316,11 @@ def _media_type(content_type: str, name: str) -> tuple[str, str | None]:
 def _readable_text(
     media: str, charset: str | None, content: bytes, *, for_extraction: bool = False
 ) -> str | None:
-    """The attachment as text, if it is text a model can be shown unaltered; else None.
+    """Decode supported text, returning None when its declared codec cannot decode it.
 
-    Never a lossy decode, so text either decodes cleanly or is not text here. And never
-    altered: where a message body has its control characters stripped, text that carries
-    any (a sender's terminal escapes) goes out whole as a resource instead.
+    Ordinary byte-content delivery leaves decoded text unaltered; control-bearing text
+    goes out whole as a resource instead. Extraction normalizes lines, strips controls
+    and replaces unpaired surrogates before paging.
     """
     if not (
         media.startswith("text/")
@@ -542,10 +543,9 @@ async def fetch_attachment(
         builder = attachment_builder.AttachmentItemRequestBuilder
 
         metadata = await request.get(
-            request_configuration=builder.AttachmentItemRequestBuilderGetRequestConfiguration(
-                query_parameters=builder.AttachmentItemRequestBuilderGetQueryParameters(
-                    select=["id", "name", "contentType", "size"]
-                )
+            request_configuration=build_request_config(
+                builder.AttachmentItemRequestBuilderGetQueryParameters,
+                {"$select": ["id", "name", "contentType", "size"]},
             )
         )
         size = getattr(metadata, "size", None)
@@ -570,7 +570,7 @@ async def fetch_attachment(
         kind = f" ({kind})" if isinstance(kind, str) else ""
         raise ValueError(
             f"Attachment {attachment_id} has no file content to read or download{kind} — it may "
-            "be an attached email or a link to a cloud file."
+            "be an attached email or a link to a cloud file. Nothing was written."
         )
 
     return attachment, content
