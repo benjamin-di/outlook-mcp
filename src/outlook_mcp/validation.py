@@ -93,6 +93,11 @@ _RELATIVE_UNITS = {"m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 # ANSI escape sequences
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+# A lone UTF-16 surrogate is a legal code point in a str but has no UTF-8 encoding,
+# so a reply carrying one cannot be written: on stdio the SDK's writer raises and the
+# server process exits (#186). Senders reach one through a declared charset (utf-7
+# `+2AA-`) and through a JSON `\ud800` escape in anything Graph returns.
+_LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
 
 # ISO 8601 datetime: strict pattern to reject injection attempts
 _ISO_DATETIME_RE = re.compile(
@@ -531,8 +536,20 @@ def validate_birthday(value: str) -> datetime:
     return datetime(day.year, day.month, day.day, 11, 59, tzinfo=timezone.utc)
 
 
+def replace_lone_surrogates(text: str) -> str:
+    """``text`` with each lone surrogate replaced by U+FFFD, or ``text`` itself if it has none.
+
+    A high and a low surrogate left side by side, unjoined, are joined back into the
+    character they encode; only an unpaired one is replaced.
+    """
+    if text.isascii() or not _LONE_SURROGATE.search(text):
+        return text
+    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+
+
 def sanitize_output(text: str, multiline: bool = False) -> str:
-    """Strip control characters and ANSI escapes from output text."""
+    """Strip control characters and ANSI escapes, and replace lone surrogates, in output text."""
+    text = replace_lone_surrogates(text)
     text = _ANSI_ESCAPE.sub("", text)
     text = _CONTROL_CHARS.sub("", text)
     if not multiline:
@@ -545,8 +562,11 @@ def sanitize_output(text: str, multiline: bool = False) -> str:
 
 
 def has_control_characters(text: str) -> bool:
-    """True if ``text`` holds a character ``sanitize_output`` strips. Tab, CR and LF are allowed."""
-    return _CONTROL_CHARS.search(text) is not None
+    """True if ``text`` holds a character ``sanitize_output`` strips or replaces.
+
+    Tab, CR and LF are allowed.
+    """
+    return _CONTROL_CHARS.search(text) is not None or _LONE_SURROGATE.search(text) is not None
 
 
 def _one_line(text: str) -> bool:

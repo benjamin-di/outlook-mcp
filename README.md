@@ -400,7 +400,8 @@ Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markd
 > `as_content=True` on either download returns the attachment in the result, up to 10 MB:
 > PNG, JPEG, GIF and WebP up to 5 MB as images, text up to 100,000 characters as text, and
 > anything else, PDFs included, as an embedded resource holding the base64 bytes and their
-> type. `attachments` on the two send tools takes inline files,
+> type. Text that carries control characters, or a lone surrogate its charset decoded to,
+> also comes back as that resource, so it arrives unaltered. `attachments` on the two send tools takes inline files,
 > `[{name, content_base64, content_type?}]`, up to 3 MB each (Graph's simple-attachment
 > size). The fence still governs every path argument. An inline file is bytes the agent
 > already holds and could already put in a message body, so it widens nothing.

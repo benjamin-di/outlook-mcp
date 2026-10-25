@@ -54,9 +54,14 @@ class OutlookMCPError(ToolError):
         """Message plus recovery hint — this string is what the model reads.
 
         ``action`` exists to tell an agent what to do next, so it has to be in
-        the text the client receives, not only on the attribute.
+        the text the client receives, not only on the attribute. A lone surrogate
+        in either (a sender's file name, say) is replaced: the reply could not be
+        written otherwise (#186).
         """
-        return f"{self.message} {self.action}" if self.action else self.message
+        from outlook_mcp.validation import replace_lone_surrogates
+
+        text = f"{self.message} {self.action}" if self.action else self.message
+        return replace_lone_surrogates(text)
 
 
 class AuthRequiredError(OutlookMCPError):

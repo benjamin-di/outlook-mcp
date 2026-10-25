@@ -16,7 +16,7 @@ from azure.core.exceptions import ClientAuthenticationError
 from mcp.server.caching import CacheHint
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ContentBlock
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from outlook_mcp import __version__, http_transport, toolsets
 from outlook_mcp.auth import AuthManager, error_for_failed_refresh
@@ -59,6 +59,7 @@ from outlook_mcp.tools import (
     todo_attachments,
     user,
 )
+from outlook_mcp.validation import replace_lone_surrogates
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,41 @@ def _get_graph_client(ctx: Context) -> GraphClient:
     return cached
 
 
+def _without_lone_surrogates(value: Any) -> Any:
+    """``value`` with every lone surrogate in its text replaced, or ``value`` itself.
+
+    The backstop for #186. A lone surrogate has no UTF-8 encoding: in a content
+    block it reaches the SDK's stdio writer, which raises, and the server process
+    exits; in a dict the call fails with a bare ``Error executing tool``.
+    ``sanitize_output`` covers the echo points; this covers every tool, whatever
+    it returns. A value with nothing to replace comes back as the same object.
+    """
+    if isinstance(value, str):
+        return replace_lone_surrogates(value)
+    if isinstance(value, dict):
+        items = [
+            (_without_lone_surrogates(k), _without_lone_surrogates(v)) for k, v in value.items()
+        ]
+        if all(new_k is k and new_v is v for (new_k, new_v), (k, v) in zip(items, value.items())):
+            return value
+        return dict(items)
+    if isinstance(value, (list, tuple)):
+        items = [_without_lone_surrogates(item) for item in value]
+        if all(new is old for new, old in zip(items, value)):
+            return value
+        return tuple(items) if isinstance(value, tuple) else items
+    if isinstance(value, BaseModel):
+        # The SDK's content blocks (TextContent, EmbeddedResource, ...).
+        changes = {}
+        for field in type(value).model_fields:
+            old = getattr(value, field)
+            new = _without_lone_surrogates(old)
+            if new is not old:
+                changes[field] = new
+        return value.model_copy(update=changes) if changes else value
+    return value
+
+
 def _wrap_tool_errors(func: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap an async tool function to translate Graph SDK errors.
 
@@ -247,6 +283,9 @@ def _wrap_tool_errors(func: Callable[..., Any]) -> Callable[..., Any]:
       remedy startup would have given.
     - Re-raise anything else unchanged: a crash is not something we saw coming,
       and its text stays on the server.
+    - Replace any lone surrogate in the result (#186), which would otherwise make
+      the reply impossible to write. Error text gets the same in
+      ``OutlookMCPError.__str__``.
 
     Every tool passes through here, so it also dedents the docstring the SDK
     publishes as the tool's description.
@@ -255,7 +294,7 @@ def _wrap_tool_errors(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
-            return await func(*args, **kwargs)
+            return _without_lone_surrogates(await func(*args, **kwargs))
         except OutlookMCPError:
             raise
         except httpx.HTTPStatusError as exc:
