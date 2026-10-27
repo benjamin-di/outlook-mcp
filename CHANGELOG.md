@@ -51,6 +51,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   allow-list entries also accept the bare Host/Origin used on default HTTP/HTTPS ports;
   the refused GET event stream advertises only POST.
 
+- **On macOS, a PDF or spreadsheet that hits a parser limit reports that limit, not
+  "Operation not permitted".** When the parser had just exited, macOS refused the cleanup
+  kill with EPERM instead of saying no such process, and that refusal replaced the
+  limit's own error. It now means nothing is left to kill, as the no-such-process answer
+  already did; a parser still running is killed as before.
+
 ## [1.28.0] — 2026-10-25
 
 ### Added
