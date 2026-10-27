@@ -32,6 +32,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **An invitation with no calendar event explains that the meeting may have been
+  cancelled or removed**, rather than asking the caller to search for it.
+
 - **HTTP startup explains a wildcard bind without allowed client hosts, and token-file
   content errors name the token format instead of file permissions.** Wildcard-port
   allow-list entries also accept the bare Host/Origin used on default HTTP/HTTPS ports;

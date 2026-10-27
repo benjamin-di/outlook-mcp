@@ -140,7 +140,12 @@ async def test_missing_association_is_refused_without_subject_search(body):
         return httpx.Response(200, json=body)
 
     async with graph(handle) as client:
-        with pytest.raises(ValueError, match="associated calendar event"):
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"no associated calendar event \(the meeting may have been cancelled or removed\)"
+            ),
+        ):
             await get_event(client, message_id="invitation-id")
     assert len(requests) == 1
 
