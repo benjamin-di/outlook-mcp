@@ -459,8 +459,8 @@ async def get_event(
         associated = getattr(message, "event", None)
         if associated is None or not associated.id:
             raise ValueError(
-                "This message has no associated calendar event. "
-                "Find the meeting in the calendar and use its event_id."
+                "This message has no associated calendar event "
+                "(the meeting may have been cancelled or removed)."
             )
         event_id = associated.id
         invitation = {
