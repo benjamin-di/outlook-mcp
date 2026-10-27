@@ -41,7 +41,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
 - `src/outlook_mcp/permissions.py` — `read_only` and `allow_categories` write gating (the seven write categories)
 - `src/outlook_mcp/folder_resolver.py`, `calendar_resolver.py` — Display name / well-known name → Graph id resolution for mail folders and calendars; a mail folder can also be a path, `Inbox/Travel/Flights`, with `//` for a `/` in a name (#144)
 - `src/outlook_mcp/throttle.py` — Retry-After honoring for the raw-httpx delta/`$batch` paths (SDK path already retries via kiota), and `call_without_replay` for the SDK writes that can email someone: kiota's retry off, 429 retried here, never a 5xx (#131)
-- `src/outlook_mcp/toolsets.py` — Tool annotations + config-gated toolset selection (`OUTLOOK_MCP_TOOLSETS`); an opt-in group (`OPTIONAL_GROUPS`: `documents`) loads only when named; `configure()` runs once after registration
+- `src/outlook_mcp/toolsets.py` — Tool annotations, lean advertised input schemas (`lean_input_schema`), and config-gated toolset selection (`OUTLOOK_MCP_TOOLSETS`); an opt-in group (`OPTIONAL_GROUPS`: `documents`) loads only when named; `configure()` runs once after registration
 - `src/outlook_mcp/sender_auth.py` — Microsoft's `Authentication-Results` verdict on a message's From domain, for `include_sender_auth` (#130). Pure: no Graph, no I/O
 - `src/outlook_mcp/tools/` — One file per tool group:
   - `mail_read.py`, `mail_write.py`, `mail_triage.py` — Tier 1 (auth tools live directly in `server.py`)
@@ -103,7 +103,12 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   2026-07) and the budget test's own **chars/4 proxy** measure for the current surface (the
   To Do detail tools added ~+12% per turn; the budget test header records the measured value).
   Metadata that is correct but inert — `openWorldHint`, which is `true` by default anyway, or
-  titles that restate the tool name — is not free. `test_tool_surface_budget.py` holds the line:
+  titles that restate the tool name — is not free. Pydantic's share of that is removed for
+  every tool at registration: `toolsets.lean_input_schema` drops the `title` it writes on each
+  input and tool, and an optional input's `null` branch and `"default": null` (a quarter of the
+  surface). A new tool gets it with nothing to do; advertising only, since the SDK validates
+  arguments against the function's own model (`test_lean_tool_schemas.py`).
+  `test_tool_surface_budget.py` holds the line:
   one ceiling for the default surface, and a separate one with the opt-in `documents` group
   loaded, so an opt-in tool cannot raise every user's per-turn cost
 - Datetimes: UTC in responses, config timezone for input interpretation

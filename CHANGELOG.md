@@ -30,6 +30,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   auth/serve/status; no automatic file writeback, new dependency, tool or scope. File-only
   loading is unchanged.
 
+### Changed
+
+- **The tool schemas every client reads each turn are a quarter smaller.** The schemas no
+  longer carry the `title` Pydantic writes on every input (`"title": "Unread Only"` on
+  `unread_only`) and on every tool, or an optional input's `null` branch and
+  `"default": null`, which say nothing that leaving the input out does not. The 71-tool
+  default surface goes from 14,846 to 11,130 proxy tokens, and its budget ceiling comes down
+  with it, to 11,250. No description changed, and the server accepts exactly the same
+  arguments: the SDK checks them against each tool's own model, so an explicit `null` still
+  works. Inputs named `title` (contacts, tasks) are kept, as is a `null` allowed beside some
+  other default.
+
 ### Fixed
 
 - **HTTP startup explains a wildcard bind without allowed client hosts, and token-file
