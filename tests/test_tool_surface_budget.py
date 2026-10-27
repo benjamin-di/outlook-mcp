@@ -193,7 +193,14 @@ CHARS_PER_TOKEN = 4
 # 14,846 with `outlook_get_event`'s optional `message_id` (#196, +33); #194's
 # calendar owner fields are response data, not schema. 72 / 15,024 with every
 # group. No raise, but the default ceiling now has 4 tokens of headroom.
-TOOL_SURFACE_CEILING = 14_850
+#
+# 11,130 once `toolsets.lean_input_schema` drops Pydantic's filler from every
+# advertised schema (-3,716, a quarter): the `title` restating each input's name
+# and each tool's (-2,199), and an optional input's `null` branch and
+# `"default": null` (-1,517). No wording changed and nothing the server accepts
+# changed. Same on Python 3.10 and 3.13. The ceiling comes DOWN to 11,250 (~1%
+# headroom), so the freed quarter cannot be spent a sentence at a time.
+TOOL_SURFACE_CEILING = 11_250
 
 # 14,776 on the 71-tool default surface before the latest rebase;
 # 14,954 with the optional documents group enabled (+178 for its one reader).
@@ -205,7 +212,9 @@ TOOL_SURFACE_CEILING = 14_850
 # unchanged 3,176 characters by default; 3,379 with PDF-only chunk guidance enabled.
 # The default ceiling stays 14,850. Documents have a separate 15,150 ceiling
 # (~1.3% headroom), so an opt-in tool cannot raise every user's per-turn cost.
-DOCUMENT_SURFACE_CEILING = 15_150
+# 72 / 11,274 with the lean schemas (documents-only 3 / 249); the ceiling comes
+# down to 11,400 with it, again ~1% headroom.
+DOCUMENT_SURFACE_CEILING = 11_400
 
 # `prompts/list` is the cheap half of the bargain struck in 1.20.0: workflow
 # guidance costs a name and one line here until someone invokes it. If that ever
