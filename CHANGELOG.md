@@ -16,7 +16,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   association to the recipient's calendar event, then reading its current details.
   Exactly one of `event_id` and `message_id` is required. Existing event-ID requests
   are unchanged. Event details expose nullable organizer/proposal/cancellation flags
-  and attendees' proposed slots with their original time zones. No write or new scope.
+  and attendees' proposed slots with their original time zones. An invitation with no
+  calendar event is refused with the reason it may have none (the meeting was cancelled
+  or removed), never matched by subject (#197). No write or new scope.
 
 - **Optional `expected_username` pins an instance to its sign-in username** (#179). A cached
   record for another user is refused before credential construction; interactive
@@ -43,9 +45,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   other default.
 
 ### Fixed
-
-- **An invitation with no calendar event explains that the meeting may have been
-  cancelled or removed**, rather than asking the caller to search for it.
 
 - **HTTP startup explains a wildcard bind without allowed client hosts, and token-file
   content errors name the token format instead of file permissions.** Wildcard-port
