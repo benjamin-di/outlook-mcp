@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.29.0] — 2026-10-27
+
+A contributor release, nearly all of it from @benjamin-di, with thanks. A meeting invitation
+now leads to its calendar event (#195), calendar listings name their owner (#193), an instance
+can be pinned to one sign-in (#179), and settings can come from `OUTLOOK_MCP_` environment
+variables that may only tighten security (#180). The tool schemas every client reads each turn
+are a quarter smaller: the default surface is 11,130 proxy tokens, down from 14,813 in 1.28.0.
+Tool count unchanged at 72, 71 by default.
+
 ### Added
 
 - **Calendar listings include the owner and private-item visibility permission** (#193).
@@ -34,7 +43,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- **The tool schemas every client reads each turn are a quarter smaller.** The schemas no
+- **The tool schemas every client reads each turn are a quarter smaller** (#198). The schemas no
   longer carry the `title` Pydantic writes on every input (`"title": "Unread Only"` on
   `unread_only`) and on every tool, or an optional input's `null` branch and
   `"default": null`, which say nothing that leaving the input out does not. The 71-tool
@@ -49,13 +58,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **HTTP startup explains a wildcard bind without allowed client hosts, and token-file
   content errors name the token format instead of file permissions.** Wildcard-port
   allow-list entries also accept the bare Host/Origin used on default HTTP/HTTPS ports;
-  the refused GET event stream advertises only POST.
+  the refused GET event stream advertises only POST (#191).
 
 - **On macOS, a PDF or spreadsheet that hits a parser limit reports that limit, not
   "Operation not permitted".** When the parser had just exited, macOS refused the cleanup
   kill with EPERM instead of saying no such process, and that refusal replaced the
   limit's own error. It now means nothing is left to kill, as the no-such-process answer
-  already did; a parser still running is killed as before.
+  already did; a parser still running is killed as before (#199).
 
 ## [1.28.0] — 2026-10-25
 
