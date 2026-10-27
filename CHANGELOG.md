@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Calendar listings include the owner and private-item visibility permission** (#193).
+  Calendars with the same name can be distinguished without another Graph request;
+  missing metadata stays null. No change to requests, scopes or the tool surface.
+
 - **Optional `expected_username` pins an instance to its sign-in username** (#179). A cached
   record for another user is refused before credential construction; interactive
   sign-in checks the returned record before saving or using it. No change when
