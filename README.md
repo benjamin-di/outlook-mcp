@@ -503,7 +503,7 @@ A limit is an explicit error, never a silently partial document.
 | Tool | Description |
 |------|-------------|
 | `outlook_whoami` | Get current user profile. |
-| `outlook_list_calendars` | List available calendars, including `owner` (`name`, `address`) and `can_view_private_items`. Missing owner or private-item permission metadata is `null`; `false` means Graph explicitly denied private-item access. Use the calendar ID when names repeat. |
+| `outlook_list_calendars` | List available calendars, including `owner` (`name`, `address`) and `can_view_private_items`. Missing owner or private-item permission metadata is `null`; `false` means you cannot see private items on that calendar. Use the calendar ID when names repeat. |
 | `outlook_list_categories` | List category definitions with colors. |
 | `outlook_get_mail_tips` | Pre-send check (OOF, delivery restrictions). |
 

@@ -190,6 +190,9 @@ CHARS_PER_TOKEN = 4
 # 14,813 on current main with the HTTP follow-ups: transport checks and
 # operator errors add no tools or schema fields. The same measure holds on
 # Python 3.10 and 3.13; no ceiling raise.
+# 14,846 with `outlook_get_event`'s optional `message_id` (#196, +33); #194's
+# calendar owner fields are response data, not schema. 72 / 15,024 with every
+# group. No raise, but the default ceiling now has 4 tokens of headroom.
 TOOL_SURFACE_CEILING = 14_850
 
 # 14,776 on the 71-tool default surface before the latest rebase;

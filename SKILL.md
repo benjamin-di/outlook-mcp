@@ -111,7 +111,7 @@ when `OUTLOOK_MCP_TOOLSETS` names it (see Notes).
 
 ### Calendar
 - `outlook_list_events` — List events in date range (expands recurring); each carries `type` (`occurrence`/`exception` for a series instance vs `singleInstance`; a `seriesMaster` never appears on a listing — use `outlook_get_event`) and `show_as` (the free/busy status); `calendar` reads a secondary calendar by name or ID (default calendar when omitted); a cursor continues the same calendar; an event with a `key` carries it. `concise=True` drops `type`, `show_as` and `key`
-- `outlook_get_event` — Get event details, incl. `recurrence`, `type` (`seriesMaster` etc.), `show_as`, `original_start_time_zone` (the zone the event is anchored in; `start`/`end` are UTC), `key` (`null` when unset) and `attachments` (each file's `id`, `name`, `size`, `content_type`, `is_inline`; never its bytes)
+- `outlook_get_event` — Get event details, incl. `recurrence`, `type` (`seriesMaster` etc.), `show_as`, `original_start_time_zone` (the zone the event is anchored in; `start`/`end` are UTC), `key` (`null` when unset), `attachments` (each file's `id`, `name`, `size`, `content_type`, `is_inline`; never its bytes), and nullable `is_organizer`, `allow_new_time_proposals`, `is_cancelled` and each attendee's `proposed_new_time`. Pass `event_id`, or an invitation's `message_id` (Graph ID or Message-ID) to read the event it belongs to as it is now; that result adds `invitation.is_out_of_date`. Ordinary mail is refused, never matched by subject
 - `outlook_find_event_by_key` — Find events by the `key` set on create or update, with no date window; default calendar or `calendar`; returns single events and series masters (never occurrences), `[]` when none
 - `outlook_list_events_delta` — List only event changes since last call within a window (massive token savings for recurring agent jobs); each changed event carries every field the *default* `outlook_list_events` listing returns except `key` (not `concise=True`'s narrower shape), `type` and `show_as` included, plus `is_deleted` (`True` on a tombstone, which carries only `id`); unlike the listing this one **does** return `seriesMaster` items
 - `outlook_create_event` — Create event with attendees (`is_online` has no effect on personal accounts: Graph ignores it); `recurrence` (shorthand or Graph object) creates a series; `timezone` (IANA name) anchors it, defaulting to the config timezone; `show_as` sets Outlook's "Show as" (`free`/`tentative`/`busy`/`oof`/`workingElsewhere`/`unknown`, Graph defaults to `busy`); `calendar` creates it in a secondary calendar by name or ID (default calendar when omitted; a read-only calendar is refused); `key` stores your own reference (e.g. a booking number) for `outlook_find_event_by_key`
@@ -176,7 +176,7 @@ when `OUTLOOK_MCP_TOOLSETS` names it (see Notes).
 
 ### User and Admin
 - `outlook_whoami` — Current user profile
-- `outlook_list_calendars` — Available calendars
+- `outlook_list_calendars` — Available calendars, each with `owner` (`name`, `address`) and `can_view_private_items` (`null` when Graph omits them); use the calendar ID when names repeat
 - `outlook_list_categories` — Category definitions with colors
 - `outlook_get_mail_tips` — Pre-send check (OOF, delivery restrictions)
 
