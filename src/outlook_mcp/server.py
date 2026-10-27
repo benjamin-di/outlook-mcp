@@ -798,17 +798,18 @@ async def outlook_list_events(
 @_wrap_tool_errors
 async def outlook_get_event(
     ctx: Context,
-    event_id: str,
+    event_id: str | None = None,
+    message_id: str | None = None,
 ) -> dict:
-    """Get one event by ID: body, attendees, organizer, recurrence, type, show_as, anchor zone, key,
-    attachments (metadata).
+    """Read an event by event_id, or an invitation by message_id (exactly one).
 
-    `recurrence` comes back in the same shape outlook_create_event accepts; `type` is
-    "singleInstance", "seriesMaster", "occurrence" or "exception". `start`/`end` are UTC;
-    `original_start_time_zone` is the zone the event is anchored in.
+    Returns your current event: body, attendees with proposed_new_time, organizer,
+    is_organizer, allow_new_time_proposals, is_cancelled, recurrence, type, show_as,
+    key and attachment metadata. start/end are UTC; original_start_time_zone is
+    the anchor zone. recurrence uses the create tool's shape.
     """
     client = _get_graph_client(ctx)
-    return await calendar_read.get_event(client.sdk_client, event_id)
+    return await calendar_read.get_event(client.sdk_client, event_id, message_id=message_id)
 
 
 @mcp.tool()

@@ -12,6 +12,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Calendars with the same name can be distinguished without another Graph request;
   missing metadata stays null. No change to requests, scopes or the tool surface.
 
+- **Resolve an invitation with `outlook_get_event(message_id=...)`** (#195), using Graph's
+  association to the recipient's calendar event, then reading its current details.
+  Exactly one of `event_id` and `message_id` is required. Existing event-ID requests
+  are unchanged. Event details expose nullable organizer/proposal/cancellation flags
+  and attendees' proposed slots with their original time zones. No write or new scope.
+
 - **Optional `expected_username` pins an instance to its sign-in username** (#179). A cached
   record for another user is refused before credential construction; interactive
   sign-in checks the returned record before saving or using it. No change when
