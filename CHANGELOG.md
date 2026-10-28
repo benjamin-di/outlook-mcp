@@ -6,6 +6,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.30.0] — 2026-10-28
+
+Inbox rules, from @hrgupta, with thanks: four opt-in tools list, create, change and delete
+server-side inbox rules (#128). They are off by default, a rule that forwards mail also needs
+`mail_send`, and not every personal mailbox allows rules; a refused listing says so (#203).
+The README gains a short What's new (#202). 76 tools, up from 72: the four rule tools are
+opt-in, so 71 load by default and the default surface stays at 11,130 proxy tokens.
+
 ### Added
 
 - **Inbox rules: `outlook_list_rules`, `outlook_create_rule`, `outlook_update_rule`,
