@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.30.1] — 2026-10-28
+
+### Fixed
+
+- **The MCP registry lists the 1.30 tools.** 1.30.0 reached PyPI, but the registry refused
+  its `server.json` description at 101 characters (its limit is 100), so it kept showing
+  1.29.0. The description is shorter, and a test now holds the limit, so CI catches it before
+  a release instead of the registry after one. No code change from 1.30.0.
+
 ## [1.30.0] — 2026-10-28
 
 Inbox rules, from @hrgupta, with thanks: four opt-in tools list, create, change and delete

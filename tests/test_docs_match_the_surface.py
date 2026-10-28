@@ -190,6 +190,17 @@ def test_the_counts_no_table_carries_match_the_surface():
     assert int(prose.group(1)) == len(REGISTERED), "the README's 'this has N tools' is stale"
 
 
+def test_the_registry_description_fits_the_registry():
+    # The MCP registry refuses a description over 100 characters with a 422, and
+    # it only says so at publish time, after PyPI already has the release: 1.30.0
+    # reached PyPI and not the registry for one character.
+    server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    assert len(server["description"]) <= 100, (
+        f"server.json description is {len(server['description'])} characters; "
+        "the MCP registry accepts at most 100"
+    )
+
+
 def test_the_readme_category_table_is_the_accepted_set():
     table = _section(README, "Granular Write Permissions (optional)")
     rows = set(re.findall(r"^\| `(\w+)` \|", table, re.MULTILINE))
