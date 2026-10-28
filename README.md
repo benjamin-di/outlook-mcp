@@ -24,7 +24,7 @@ You'll like this if you're:
 - Looking for **real coverage** — mail, calendar, contacts, to-do, drafts, folders, batch ops, threading — instead of a mail-only or calendar-only wrapper
 - Security-conscious: tokens in the OS keyring (Keychain on macOS, libsecret on Linux -- never cleartext unless you opt in), granular `allow_categories`, optional `read_only` mode, zero telemetry
 
-This **isn't for you** if you need work/school M365 accounts (use Microsoft's official tooling — Entra ID auth and admin-consent flows are out of scope here), or if a basic mail-only client would suffice (this has 72 tools — way more than you need for "read my inbox").
+This **isn't for you** if you need work/school M365 accounts (use Microsoft's official tooling — Entra ID auth and admin-consent flows are out of scope here), or if a basic mail-only client would suffice (this has 76 tools — way more than you need for "read my inbox").
 
 ### How it differs from other Outlook tools you'll find
 
@@ -44,7 +44,7 @@ Give your AI agent full Outlook access. Example prompts that just work:
 - *"Draft a reply to the last message from my sister saying I'll call her this weekend."*
 - *"Move all newsletter and promotional email from this week to a 'Read Later' folder — batch 20 at a time."*
 
-The server exposes 72 discrete tools (71 load by default; the document reader is [opt-in](#toolset-selection-optional--outlook_mcp_toolsets)) so the agent can compose its own workflow — read, triage, write, schedule, track tasks — without hardcoded macros.
+The server exposes 76 discrete tools (71 load by default; the four rule tools and the document reader are [opt-in](#toolset-selection-optional--outlook_mcp_toolsets)) so the agent can compose its own workflow — read, triage, write, schedule, track tasks — without hardcoded macros.
 
 ## Works With
 
@@ -59,12 +59,14 @@ Listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v
 
 ## Features
 
-**72 tools** across 13 categories. 71 load by default; `outlook_read_attachment` is in the opt-in `documents` group (see [Toolset selection](#toolset-selection-optional--outlook_mcp_toolsets)).
+**76 tools** across 14 categories. 71 load by default; the four rule tools and the
+document reader are opt-in groups (see [Toolset selection](#toolset-selection-optional--outlook_mcp_toolsets)).
 
 - **Auth (1)** -- auth status check (login is via CLI)
 - **Mail Read (7)** -- list inbox (with Focused Inbox and uncategorized filters), read message, bulk read by ID via `$batch`, search (KQL), list folders, delta-sync inbox changes, composed "since last call" digest across mail/events/contacts
 - **Mail Write (3)** -- send, reply/reply-all, forward
 - **Mail Triage (9)** -- move, delete (soft by default), flag, categorize, mark read/unread, reclassify (Focused Inbox), list/set/delete per-sender Focused Inbox overrides
+- **Mail Rules (4)** -- list rules in execution order, create from sender/subject/body conditions, update (reads the rule first, so other actions survive a re-point), delete — opt-in toolset group
 - **Calendar Read (4)** -- list events (with recurring expansion), get event details, find events by key, delta-sync event changes
 - **Calendar Write (6)** -- create, update, delete, RSVP (accept/decline/tentative), attach and remove event files
 - **Contacts (7)** -- list, search, get, create, update, delete, delta-sync changes
@@ -227,7 +229,7 @@ uv run outlook-mcp auth   # from a source checkout
 
 You'll get a URL and a code. Open the URL in any browser, enter the code, and sign in with your Microsoft account. Tokens are cached in the OS keyring — the MCP server picks them up automatically.
 
-The consent screen lists the full read-write set (`Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite`, `MailboxSettings.Read`, `User.Read`) — even when the config starts with `read_only: true`, because `read_only` gates the tools, not the token (see [What `read_only` does and does not do](#what-read_only-does-and-does-not-do)), and the scopes a first consent leaves out can never be granted later without logging in again. (The one exception is `read_only_consent: true`, which asks for the read permissions only; it exists for a separate read-only app, described under the same heading.) Every request afterwards — silent refresh and each Graph call — uses the `.default` scope, which on an already-consented account means exactly "the set you granted". That ordering is deliberate: on personal accounts a first consent asking only for `.default` can land a session with no delegated permissions, which then can't be redeemed (`AADSTS70000`) without logging in again ([#82](https://github.com/mpalermiti/outlook-mcp/issues/82)).
+The consent screen lists the full read-write set (`Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `Contacts.ReadWrite`, `Tasks.ReadWrite`, `MailboxSettings.Read`, `User.Read`) — with `mailbox_settings_write: true` the settings scope becomes `MailboxSettings.ReadWrite` — even when the config starts with `read_only: true`, because `read_only` gates the tools, not the token (see [What `read_only` does and does not do](#what-read_only-does-and-does-not-do)), and the scopes a first consent leaves out can never be granted later without logging in again. (The one exception is `read_only_consent: true`, which asks for the read permissions only; it exists for a separate read-only app, described under the same heading.) Every request afterwards — silent refresh and each Graph call — uses the `.default` scope, which on an already-consented account means exactly "the set you granted". That ordering is deliberate: on personal accounts a first consent asking only for `.default` can land a session with no delegated permissions, which then can't be redeemed (`AADSTS70000`) without logging in again ([#82](https://github.com/mpalermiti/outlook-mcp/issues/82)).
 
 Other CLI commands (prefix `uv run` from a source checkout):
 
@@ -331,6 +333,34 @@ Bodies are plain text unless `is_html=True` (HTML, sent as written) or `is_markd
 | `outlook_list_inbox_overrides` | List Focused Inbox per-sender override rules. |
 | `outlook_set_inbox_override` | Upsert a per-sender Focused Inbox override (`focused` / `other`). Case-insensitive sender matching; PATCH-if-exists, else POST. |
 | `outlook_delete_inbox_override` | Delete a Focused Inbox override by ID. |
+
+### Mail Rules
+
+Server-side rules: they run whether or not any Outlook client is open. A rule is **durable, not a one-off** — create one and it keeps applying to all future mail long after the agent that made it has disconnected. That is what makes rules useful, and it is also why `outlook_create_rule` and `outlook_update_rule` are annotated destructive — re-enabling one resumes whatever it does — and why `forward_to`, and re-enabling a rule that forwards or redirects, additionally require the `mail_send` category: a forwarding rule keeps mailing a third party after the session ends, which is the standard way a compromised mailbox gets drained. Hard delete is not offered here — `delete` moves matching mail to Deleted Items, which is recoverable. The same `mail_send` gate covers the indirect routes to a forwarding rule starting work: reordering one, or disabling, reordering or deleting a `stop_processing_rules` or `permanentDelete` rule that was hiding it — `permanentDelete` removes the message before later rules see it. Repairing an errored forwarding rule needs `mail_send` too: the repair puts it back into service. And a listing that stopped early (`complete: false`) counts as "cannot tell", so it gates the same way rather than assuming nothing is hidden. A rule that never runs until the rule above it changes is still a rule that forwards mail.
+
+| Tool | Description |
+|------|-------------|
+| `outlook_list_rules` | List inbox rules in execution order, with conditions and actions, and whether Exchange reports an error applying the rule. |
+| `outlook_create_rule` | Create a rule from sender/subject/body/attachment conditions and move, copy, mark-read, delete, forward, categorize or stop-processing actions. |
+| `outlook_update_rule` | Change a rule's name, enabled state, sequence, target folder or mark-read action. Other actions are preserved; re-enabling a rule that forwards or redirects needs `mail_send`. |
+| `outlook_delete_rule` | Delete a rule by ID. Irreversible. |
+
+The three write tools are gated by the `mail_rules` permission category — add it to `allow_categories` (or leave `allow_categories` unset for a full read-write install).
+
+The four rule tools are opt-in, off in a stock install: with `OUTLOOK_MCP_TOOLSETS` unset none of them is loaded — not even `outlook_list_rules` — and the surface every user pays for is unchanged. Name `rules` in `OUTLOOK_MCP_TOOLSETS` to load them, or set `mailbox_settings_write: true`, which adds them only when `OUTLOOK_MCP_TOOLSETS` is unset — an explicit selection is what you asked for, so it wins.
+
+A rule hides as well as forwards, and the hiding needs no permission beyond `mail_rules`: a rule at sequence 1 that deletes, marks read and stops processing on "security", "sign-in" or "password" removes that mail before any later rule sees it. Read the rules of a mailbox you did not configure before trusting what it shows you.
+
+**Order is Graph's to set.** On a live personal mailbox, `sequence` was ignored on both create and update: a rule created at sequence 500 and then patched to 500 stayed at the sequence Graph had assigned (128 of 127). The tools accept the field because Graph's schema does, and they return the sequence Graph actually stored — treat that returned value as authoritative, not the one you asked for. The ordering and tie logic in the `mail_send` gate is defensive against a listing that reports equal or missing sequences, not something this API was observed to produce.
+
+Creating, updating or deleting a rule also needs `MailboxSettings.ReadWrite` on the token. The default read-write consent set requests `MailboxSettings.Read` only, so the write tools answer `ErrorAccessDenied` until the token carries the scope. To enable the write tools:
+
+1. **Ask for the write scope at sign-in.** Set `mailbox_settings_write: true` in your config. The default read-write consent asks for `MailboxSettings.Read` only, so without this every rule write answers `ErrorAccessDenied` no matter what the app registration allows.
+2. **Re-run `outlook-mcp auth`.** Consent is granted per *requested* scope and an existing token keeps the scopes it was issued with, so the new scope only lands on a fresh consent.
+3. **Restart the server.** Tools are chosen when the process starts, so the rule tools appear only after a restart — a config change mid-session does nothing to the surface, and the write scope alone does not add them.
+4. **If your tenant restricts it**, add `MailboxSettings.ReadWrite` (delegated, Microsoft Graph) to the app registration in the Azure portal and grant admin consent before step 2. A personal account does not need this.
+
+`outlook_mcp` cannot detect a half-configured setup: a token without the scope authenticates fine and reads keep working, and every rule write fails at Microsoft's end with `ErrorAccessDenied`. If rule writes fail while `outlook_list_rules` works, the scope is the cause.
 
 ### Calendar Read
 
@@ -537,6 +567,7 @@ Config lives at `~/.outlook-mcp/config.json` (created with `0600` permissions on
 | `expected_username` | `string` | `null` | Since 1.29: optional sign-in username for this instance. A saved sign-in for another username is refused before refreshing it; a new sign-in is checked before saving its record or using its credential. Case-insensitive; compares Microsoft's sign-in username literally, without resolving aliases. Unset keeps the existing behaviour. Older versions ignore this key with a warning and do not enforce the guard. |
 | `timezone` | `string` | `"UTC"` | IANA timezone (e.g. `"America/New_York"`). Interprets zone-less dates, **and anchors every event you create** — a recurring event is expanded in this zone, so on the default `"UTC"` a 09:00 weekly meeting shifts an hour when the clocks change. Set it to where you are. |
 | `read_only` | `bool` | `false` | When `true`, all write tools (send, reply, move, delete, create, update, RSVP) return an error. Gates the tools, not the Microsoft token -- see below. |
+| `mailbox_settings_write` | `bool` | `false` | When `true`, `outlook-mcp auth` asks for `MailboxSettings.ReadWrite` instead of `MailboxSettings.Read`, which is what the inbox-rule write tools need. Consent is per requested scope, so the Azure-portal permission alone does not put it in the token. It also loads the opt-in `rules` toolset group: asking for the scope is asking to manage rules, so the four rule tools come with it. Off by default: it widens the token to every mailbox setting, not only rules. Refused in combination with `read_only_consent`, which asks for the read scopes only — that pairing would silently never request the write scope. |
 | `read_only_consent` | `bool` | `false` | When `true`, `outlook-mcp auth` asks Microsoft for the read permissions only, instead of the read-write set. For a second, read-only app registration -- see [What `read_only` does and does not do](#what-read_only-does-and-does-not-do). Requires `read_only: true`; the config is refused without it. |
 | `attachments_dir` | `string` | `"~/.outlook-mcp/attachments"` | The only directory the attachment tools may read from or write to. Every path an agent supplies is resolved and must land inside it — a symlink out or a `..` is refused. Widen it only if you understand that anything reachable can be emailed. |
 | `allow_categories` | `list[string]` | `[]` | Optional. Restrict write tools to specific categories (see below). Empty list = all writes allowed when `read_only: false`. |
@@ -583,17 +614,11 @@ anyone who controls it can also retarget the settings file with `OUTLOOK_MCP_CON
 ### Toolset selection (optional) — `OUTLOOK_MCP_TOOLSETS`
 
 The 71 default tool schemas load into the client's context every turn (the chars/4 proxy `test_tool_surface_budget.py` measures with; a different yardstick than the ~8.6k o200k figure in ROADMAP for the 62-tool surface). A client that only needs part of the surface can set the `OUTLOOK_MCP_TOOLSETS` environment variable to a comma-separated list of tool groups, and only those load. The `account` group (auth / identity) is always available.
+Groups: `mail`, `drafts`, `attachments`, `calendar`, `contacts`, `todo`, `folders`, `digest`, `delta`, `admin`, `documents`, and `rules`. Unset loads every group except the opt-in ones — `documents` and `rules` — so a stock install gets 71 of the 76 tools. Name `rules` here, or set `mailbox_settings_write: true` with `OUTLOOK_MCP_TOOLSETS` unset, to get the four rule tools; that setting is itself the request for rule management. A selection here always wins: the flag does not add `rules` to a narrower list. For example, `OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"` loads 31 tools instead of 71, cutting the per-turn schema cost to about 40% of the default.
 
-```bash
-# e.g. a recurring mail + calendar agent: 31 tools instead of 71 (about half the tool tokens per turn)
-OUTLOOK_MCP_TOOLSETS="mail,calendar,digest,delta"
-```
+Naming any group loads only the groups named, plus `account`, and a name that is not a group matches nothing. So to add both opt-in groups to the default set, name all thirteen: `OUTLOOK_MCP_TOOLSETS=mail,drafts,attachments,calendar,contacts,todo,folders,digest,delta,admin,documents,rules`.
 
-Groups: `mail`, `drafts`, `attachments`, `calendar`, `contacts`, `todo`, `folders`, `digest`, `delta`, `admin`, `documents`. Unset loads the 71 default schemas; `documents` is off until explicitly named. The full declared surface contains 72 tools. This only affects which tools are advertised; enabled tools behave identically.
-
-Naming any group loads only the groups named, plus `account`, and a name that is not a group matches nothing. So to add `documents` to the default set, name all eleven: `OUTLOOK_MCP_TOOLSETS=mail,drafts,attachments,calendar,contacts,todo,folders,digest,delta,admin,documents`.
-
-The groups are not the headings of the Tool Reference. `mail` holds the mail read, write and triage tools, `outlook_list_thread`, `outlook_copy_message` and `outlook_batch_triage`, but `outlook_list_folders` is in `folders`; the Focused Inbox tools (`outlook_reclassify_message` and the three override tools) are in `admin`, with categories and mail tips; the three `*_delta` tools are in `delta` and `outlook_changes_since` in `digest`; `outlook_list_calendars` is in `calendar`; the two draft-attachment tools are in `drafts` and `outlook_read_attachment` in `documents`; and `account` is `outlook_auth_status` and `outlook_whoami`.
+The groups are not the headings of the Tool Reference. `mail` holds the mail read, write and triage tools, `outlook_list_thread`, `outlook_copy_message` and `outlook_batch_triage`, but `outlook_list_folders` is in `folders`; the Focused Inbox tools (`outlook_reclassify_message` and the three override tools) are in `admin`, with categories and mail tips; the three `*_delta` tools are in `delta` and `outlook_changes_since` in `digest`; `outlook_list_calendars` is in `calendar`; the two draft-attachment tools are in `drafts`, `outlook_read_attachment` in `documents`, and the four rule tools in `rules`; and `account` is `outlook_auth_status` and `outlook_whoami`.
 
 ### Two accounts, two instances (optional) — `OUTLOOK_MCP_CONFIG_DIR`
 
@@ -722,6 +747,7 @@ By default, `read_only: false` unlocks **all** write tools. For finer control, s
 | `mail_drafts` | create/update/delete draft, attach to/remove from a draft | Safe — drafts only, no send |
 | `mail_triage` | move, delete (soft), flag, categorize, mark read, copy, batch, reclassify and set/delete Focused Inbox overrides | Moderate — reversible except hard delete |
 | `mail_folders` | create/rename/delete folder | Moderate |
+| `mail_rules` | create/update/delete inbox rule | **Dangerous** — rules run server-side, so one keeps moving, forwarding or deleting mail with every client closed |
 | `mail_send` | send, reply, forward, send_draft, send_with_attachments | **Dangerous** — sends email on your behalf |
 | `calendar_write` | create/update/delete event, RSVP, attach/remove event files | Moderate — your own calendar, but `outlook_attach_to_event` reads local files from `attachments_dir` and pushes their bytes to Graph. The parts that email other people text the agent wrote need `mail_send` as well: inviting attendees, rewording (subject, body, location) any event that already has them, attaching a file to such an event (they get it with its next update), and adding a message to an RSVP. A bare RSVP, a time change and a cancellation still notify the people involved, but carry nothing the agent wrote |
 | `contacts_write` | create/update/delete contact | Moderate |
@@ -761,7 +787,7 @@ if the agent should set up meetings with other people, not just block out your o
 { "read_only": true }
 ```
 
-When `allow_categories` is set, any tool in a non-allowed category returns a permission-denied error (`PermissionDeniedError`) naming the blocked category. When `allow_categories` is empty (or unset) and `read_only` is false, all write tools are permitted. `read_only: true` always takes precedence — if set, all writes are blocked regardless of `allow_categories`. Unknown category names are rejected at config load time with a validation error; only the seven names above are accepted.
+When `allow_categories` is set, any tool in a non-allowed category returns a permission-denied error (`PermissionDeniedError`) naming the blocked category. When `allow_categories` is empty (or unset) and `read_only` is false, all write tools are permitted. `read_only: true` always takes precedence — if set, all writes are blocked regardless of `allow_categories`. Unknown category names are rejected at config load time with a validation error; only the eight names above are accepted.
 
 ---
 
@@ -807,7 +833,7 @@ uv run outlook-mcp
 - **Calendar** -- cancel event (with attendee notification)
 - **Work/school-only tools** -- free/busy, meeting times, automatic replies, shared mailboxes: not planned for now (#133). If any are taken later, they come as an opt-in group that personal accounts never load
 
-Committed direction, and what was investigated and ruled out (inbox rules, mailbox settings), is in [ROADMAP.md](ROADMAP.md).
+Committed direction, and what was investigated and ruled out (mailbox settings), is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
