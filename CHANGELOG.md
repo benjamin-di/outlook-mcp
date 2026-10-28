@@ -28,7 +28,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   also one carrying `permanentDelete`, a null or omitted sequence is not sequence zero, and a
   cut-short rule listing is "cannot tell" rather than "nothing hidden". Graph assigns rule order:
   a requested `sequence` was accepted but not honoured on a live personal mailbox, so the tools
-  return the stored value as authoritative. Reordering a *disabled*
+  return the stored value as authoritative, and add `sequence_requested` when it differs from
+  the request. Reordering a *disabled*
   forwarding rule does not demand `mail_send`, nor does repairing a rule in the same call that
   switches it off (what lands is still disabled), and `mailbox_settings_write` is refused
   alongside `read_only_consent` rather than being silently ignored. `outlook_list_rules` also
