@@ -135,6 +135,18 @@ class Config(BaseModel):
             "read_only: true."
         ),
     )
+    mailbox_settings_write: bool = Field(
+        default=False,
+        description=(
+            "Ask Microsoft for `MailboxSettings.ReadWrite` at sign-in instead of "
+            "`MailboxSettings.Read`, which is what the inbox-rule write tools need. "
+            "Off by default because it widens the token to every mailbox setting "
+            "(automatic replies, working hours, time zone), not only rules. Adding "
+            "the permission in the Azure portal is not enough on its own: consent is "
+            "granted per *requested* scope, so the sign-in has to name it and the "
+            "account has to consent again."
+        ),
+    )
     allow_categories: list[str] = Field(
         default_factory=list,
         description=(
@@ -188,6 +200,8 @@ class Config(BaseModel):
         """
         if not isinstance(data, dict):
             return data
+        if not _warn_about_unknown_keys:
+            return data
         for key in data:
             if key in _LEGACY_KEYS:
                 logger.warning("Config key %r ignored: %s.", key, _LEGACY_KEYS[key])
@@ -235,6 +249,26 @@ class Config(BaseModel):
         if not value or any(ord(char) < 32 or ord(char) == 127 for char in value):
             raise ValueError("expected_username must be a non-empty sign-in username on one line.")
         return value
+
+    @model_validator(mode="after")
+    def _mailbox_settings_write_needs_a_write_consent(self) -> "Config":
+        """Refuse a scope request that the sign-in would never make.
+
+        `read_only_consent` asks for the read scopes only, so `get_scopes` returns
+        the read list whatever `mailbox_settings_write` says. Loaded together, the
+        key would be silently ignored and every rule write would fail with a 403
+        that names none of it — the same dead end as documenting a permission the
+        code never requests.
+        """
+        if self.mailbox_settings_write and self.read_only_consent:
+            raise ValueError(
+                "mailbox_settings_write: true cannot be combined with read_only_consent: "
+                "true. That consent asks for the read scopes only, so MailboxSettings."
+                "ReadWrite would never be requested and every inbox-rule write would "
+                "fail. Drop one: read_only_consent for a registration that must never "
+                "write, mailbox_settings_write for one that should manage rules."
+            )
+        return self
 
     @field_validator("allow_categories")
     @classmethod
@@ -356,12 +390,30 @@ def _refuse_non_directory(config_dir: str) -> None:
         )
 
 
-def load_config(config_dir: str = DEFAULT_CONFIG_DIR) -> Config:
-    """Load valid file/default settings, then non-persistent environment inputs."""
-    baseline = _load_file_config(config_dir)
-    from outlook_mcp._config_env import apply_environment
+# Silences the accept-and-warn pass while a caller reads one field for an
+# internal decision (toolset selection at import). Those warnings belong to the
+# start-up load; repeating them for an import-time peek printed every one of
+# them twice on every start.
+_warn_about_unknown_keys = True
 
-    return apply_environment(baseline, os.environ)
+
+def load_config(config_dir: str = DEFAULT_CONFIG_DIR, *, warn_unknown: bool = True) -> Config:
+    """Load valid file/default settings, then non-persistent environment inputs.
+
+    ``warn_unknown=False`` suppresses the unknown/legacy-key warnings for this
+    call, so an internal read does not duplicate the ones the start-up load
+    prints.
+    """
+    global _warn_about_unknown_keys
+    previous = _warn_about_unknown_keys
+    _warn_about_unknown_keys = warn_unknown
+    try:
+        baseline = _load_file_config(config_dir)
+        from outlook_mcp._config_env import apply_environment
+
+        return apply_environment(baseline, os.environ)
+    finally:
+        _warn_about_unknown_keys = previous
 
 
 def _load_file_config(config_dir: str) -> Config:
