@@ -34,7 +34,24 @@ from mcp.types import ToolAnnotations
 # Toolset groups a client can enable via OUTLOOK_MCP_TOOLSETS. The "account"
 # group (auth/identity) is always available regardless of selection.
 ALWAYS_ON_GROUPS = {"account"}
-OPTIONAL_GROUPS = {"documents"}
+
+# Groups a stock install does not pay for: not loaded unless
+# OUTLOOK_MCP_TOOLSETS names them. `documents` is main's opt-in reader; `rules`
+# is the inbox-rule CRUD group, whose four schemas are the most expensive single
+# feature here (~1.2k proxy tokens, ~8% of the default surface — mostly
+# `outlook_create_rule`'s fourteen optional arguments), and three of the four
+# cannot work at all without the write scope.
+#
+# One set, not two. With a separate "optional" and "opt-in" set, the default
+# path subtracted both while `select_kept_tools(None)` subtracted only one, so
+# the two disagreed about what a stock install gets and `rules` leaked through
+# the second path.
+OFF_BY_DEFAULT = {"documents", "rules"}
+
+# What `mailbox_settings_write: true` adds when nothing was named. Not every
+# off-by-default group: that key asks for rule writes, not for the document
+# reader.
+SETTINGS_WRITE_ADDS = {"rules"}
 
 # name -> toolset group. Every registered tool MUST appear here (drift-guarded).
 TOOL_GROUPS: dict[str, str] = {
@@ -57,6 +74,13 @@ TOOL_GROUPS: dict[str, str] = {
     "outlook_copy_message": "mail",
     "outlook_batch_triage": "mail",
     "outlook_list_thread": "mail",
+    # rules — their own group: the four schemas are the most expensive single
+    # feature here (~1.2k proxy tokens, mostly `create_rule`'s argument list), and
+    # a client that gated down to `mail` should not pay for them.
+    "outlook_list_rules": "rules",
+    "outlook_create_rule": "rules",
+    "outlook_update_rule": "rules",
+    "outlook_delete_rule": "rules",
     # drafts
     "outlook_list_drafts": "drafts",
     "outlook_create_draft": "drafts",
@@ -133,6 +157,7 @@ READ_ONLY: set[str] = {
     "outlook_read_messages",
     "outlook_search_mail",
     "outlook_list_thread",
+    "outlook_list_rules",
     "outlook_list_drafts",
     "outlook_list_attachments",
     "outlook_read_attachment",
@@ -181,6 +206,13 @@ DESTRUCTIVE: set[str] = {
     "outlook_delete_task_attachment",
     "outlook_delete_folder",
     "outlook_delete_inbox_override",
+    # Creating a rule outlives the call: it can keep deleting or forwarding mail
+    # indefinitely, so a client that asks before destructive calls must ask here.
+    # `outlook_update_rule` joins them because re-enabling a forwarding rule
+    # resumes the sending.
+    "outlook_create_rule",
+    "outlook_update_rule",
+    "outlook_delete_rule",
     "outlook_remove_draft_attachment",
     "outlook_attach_to_event",
     "outlook_remove_event_attachment",
@@ -200,16 +232,40 @@ def parse_toolsets(value: str | None) -> set[str] | None:
     return groups or None
 
 
+def resolve_groups(enabled: set[str] | None, mailbox_settings_write: bool) -> set[str]:
+    """Enabled groups, from the env selection and the config flag.
+
+    ``enabled`` is what ``OUTLOOK_MCP_TOOLSETS`` said: ``None`` means "no
+    selection", which resolves to every group **except** ``OFF_BY_DEFAULT``.
+    ``mailbox_settings_write`` adds ``SETTINGS_WRITE_ADDS`` back, but only when
+    nothing else was named: an agent gated down to ``mail`` must not have
+    ``rules`` handed back by a shared config it did not write, with no way to
+    ask for the narrower surface.
+
+    Always a set. A ``None`` return would mean "everything" to
+    ``select_kept_tools``, which would silently keep every off-by-default group
+    for any caller that passed it straight through.
+    """
+    if enabled is None:
+        groups = set(TOOL_GROUPS.values()) - OFF_BY_DEFAULT
+        if mailbox_settings_write:
+            groups |= SETTINGS_WRITE_ADDS
+        return groups
+    return set(enabled)
+
+
 def select_kept_tools(names: list[str], enabled: set[str] | None) -> set[str]:
     """Return the subset of ``names`` to keep given the enabled toolsets.
 
-    ``enabled=None`` keeps all groups except optional groups (documents).
-    Otherwise keep a tool when its group is
-    enabled or is an always-on group (account/auth). A name with no known group
-    is kept (fail-open — gating must never silently drop an unclassified tool).
+    ``enabled=None`` keeps every group except the off-by-default ones. Otherwise
+    keep a tool when its group is enabled or is an always-on group
+    (account/auth). A name with no known group is kept (fail-open — gating must
+    never silently drop an unclassified tool).
     """
     if enabled is None:
-        return {name for name in names if TOOL_GROUPS.get(name) not in OPTIONAL_GROUPS}
+        # Same set the default path subtracts: with only `documents` here, this
+        # kept the four rule tools for a caller that meant the stock surface.
+        return {name for name in names if TOOL_GROUPS.get(name) not in OFF_BY_DEFAULT}
     keep: set[str] = set()
     for name in names:
         group = TOOL_GROUPS.get(name)

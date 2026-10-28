@@ -38,7 +38,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
 - `src/outlook_mcp/errors.py` — Exception hierarchy. `OutlookMCPError` inherits the SDK's `ToolError`; this is load-bearing, not cosmetic (see Conventions)
 - `src/outlook_mcp/pagination.py` — Cursor-based pagination
 - `src/outlook_mcp/cli.py` — `outlook-mcp` entry point: `serve` (default), `auth`, `status`, `logout`
-- `src/outlook_mcp/permissions.py` — `read_only` and `allow_categories` write gating (the seven write categories)
+- `src/outlook_mcp/permissions.py` — `read_only` and `allow_categories` write gating (the eight write categories)
 - `src/outlook_mcp/folder_resolver.py`, `calendar_resolver.py` — Display name / well-known name → Graph id resolution for mail folders and calendars; a mail folder can also be a path, `Inbox/Travel/Flights`, with `//` for a `/` in a name (#144)
 - `src/outlook_mcp/throttle.py` — Retry-After honoring for the raw-httpx delta/`$batch` paths (SDK path already retries via kiota), and `call_without_replay` for the SDK writes that can email someone: kiota's retry off, 429 retried here, never a 5xx (#131)
 - `src/outlook_mcp/toolsets.py` — Tool annotations, lean advertised input schemas (`lean_input_schema`), and config-gated toolset selection (`OUTLOOK_MCP_TOOLSETS`); an opt-in group (`OPTIONAL_GROUPS`: `documents`) loads only when named; `configure()` runs once after registration
@@ -54,6 +54,7 @@ Still manual by design: the live tier (run it *before* tagging) and ClawHub.
   - `mail_attachments.py` — Mail attachments: list, download (to `attachments_dir`, or `as_content`), send and attach to drafts; home of `resolve_attachment_path`, the download helpers the To Do tools share, and the >3MB upload session the event tools reuse
   - `mail_attachment_read.py`, `_document_worker.py` — `outlook_read_attachment` (opt-in `documents` group): PDF, XLSX and text attachments as paged text. PDF/XLSX parse in `_document_worker.py`, a short-lived clean-environment subprocess the parent bounds by memory, wall time and output — containment, not a sandbox
   - `mail_folders.py` — Folder management
+  - `mail_rules.py` — Inbox rule CRUD; opt-in toolset, and a rule that forwards needs `mail_send`
   - `mail_thread.py` — Threading and copy
   - `batch.py` — Batch operations
   - `user.py` — User profile, calendars

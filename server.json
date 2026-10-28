@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.mpalermiti/outlook-mcp",
   "title": "Outlook MCP",
-  "description": "Microsoft Outlook personal accounts: mail, calendar, contacts, to-do, drafts (72 tools).",
+  "description": "Microsoft Outlook personal accounts: mail, calendar, inbox rules, contacts, to-do, drafts (76 tools).",
   "version": "1.29.0",
   "websiteUrl": "https://github.com/mpalermiti/outlook-mcp",
   "repository": {

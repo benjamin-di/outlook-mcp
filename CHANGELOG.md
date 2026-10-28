@@ -6,6 +6,45 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Inbox rules: `outlook_list_rules`, `outlook_create_rule`, `outlook_update_rule`,
+  `outlook_delete_rule`.** Graph's `/me/mailFolders/inbox/messageRules` was previously
+  documented here as a dead end on personal accounts; it is not (see ROADMAP). Rules are
+  server-side, so they keep running with every client closed. `outlook_update_rule` reads the
+  rule before patching it, because Graph replaces a rule's `actions` object wholesale — a
+  re-point that did not send the other actions back would silently clear them. The three write
+  tools sit behind a new `mail_rules` permission category and need `MailboxSettings.ReadWrite`
+  on the token, which the new `mailbox_settings_write` config key adds to the sign-in: the
+  default consent set asks only for `MailboxSettings.Read`, and consent is per requested scope,
+  so the portal permission alone would not put it in the token. `outlook_list_rules` returns each
+  rule's conditions and actions, not only its name and status — a forwarding rule you cannot see
+  is the one that matters. Overlapping updates of one rule are serialized in-process; Graph
+  returns no `@odata.etag` on this endpoint, so there is no `If-Match` and the last write wins
+  across processes. The `mail_send` gate follows the indirect routes as well: a forwarding rule
+  behind a `stop_processing_rules` rule starts delivering mail when the forwarding rule is
+  moved up, or when that stop rule is reordered, disabled or deleted, so those changes require
+  `mail_send` too — none of them names a forwarding address. A rule that stops processing is
+  also one carrying `permanentDelete`, a null or omitted sequence is not sequence zero, and a
+  cut-short rule listing is "cannot tell" rather than "nothing hidden". Graph assigns rule order:
+  a requested `sequence` was accepted but not honoured on a live personal mailbox, so the tools
+  return the stored value as authoritative. Reordering a *disabled*
+  forwarding rule does not demand `mail_send`, nor does repairing a rule in the same call that
+  switches it off (what lands is still disabled), and `mailbox_settings_write` is refused
+  alongside `read_only_consent` rather than being silently ignored. `outlook_list_rules` also
+  reports `has_error`, and both read and write paths walk the model's own attributes instead of
+  a hand-kept field list, so a field Graph adds later is neither hidden from the read nor
+  dropped from an update.
+
+  The four rule tools are their own **opt-in** `rules` toolset group: with
+  `OUTLOOK_MCP_TOOLSETS` unset they do not load, so the surface every user pays for stays at
+  71 tools and 11,130 proxy tokens, under the 11,250 ceiling. They load when the
+  group is named, or when `mailbox_settings_write: true` is set and no selection was made —
+  three of the four cannot work without that scope, so asking for it is treated as asking for
+  the tools, without overriding a narrower `OUTLOOK_MCP_TOOLSETS` an operator chose. Both
+  surfaces are budgeted separately: the 71-tool default under 11,250, and the rules-enabled
+  75-tool surface under 12,150 (measured 11,951).
+
 ## [1.29.0] — 2026-10-27
 
 A contributor release, nearly all of it from @benjamin-di, with thanks. A meeting invitation
@@ -16,6 +55,7 @@ are a quarter smaller: the default surface is 11,130 proxy tokens, down from 14,
 Tool count unchanged at 72, 71 by default.
 
 ### Added
+
 
 - **Calendar listings include the owner and private-item visibility permission** (#193).
   Calendars with the same name can be distinguished without another Graph request;
