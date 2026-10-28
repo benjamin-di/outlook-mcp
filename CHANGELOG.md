@@ -35,7 +35,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   alongside `read_only_consent` rather than being silently ignored. `outlook_list_rules` also
   reports `has_error`, and both read and write paths walk the model's own attributes instead of
   a hand-kept field list, so a field Graph adds later is neither hidden from the read nor
-  dropped from an update.
+  dropped from an update. A refused listing says it is either the read consent or a mailbox
+  that refuses rules, rather than pointing at the dead-ends page: a live personal mailbox
+  whose token reads its categories under that same scope still answered 403 there.
 
   The four rule tools are their own **opt-in** `rules` toolset group: with
   `OUTLOOK_MCP_TOOLSETS` unset they do not load, so the surface every user pays for stays at

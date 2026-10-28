@@ -27,6 +27,7 @@ from outlook_mcp.config import (
     load_config,
 )
 from outlook_mcp.errors import (
+    RULE_LIST_DENIED,
     RULE_WRITE_NEEDS_SETTINGS_WRITE,
     RULE_WRITE_STILL_DENIED,
     ConfigLoadError,
@@ -276,7 +277,7 @@ _RULE_WRITE_TOOLS = frozenset({"outlook_create_rule", "outlook_update_rule", "ou
 def _rule_write_hint(
     err: GraphAPIError, tool_name: str, *, settings_write_on: bool | None = None
 ) -> GraphAPIError:
-    """Point a 403 on a rule write at the consent, not at the dead-ends page.
+    """Point a 403 on a rule write or listing at its causes, not at the dead-ends page.
 
     The generic 403 hint says the endpoint may not be supported for this account
     type. For a rule write that is the wrong answer twice over: the endpoint
@@ -288,7 +289,13 @@ def _rule_write_hint(
     cannot: with ``mailbox_settings_write`` on, the sign-in asked for the scope,
     so the refusal is either a token from before that setting or a policy — and
     a policy 403 should not be told to go and consent.
+
+    A listing needs only the read scope, so the flag does not change its advice:
+    it gets ``RULE_LIST_DENIED`` either way.
     """
+    if tool_name == "outlook_list_rules" and getattr(err, "status_code", None) == 403:
+        err.action = RULE_LIST_DENIED
+        return err
     if tool_name in _RULE_WRITE_TOOLS and getattr(err, "status_code", None) == 403:
         if settings_write_on is None:
             settings_write_on = _mailbox_settings_write_is_on()

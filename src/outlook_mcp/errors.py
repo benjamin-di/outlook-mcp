@@ -471,6 +471,19 @@ RULE_WRITE_STILL_DENIED = (
     "written. " + LEAVE_SETTINGS_TO_THE_USER
 )
 
+# A 403 on listing rules. Listing needs only the read scope, which the default
+# consent asks for, so the write advice above does not fit. A live personal
+# mailbox that reads its categories under that same scope still answered 403
+# here, so the account itself may refuse rules. State both causes.
+RULE_LIST_DENIED = (
+    "Graph refused to list inbox rules with 403. Either this sign-in never consented to "
+    "reading mailbox settings (MailboxSettings.Read, in the README's app registration), "
+    "or Microsoft refuses rule access on this mailbox, as it has on some personal "
+    "accounts. If it is the consent, run `outlook-mcp auth` again and restart the server. "
+    "If the refusal repeats after a fresh sign-in, rules cannot be managed on this "
+    "mailbox. " + LEAVE_SETTINGS_TO_THE_USER
+)
+
 # The same doubt for an event with no attendees, where nothing was emailed.
 EVENT_MAY_HAVE_BEEN_CREATED = (
     "Graph failed without saying whether the event was created, so it may already exist. "

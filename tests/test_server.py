@@ -1020,6 +1020,43 @@ async def test_the_wrapper_still_translates_an_sdk_error_for_a_rule_write(monkey
     assert "mailbox_settings_write" in (excinfo.value.action or "")
 
 
+@pytest.mark.parametrize("settings_write_on", [False, True])
+def test_a_403_on_listing_rules_names_both_causes(settings_write_on):
+    """Listing needs only the read scope the default consent asks for, so the write
+    advice does not fit, and the generic hint sends the agent to a dead-ends page
+    that still lists rules. A live personal mailbox answered this 403."""
+    from outlook_mcp.errors import RULE_LIST_DENIED
+
+    err = _rule_write_hint(
+        GraphAPIError(403, "ErrorAccessDenied", "Access is denied."),
+        "outlook_list_rules",
+        settings_write_on=settings_write_on,
+    )
+
+    assert err.action == RULE_LIST_DENIED
+    assert "dead-ends" not in err.action
+
+
+async def test_the_wrapper_gives_a_refused_rule_listing_the_listing_hint(monkeypatch):
+    """`list_rules` raises straight from the SDK, so the hint has to reach that path."""
+    from kiota_abstractions.api_error import APIError
+
+    import outlook_mcp.server as server
+    from outlook_mcp.errors import RULE_LIST_DENIED
+
+    monkeypatch.setattr(server, "_mailbox_settings_write_is_on", lambda: False)
+
+    async def outlook_list_rules():
+        failed = APIError()
+        failed.response_status_code = 403
+        raise failed
+
+    with pytest.raises(GraphAPIError) as excinfo:
+        await _wrap_tool_errors(outlook_list_rules)()
+
+    assert excinfo.value.action == RULE_LIST_DENIED
+
+
 async def test_the_wrapper_uses_the_denied_hint_when_the_setting_is_on(monkeypatch):
     """The three wrapper tests above all patch the flag to False, so a wrapper
     that always returned the "set the flag" text would pass all of them. With
