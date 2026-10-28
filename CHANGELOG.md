@@ -38,12 +38,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
   The four rule tools are their own **opt-in** `rules` toolset group: with
   `OUTLOOK_MCP_TOOLSETS` unset they do not load, so the surface every user pays for stays at
-  71 tools and 11,196 proxy tokens, under the 11,250 ceiling. They load when the
+  71 tools and 11,130 proxy tokens, under the 11,250 ceiling. They load when the
   group is named, or when `mailbox_settings_write: true` is set and no selection was made —
   three of the four cannot work without that scope, so asking for it is treated as asking for
   the tools, without overriding a narrower `OUTLOOK_MCP_TOOLSETS` an operator chose. Both
   surfaces are budgeted separately: the 71-tool default under 11,250, and the rules-enabled
-  75-tool surface under 12,150 (measured 12,020).
+  75-tool surface under 12,150 (measured 11,951).
 
 ## [1.29.0] — 2026-10-27
 

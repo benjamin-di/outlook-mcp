@@ -205,9 +205,10 @@ CHARS_PER_TOKEN = 4
 # headroom), so the freed quarter cannot be spent a sentence at a time.
 #
 # Re-measured on 1.29.0 with this branch's rules group in the tree: the default surface
-# is 71 / 11,196 — upstream's own head measures 11,196 as well, so the four opt-in tools
+# is 71 / 11,130 — upstream's own head measures 11,130 as well, so the four opt-in tools
 # change nothing a stock install pays. With the `rules` group (every group except
-# `documents`) the surface is 75 / 12,020, and the all-groups surface 76 / 12,165.
+# `documents`) the surface is 75 / 11,951, documents 72 / 11,274 and all groups 76 / 12,095.
+# Measured with the same `by_alias=True` dump the tests use, on Python 3.10.
 # The rules ceiling is 12,150 (~1%), because a surface nobody loads by default should
 # not get to raise everyone's ceiling.
 TOOL_SURFACE_CEILING = 12_150
