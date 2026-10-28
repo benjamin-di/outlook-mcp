@@ -1,16 +1,20 @@
 """Read-only checks of Graph's invitation-to-calendar relationship.
 
-Plain mail is checked on the first 50 messages. Invitations are rarer, so their
-guard walks ID-only pages until it finds one with a surviving event, reading at most
-1,000 messages. Each skips when the mailbox lacks what it needs, and the skip says how
-much it read. No fixture sends or changes anything.
+Both guards list ID-only messages filtered on their message class
+(PidTagMessageClass), as ``find_events_by_key`` filters events on an extended
+property. Plain mail is checked on the first 50 ``IPM.Note`` messages.
+Invitations are rarer, so their guard follows ``@odata.nextLink`` through
+``IPM.Schedule.Meeting.Request`` messages, at most 20 pages, until it finds one
+with a surviving event. A listed invitation the SDK does not build as an
+``EventMessageRequest`` fails the run. Each guard skips when the mailbox lacks
+what it needs, and the invitation skip says how much it read. No fixture sends
+or changes anything.
 """
 
 from contextlib import aclosing
 
 import pytest
 from msgraph.generated.models.event_message_request import EventMessageRequest
-from msgraph.generated.models.message import Message
 from msgraph.generated.users.item.messages.item.message_item_request_builder import (
     MessageItemRequestBuilder,
 )
@@ -22,38 +26,68 @@ from outlook_mcp.tools.calendar_read import get_event
 pytestmark = [pytest.mark.live, pytest.mark.asyncio]
 
 PAGE_SIZE = 50
-MAX_MESSAGES = 1_000
+MAX_PAGES = 20
+MESSAGE_CLASS_PROPERTY_ID = "String 0x001A"  # PidTagMessageClass
+PLAIN_MAIL = "IPM.Note"
+INVITATION = "IPM.Schedule.Meeting.Request"
 
 
-async def message_pages(sdk):
-    """Yield ID-only message pages, newest first, until MAX_MESSAGES have been read."""
+def message_class_filter(message_class: str) -> str:
+    return (
+        f"singleValueExtendedProperties/Any(ep: ep/id eq '{MESSAGE_CLASS_PROPERTY_ID}' "
+        f"and ep/value eq '{message_class}')"
+    )
+
+
+async def message_pages(sdk, message_class: str, max_pages: int = 1):
+    """Yield ID-only pages of one message class, following @odata.nextLink up to max_pages."""
     page = await sdk.me.messages.get(
         request_configuration=build_request_config(
             MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters,
-            {"$select": "id", "$top": PAGE_SIZE},
+            {"$filter": message_class_filter(message_class), "$select": "id", "$top": PAGE_SIZE},
         )
     )
-    read = 0
+    pages = 0
     while page is not None:
-        messages = (page.value or [])[: MAX_MESSAGES - read]
-        read += len(messages)
-        yield messages
-        if read >= MAX_MESSAGES or not page.odata_next_link:
+        pages += 1
+        yield page.value or []
+        if pages >= max_pages or not page.odata_next_link:
             return
         page = await sdk.me.messages.with_url(page.odata_next_link).get()
 
 
+async def invitation_pages(sdk):
+    """Yield pages of invitations, failing on any the SDK did not build as one.
+
+    The filter selects invitations by message class, so a listed message that
+    is not an ``EventMessageRequest`` means Graph no longer marks invitations'
+    ``@odata.type`` in an ID-only listing, the premise these guards rely on.
+    """
+    async with aclosing(message_pages(sdk, INVITATION, MAX_PAGES)) as pages:
+        async for messages in pages:
+            for message in messages:
+                if not isinstance(message, EventMessageRequest):
+                    pytest.fail(
+                        f"Graph listed {INVITATION} message {message.id} without "
+                        "@odata.type #microsoft.graph.eventMessageRequest, so the SDK "
+                        f"built a {type(message).__name__}, not an EventMessageRequest"
+                    )
+            yield messages
+
+
 @pytest.fixture
-async def message_sample(real_graph_client):
-    async with aclosing(message_pages(real_graph_client.sdk_client)) as pages:
+async def plain_mail_sample(real_graph_client):
+    async with aclosing(message_pages(real_graph_client.sdk_client, PLAIN_MAIL)) as pages:
         return await anext(pages, [])
 
 
-async def test_plain_mail_has_no_event_rather_than_a_graph_error(real_graph_client, message_sample):
+async def test_plain_mail_has_no_event_rather_than_a_graph_error(
+    real_graph_client, plain_mail_sample
+):
     """The subtype expand must be accepted even when the message is ordinary mail."""
-    message = next((m for m in message_sample if type(m) is Message and m.id), None)
+    message = next((m for m in plain_mail_sample if m.id), None)
     if message is None:
-        pytest.skip("No ordinary mail among the first 50 messages")
+        pytest.skip(f"No {PLAIN_MAIL} message among the first {PAGE_SIZE} listed")
 
     with pytest.raises(ValueError, match="no associated calendar event"):
         await get_event(real_graph_client.sdk_client, message_id=message.id)
@@ -62,20 +96,20 @@ async def test_plain_mail_has_no_event_rather_than_a_graph_error(real_graph_clie
 async def test_invitation_resolves_to_the_mailbox_event(real_graph_client):
     """An expanded invitation must identify an event readable through this user's /me."""
     sdk = real_graph_client.sdk_client
-    read = invitations = 0
-    async with aclosing(message_pages(sdk)) as pages:
-        async for messages in pages:
-            read += len(messages)
+    pages = invitations = 0
+    async with aclosing(invitation_pages(sdk)) as listing:
+        async for messages in listing:
+            pages += 1
             for message in messages:
-                if not isinstance(message, EventMessageRequest) or not message.id:
+                if not message.id:
                     continue
                 invitations += 1
                 if await _resolves_to_current_event(sdk, message):
                     return
 
     pytest.skip(
-        f"No invitation with a calendar event among the newest {read} messages "
-        f"({invitations} invitations seen)"
+        f"No invitation with a calendar event among {invitations} {INVITATION} messages "
+        f"({pages} of at most {MAX_PAGES} pages read)"
     )
 
 
