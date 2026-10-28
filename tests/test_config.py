@@ -703,3 +703,54 @@ class TestMailboxSettingsWriteConfig:
     def test_allowed_on_its_own(self):
         cfg = Config(client_id="test", mailbox_settings_write=True)
         assert cfg.mailbox_settings_write is True
+
+
+class TestWarningsAreLoggedOnce:
+    """The import-time peek reads the config; the start-up load reports it.
+
+    Exactly one warning must reach the operator: an import-time read that warns
+    printed every notice twice on every start, and `warn_unknown=False` only
+    covered the unknown-key ones.
+    """
+
+    @staticmethod
+    def _point_server_at(monkeypatch, config_dir):
+        import outlook_mcp.server as server
+        from outlook_mcp import config as config_mod
+
+        real = config_mod.load_config
+        monkeypatch.setattr(server, "load_config", lambda **kw: real(str(config_dir), **kw))
+        return server, real
+
+    def test_an_unknown_key_is_reported_once(self, tmp_path, caplog, monkeypatch):
+        (tmp_path / "config.json").write_text(
+            json.dumps({"client_id": "00000000-0000-0000-0000-000000000001", "unknown_key_xyz": 1}),
+            encoding="utf-8",
+        )
+        server, real = self._point_server_at(monkeypatch, tmp_path)
+
+        with caplog.at_level(logging.WARNING):
+            assert server._mailbox_settings_write_is_on() is False
+            real(str(tmp_path))
+
+        hits = [r for r in caplog.records if "unknown_key_xyz" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]
+
+    def test_the_legacy_encoding_note_is_reported_once(self, tmp_path, caplog, monkeypatch):
+        from outlook_mcp import config as config_mod
+
+        # A cp1252 config, as Windows PowerShell 5.1 writes one: the accented
+        # value only decodes in the code page, so the loader rescues it and warns.
+        body = json.dumps(
+            {"client_id": "00000000-0000-0000-0000-000000000001", "timezone": "Eur\u00f3pe/Paris"}
+        )
+        (tmp_path / "config.json").write_bytes(body.replace("\\u00f3", "\u00f3").encode("cp1252"))
+        monkeypatch.setattr(config_mod.locale, "getpreferredencoding", lambda *a, **k: "cp1252")
+        server, real = self._point_server_at(monkeypatch, tmp_path)
+
+        with caplog.at_level(logging.WARNING):
+            server._mailbox_settings_write_is_on()
+            real(str(tmp_path))
+
+        hits = [r for r in caplog.records if "not UTF-8" in r.getMessage()]
+        assert len(hits) == 1, [r.getMessage() for r in caplog.records]

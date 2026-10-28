@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from kiota_abstractions.api_error import APIError
+
 from outlook_mcp.config import Config
-from outlook_mcp.errors import RULE_MAY_HAVE_BEEN_CREATED, GraphAPIError, ToolInputError
+from outlook_mcp.errors import RULE_MAY_HAVE_BEEN_CREATED, ToolInputError
 from outlook_mcp.folder_resolver import resolve_folder_id
 from outlook_mcp.permissions import CATEGORY_MAIL_RULES, check_permission, check_sends_mail
 from outlook_mcp.throttle import call_without_replay
@@ -94,6 +96,27 @@ def _rule_lock(rule_id: str) -> asyncio.Lock:
     return lock
 
 
+def _counts_as_a_value(value: Any) -> bool:
+    """Whether an unknown key's value is something, not an empty container.
+
+    `additional_data` keeps whatever Graph sent for a key this build cannot
+    name. `[]`, `{}` and `""` are how an unset field comes back, and counting
+    them as an action would report a harmless key as possibly sending (and show
+    it as one). Shared by the action and condition walks so the two cannot
+    drift apart.
+    """
+    return value is not None and value is not False and value != [] and value != {} and value != ""
+
+
+def _unknown_keys(extra: dict[str, Any]) -> list[str]:
+    """Keys this build cannot name — whatever Graph kept in ``additional_data``."""
+    return sorted(
+        k
+        for k, value in extra.items()
+        if not str(k).startswith("@odata.") and _counts_as_a_value(value)
+    )
+
+
 def _unknown_action_keys(actions: Any) -> list[str]:
     """Action keys this build cannot name — whatever Graph kept in ``additional_data``.
 
@@ -102,20 +125,7 @@ def _unknown_action_keys(actions: Any) -> list[str]:
     ``list_rules`` or in the forwarding gate: a blind spot in both the audit and
     the check. Unknown is treated as possibly sending.
     """
-    extra = getattr(actions, "additional_data", None) or {}
-    return sorted(
-        k
-        for k, value in extra.items()
-        # Empty containers and empty strings are not actions: an unknown key set
-        # to `[]`/`{}`/`""` would otherwise be counted as possibly sending (and
-        # shown as one), which is a false positive on a harmless field.
-        if not str(k).startswith("@odata.")
-        and value is not None
-        and value is not False
-        and value != []
-        and value != {}
-        and value != ""
-    )
+    return _unknown_keys(getattr(actions, "additional_data", None) or {})
 
 
 def _forwards_offsite(actions: Any) -> bool:
@@ -192,17 +202,7 @@ def _describe_block(block: Any) -> dict:
 
 def _unknown_condition_keys(conditions: Any) -> list[str]:
     """Condition keys this build cannot name — whatever Graph kept in ``additional_data``."""
-    extra = getattr(conditions, "additional_data", None) or {}
-    return sorted(
-        k
-        for k, value in extra.items()
-        if not str(k).startswith("@odata.")
-        and value is not None
-        and value is not False
-        and value != []
-        and value != {}
-        and value != ""
-    )
+    return _unknown_keys(getattr(conditions, "additional_data", None) or {})
 
 
 def _describe_conditions(conditions: Any) -> dict:
@@ -548,12 +548,19 @@ async def create_rule(
         ),
         outcome_unknown=RULE_MAY_HAVE_BEEN_CREATED,
     )
-    return {
+    response = {
         "status": "created",
         "id": created.id if created else None,
         "display_name": sanitize_output((created.display_name if created else None) or name),
         "sequence": created.sequence if created else rule.sequence,
     }
+    # Graph assigns rule order and was observed ignoring a requested `sequence`
+    # on a personal mailbox (POST and PATCH both stored the service's own value).
+    # Returning what was asked for next to what landed means an ignored request
+    # is visible instead of reading as a success.
+    if sequence is not None and response["sequence"] != sequence:
+        response["sequence_requested"] = sequence
+    return response
 
 
 async def update_rule(
@@ -713,7 +720,7 @@ async def update_rule(
             patch.actions = actions
 
         updated = await builder.patch(patch)
-    return {
+    response = {
         "status": "updated",
         "id": updated.id if updated else rule_id,
         "display_name": sanitize_output(
@@ -722,6 +729,11 @@ async def update_rule(
         "is_enabled": updated.is_enabled if updated else is_enabled,
         "sequence": updated.sequence if updated else sequence,
     }
+    # A `sequence`-only update that Graph ignores would otherwise answer as if it
+    # worked while the rule never moved. Report the request beside the result.
+    if sequence is not None and response["sequence"] != sequence:
+        response["sequence_requested"] = sequence
+    return response
 
 
 async def delete_rule(graph_client: Any, rule_id: str, *, config: Config) -> dict:
@@ -739,7 +751,21 @@ async def delete_rule(graph_client: Any, rule_id: str, *, config: Config) -> dic
     ).message_rules.by_message_rule_id(rule_id)
 
     async with _rule_lock(rule_id):
-        current = await builder.get()
+        # Both calls can answer 404, and either one can be the first a retry
+        # meets: the SDK raises `ODataError` (an `APIError`) here, not one of
+        # this package's errors, so the status has to be read off the SDK's own
+        # attribute. A retry after a delete that landed is indistinguishable from
+        # an id that never existed — Graph has no delete receipt — so the honest
+        # answer is that the rule is not there, which is the state the caller
+        # asked for.
+        try:
+            current = await builder.get()
+        except APIError as exc:
+            if getattr(exc, "response_status_code", None) != 404:
+                raise
+            _rule_locks.pop(rule_id, None)
+            return {"status": "not_found", "id": rule_id}
+
         if _stops_processing(getattr(current, "actions", None)):
             rules, complete = await _rules_in_inbox(graph_client)
             if not complete or _masks_a_forwarding_rule(current, rules):
@@ -750,13 +776,9 @@ async def delete_rule(graph_client: Any, rule_id: str, *, config: Config) -> dic
                 )
         try:
             await builder.delete()
-        except GraphAPIError as exc:
-            if getattr(exc, "status_code", None) != 404:
+        except APIError as exc:
+            if getattr(exc, "response_status_code", None) != 404:
                 raise
-            # A retry after a delete that landed looks exactly like an id that
-            # never existed: Graph has no delete receipt to tell them apart. Say
-            # what is true — the rule is not there, so the desired state holds —
-            # instead of reporting "not found" as a failure.
             _rule_locks.pop(rule_id, None)
             return {"status": "not_found", "id": rule_id}
 

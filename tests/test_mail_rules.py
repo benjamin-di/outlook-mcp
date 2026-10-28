@@ -1621,15 +1621,148 @@ class TestUpdateGuards:
 
 
 class TestDeleteRetry:
-    async def test_a_404_after_a_landed_delete_is_not_a_failure(self):
+    """A retried delete meets the SDK's own 404, not a hand-made one.
+
+    `builder.get()` and `builder.delete()` are plain SDK calls, so a 404 arrives
+    as the SDK's `ODataError` — only `call_without_replay` converts errors into
+    this package's `GraphAPIError`. These tests drive a real `GraphServiceClient`
+    over a mock transport, which is the type a live mailbox produces.
+    """
+
+    class _Credential:
+        def get_token(self, *args, **kwargs):
+            from azure.core.credentials import AccessToken
+
+            return AccessToken("synthetic-token", 9_999_999_999)
+
+    RULE_ID = _OLD_FOLDER_ID
+
+    RULE = {
+        "id": RULE_ID,
+        "displayName": "Move newsletters to Archive",
+        "sequence": 3,
+        "isEnabled": True,
+        "conditions": {"subjectContains": ["wire"]},
+        "actions": {"moveToFolder": _OLD_FOLDER_ID, "markAsRead": True},
+    }
+
+    @staticmethod
+    async def _delete_with(handler):
+        import httpx
+        from kiota_authentication_azure.azure_identity_authentication_provider import (
+            AzureIdentityAuthenticationProvider,
+        )
+        from msgraph import GraphServiceClient
+        from msgraph import graph_request_adapter as _gra
+        from msgraph_core import GraphClientFactory
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as raw:
+            http_client = GraphClientFactory.create_with_default_middleware(
+                options=_gra.options, client=raw
+            )
+            auth = AzureIdentityAuthenticationProvider(
+                TestDeleteRetry._Credential(),
+                scopes=["https://graph.microsoft.com/.default"],
+            )
+            client = GraphServiceClient(request_adapter=_gra.GraphRequestAdapter(auth, http_client))
+            return await delete_rule(client, TestDeleteRetry.RULE_ID, config=_CFG_ALLOW_RULES)
+
+    async def test_a_404_on_the_delete_is_not_a_failure(self):
         """Graph has no delete receipt; a retry looks like an id that never was."""
+        import httpx
+
+        def handler(request):
+            if request.method == "DELETE":
+                return httpx.Response(
+                    404,
+                    json={"error": {"code": "ErrorItemNotFound", "message": "The rule is gone."}},
+                )
+            return httpx.Response(200, json=TestDeleteRetry.RULE)
+
+        result = await self._delete_with(handler)
+
+        assert result == {"status": "not_found", "id": TestDeleteRetry.RULE_ID}
+
+    async def test_a_404_on_the_read_is_not_a_failure_either(self):
+        """The read runs first, so a retry after a landed delete fails there."""
+        import httpx
+
+        def handler(request):
+            return httpx.Response(
+                404,
+                json={"error": {"code": "ErrorItemNotFound", "message": "The rule is gone."}},
+            )
+
+        result = await self._delete_with(handler)
+
+        assert result == {"status": "not_found", "id": TestDeleteRetry.RULE_ID}
+
+    async def test_a_500_on_the_delete_still_raises(self):
+        """Only 404 is the benign case; everything else is a real failure."""
+        import httpx
+        from kiota_abstractions.api_error import APIError
+
+        def handler(request):
+            if request.method == "DELETE":
+                return httpx.Response(
+                    500, json={"error": {"code": "ErrorInternalServerError", "message": "boom"}}
+                )
+            return httpx.Response(200, json=TestDeleteRetry.RULE)
+
+        with pytest.raises(APIError) as excinfo:
+            await self._delete_with(handler)
+
+        assert excinfo.value.response_status_code == 500
+
+
+class TestAnIgnoredSequenceIsReported:
+    """Graph assigns rule order; a requested `sequence` may not be honoured.
+
+    On a live personal mailbox both POST and PATCH stored the service's own
+    value, so a sequence-only update could answer "updated" while the rule never
+    moved. The response now carries the request beside the result.
+    """
+
+    async def test_an_update_that_does_not_move_reports_the_request(self):
         client = MagicMock()
-        current = _make_rule(actions=_make_actions(move_to_folder=_OLD_FOLDER_ID))
-        builder = _wire_single_rule(client, current=current, patched=current)
-        builder.delete = AsyncMock(
-            side_effect=GraphAPIError(404, "ErrorItemNotFound", "The rule is gone.")
+        current = _make_rule(sequence=3, actions=_make_actions(mark_as_read=True))
+        stored = _make_rule(sequence=3, actions=_make_actions(mark_as_read=True))
+        _wire_single_rule(client, current=current, patched=stored)
+
+        result = await update_rule(client, "rule-1", config=_CFG_ALLOW_RULES, sequence=500)
+
+        assert result["sequence"] == 3
+        assert result["sequence_requested"] == 500
+
+    async def test_an_update_that_moves_reports_nothing_extra(self):
+        client = MagicMock()
+        current = _make_rule(sequence=3, actions=_make_actions(mark_as_read=True))
+        stored = _make_rule(sequence=500, actions=_make_actions(mark_as_read=True))
+        _wire_single_rule(client, current=current, patched=stored)
+
+        result = await update_rule(client, "rule-1", config=_CFG_ALLOW_RULES, sequence=500)
+
+        assert result["sequence"] == 500
+        assert "sequence_requested" not in result
+
+    async def test_a_create_that_does_not_land_where_asked_reports_the_request(self):
+        client = MagicMock()
+        collection = _wire_rules(client)
+        _wire_listing(collection, [1])
+        created = MagicMock()
+        created.id = "rule-new"
+        created.display_name = "Archive"
+        created.sequence = 128
+        collection.post = AsyncMock(return_value=created)
+
+        result = await create_rule(
+            client,
+            config=_CFG_ALLOW_RULES,
+            name="Archive",
+            from_addresses=["a@example.com"],
+            move_to_folder=_NEW_FOLDER_ID,
+            sequence=500,
         )
 
-        result = await delete_rule(client, "rule-1", config=_CFG_ALLOW_RULES)
-
-        assert result == {"status": "not_found", "id": "rule-1"}
+        assert result["sequence"] == 128
+        assert result["sequence_requested"] == 500

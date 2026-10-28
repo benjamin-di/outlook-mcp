@@ -395,18 +395,29 @@ def _refuse_non_directory(config_dir: str) -> None:
 # start-up load; repeating them for an import-time peek printed every one of
 # them twice on every start.
 _warn_about_unknown_keys = True
+# Same idea for warnings that are not about unknown keys — the legacy-encoding
+# note, for one. A `quiet` load silences every notice it would print, because a
+# peek repeated it once more on every start.
+_quiet_config_load = False
 
 
-def load_config(config_dir: str = DEFAULT_CONFIG_DIR, *, warn_unknown: bool = True) -> Config:
+def load_config(
+    config_dir: str = DEFAULT_CONFIG_DIR,
+    *,
+    warn_unknown: bool = True,
+    quiet: bool = False,
+) -> Config:
     """Load valid file/default settings, then non-persistent environment inputs.
 
     ``warn_unknown=False`` suppresses the unknown/legacy-key warnings for this
     call, so an internal read does not duplicate the ones the start-up load
     prints.
     """
-    global _warn_about_unknown_keys
+    global _warn_about_unknown_keys, _quiet_config_load
     previous = _warn_about_unknown_keys
-    _warn_about_unknown_keys = warn_unknown
+    previous_quiet = _quiet_config_load
+    _warn_about_unknown_keys = warn_unknown and not quiet
+    _quiet_config_load = quiet
     try:
         baseline = _load_file_config(config_dir)
         from outlook_mcp._config_env import apply_environment
@@ -414,6 +425,7 @@ def load_config(config_dir: str = DEFAULT_CONFIG_DIR, *, warn_unknown: bool = Tr
         return apply_environment(baseline, os.environ)
     finally:
         _warn_about_unknown_keys = previous
+        _quiet_config_load = previous_quiet
 
 
 def _load_file_config(config_dir: str) -> Config:
@@ -477,10 +489,11 @@ def _load_legacy_locale_config(raw: bytes, file_path: Path) -> Config | None:
         config = Config.model_validate_json(raw.decode(encoding))
     except (LookupError, UnicodeDecodeError, ValidationError):  # LookupError: unknown codec
         return None
-    logger.warning(
-        "%s is not UTF-8; read it in this machine's code page (%s), as earlier releases did. "
-        "Re-save it as UTF-8 so it reads the same on every machine.",
-        file_path,
-        encoding,
-    )
+    if not _quiet_config_load:
+        logger.warning(
+            "%s is not UTF-8; read it in this machine's code page (%s), as earlier releases did. "
+            "Re-save it as UTF-8 so it reads the same on every machine.",
+            file_path,
+            encoding,
+        )
     return config

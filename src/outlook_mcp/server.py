@@ -336,10 +336,8 @@ def _wrap_tool_errors(func: Callable[..., Any]) -> Callable[..., Any]:
             # here wiped `__cause__` (and suppressed the context) for every
             # tool that raises its own GraphAPIError, losing the SDK error the
             # server-side traceback needs.
-            hinted = _rule_write_hint(exc, func.__name__)
-            if hinted is exc:
-                raise
-            raise hinted from None
+            _rule_write_hint(exc, func.__name__)
+            raise
         except OutlookMCPError:
             raise
         except httpx.HTTPStatusError as exc:
@@ -2173,10 +2171,10 @@ def _mailbox_settings_write_is_on() -> bool:
         # getattr, not attribute access: a config written before this key existed
         # is a normal state — the setting is off unless a release that has it loads
         # it, and this answer only decides whether the opt-in group is advertised.
-        # `warn_unknown=False`: this is an import-time peek at one key, not the
-        # start-up load. Warning here printed every legacy/unknown-key warning a
-        # second time on every start.
-        return bool(getattr(load_config(warn_unknown=False), "mailbox_settings_write", False))
+        # `quiet=True`: this is an import-time peek at one key, not the
+        # start-up load. Warning here printed every config warning a second time
+        # on every start, including the legacy-encoding note.
+        return bool(getattr(load_config(quiet=True), "mailbox_settings_write", False))
     except (ValidationError, OSError, ValueError):
         return False
 

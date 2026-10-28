@@ -975,6 +975,30 @@ async def test_the_wrapper_applies_the_rule_hint_to_a_graph_api_error(monkeypatc
     assert excinfo.value.action == RULE_WRITE_NEEDS_SETTINGS_WRITE
 
 
+async def test_the_wrapper_keeps_the_sdk_error_as_the_cause(monkeypatch):
+    """`from None` wiped `__cause__` for every tool that raises its own error.
+
+    The server-side traceback needs the SDK error underneath; the hint must not
+    cost it.
+    """
+    import outlook_mcp.server as server
+    from outlook_mcp.errors import RULE_WRITE_NEEDS_SETTINGS_WRITE
+
+    monkeypatch.setattr(server, "_mailbox_settings_write_is_on", lambda: False)
+    sdk_error = RuntimeError("the SDK said no")
+
+    async def outlook_create_rule():
+        raise GraphAPIError(403, "ErrorAccessDenied", "Access denied.") from sdk_error
+
+    wrapped = _wrap_tool_errors(outlook_create_rule)
+
+    with pytest.raises(GraphAPIError) as excinfo:
+        await wrapped()
+
+    assert excinfo.value.__cause__ is sdk_error
+    assert excinfo.value.action == RULE_WRITE_NEEDS_SETTINGS_WRITE
+
+
 async def test_the_wrapper_still_translates_an_sdk_error_for_a_rule_write(monkeypatch):
     """The other path, for the tools that raise straight from the SDK."""
     from kiota_abstractions.api_error import APIError
