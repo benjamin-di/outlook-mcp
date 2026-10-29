@@ -6,6 +6,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.30.2] — 2026-10-29
+
+A fix to the 1.30 rules listing, from @hrgupta, with thanks (#206).
+
 ### Fixed
 
 - **`outlook_list_rules` shows what a rule excludes.** `exceptions` is a predicates block on
