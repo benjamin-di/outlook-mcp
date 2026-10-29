@@ -356,7 +356,7 @@ Server-side rules: they run whether or not any Outlook client is open. A rule is
 
 | Tool | Description |
 |------|-------------|
-| `outlook_list_rules` | List inbox rules in execution order, with conditions and actions, and whether Exchange reports an error applying the rule. |
+| `outlook_list_rules` | List inbox rules in execution order, with conditions, exceptions and actions, and whether Exchange reports an error applying the rule. |
 | `outlook_create_rule` | Create a rule from sender/subject/body/attachment conditions and move, copy, mark-read, delete, forward, categorize or stop-processing actions. |
 | `outlook_update_rule` | Change a rule's name, enabled state, sequence, target folder or mark-read action. Other actions are preserved; re-enabling a rule that forwards or redirects needs `mail_send`. |
 | `outlook_delete_rule` | Delete a rule by ID. Irreversible. |
