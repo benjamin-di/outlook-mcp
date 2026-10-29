@@ -6,6 +6,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **`outlook_list_rules` shows what a rule excludes.** `exceptions` is a predicates block on
+  the rule itself, beside `conditions` — `MessageRulePredicates` has no `exceptions` member,
+  so a listing that looked inside `conditions` never found one. A rule that forwards everything
+  except a set of mail therefore listed as if it caught everything, which is the question a rule
+  listing exists to answer. The block is now serialized alongside `conditions`, scrubbed like
+  every other caller-visible string, and omitted when unset.
+
 ## [1.30.1] — 2026-10-28
 
 ### Fixed
