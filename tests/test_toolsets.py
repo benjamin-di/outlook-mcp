@@ -231,3 +231,15 @@ def test_every_registered_tool_is_classified():
     live = {t.name for t in asyncio.run(mcp.list_tools())}
     missing_group = live - set(toolsets.TOOL_GROUPS)
     assert not missing_group, f"tools missing from TOOL_GROUPS: {sorted(missing_group)}"
+
+
+def test_mime_export_requires_its_own_explicit_selection():
+    names = ["outlook_mail_get_mime", "outlook_list_inbox", "outlook_auth_status"]
+    assert "outlook_mail_get_mime" not in toolsets.select_kept_tools(names, None)
+    for settings_write in (False, True):
+        assert "mime" not in toolsets.resolve_groups(None, settings_write)
+    assert toolsets.select_kept_tools(names, {"mime"}) == {
+        "outlook_mail_get_mime",
+        "outlook_auth_status",
+    }
+    assert toolsets.annotation_for("outlook_mail_get_mime").read_only_hint is True

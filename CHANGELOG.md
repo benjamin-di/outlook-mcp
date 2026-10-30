@@ -6,6 +6,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in `mime` toolset exports original message MIME as base64 with byte count and SHA-256, bounded to 32 MiB on the existing sign-in.
+
 ## [1.30.2] — 2026-10-29
 
 A fix to the 1.30 rules listing, from @hrgupta, with thanks (#206).

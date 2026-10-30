@@ -55,6 +55,7 @@ from outlook_mcp.tools import (
     mail_delta,
     mail_drafts,
     mail_folders,
+    mail_mime,
     mail_read,
     mail_rules,
     mail_thread,
@@ -471,6 +472,16 @@ async def outlook_read_message(
         concise=concise,
         include_sender_auth=include_sender_auth,
     )
+
+
+@mcp.tool()
+@_wrap_tool_errors
+async def outlook_mail_get_mime(ctx: Context, message_id: str) -> dict:
+    """Export original MIME by Graph message ID as base64, with byte count and SHA-256.
+
+    Read-only; at most 32 MiB. Enable the off-by-default `mime` toolset to load this tool.
+    """
+    return await mail_mime.get_mime(_get_graph_client(ctx), message_id)
 
 
 @mcp.tool()
