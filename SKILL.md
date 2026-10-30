@@ -87,13 +87,13 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `outlook_auth_status` — Check authentication status and read-only mode
 
 ### Mail — Read
-- `outlook_export_message` — Export original MIME by Graph message ID as base64, with byte count and SHA-256; read-only, at most 32 MiB, opt-in `mime` group
 - `outlook_list_inbox` — List messages with filters (folder, unread, sender, date, uncategorized only, Focused class)
 - `outlook_read_message` — Get full message by ID, or by its Message-ID header value (`<abc@example.com>`); `include_sender_auth=True` adds whether Microsoft verified the From domain
 - `outlook_read_messages` — Bulk read up to 20 messages by ID in one `$batch` round-trip (use NOT N read_message calls)
 - `outlook_search_mail` — Search mail using KQL query; a `cursor` continues the search in the folder it started in. Graph has been seen to stop a search a little past 250 results (observed on Exchange Online and Outlook.com); a last page past 250 carries `incomplete`
 - `outlook_list_folders` — List top-level mail folders; `recursive=True` walks the whole tree and gives each folder's `path`
 - `outlook_list_inbox_delta` — List only inbox changes since last call (massive token savings for recurring agent jobs)
+- `outlook_export_message` — Export a message's original MIME by Graph message ID: a JSON block (`size_bytes`, `sha256`), then the bytes as a `message/rfc822` resource blob; read-only, at most 10 MiB, opt-in `mime` group
 
 ### Mail — Write
 - `outlook_send_message` — Send email with recipients, CC, BCC, HTML or Markdown (`is_markdown=True`), importance
