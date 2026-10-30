@@ -4,20 +4,22 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from typing import Any
 from urllib.parse import quote
 
 import httpx
+from mcp.types import BlobResourceContents, ContentBlock, EmbeddedResource, TextContent
 
 from outlook_mcp.tools._delta import GRAPH_BASE, _bearer_token
 from outlook_mcp.validation import validate_graph_id
 
-MAX_MIME_BYTES = 32 * 1024 * 1024
+MAX_MIME_BYTES = 10 * 1024 * 1024
 _CHUNK_BYTES = 64 * 1024
 _ERROR_BYTES = 64 * 1024
 
 
-async def get_mime(client: Any, message_id: str) -> dict:
+async def get_mime(client: Any, message_id: str) -> list[ContentBlock]:
     """Return the original message bytes without parsing or reserializing MIME."""
     validate_graph_id(message_id)
     url = GRAPH_BASE + "me/messages/" + quote(message_id, safe="") + "/$value"
@@ -51,18 +53,26 @@ async def get_mime(client: Any, message_id: str) -> dict:
             except ValueError:
                 declared_size = 0
             if declared_size > MAX_MIME_BYTES:
-                raise ValueError("Message MIME exceeds the 32 MiB export limit")
+                raise ValueError("Message MIME exceeds the 10 MiB export limit")
             content = bytearray()
             async for chunk in response.aiter_raw(chunk_size=_CHUNK_BYTES):
                 if len(content) + len(chunk) > MAX_MIME_BYTES:
-                    raise ValueError("Message MIME exceeds the 32 MiB export limit")
+                    raise ValueError("Message MIME exceeds the 10 MiB export limit")
                 content.extend(chunk)
     if not content:
         raise ValueError("Graph returned empty MIME content")
-    return {
+    metadata = {
         "message_id": message_id,
-        "content_base64": base64.b64encode(content).decode("ascii"),
         "size_bytes": len(content),
         "sha256": hashlib.sha256(content).hexdigest(),
         "content_type": "message/rfc822",
     }
+    resource = BlobResourceContents(
+        uri=f"message:///{quote(message_id, safe='')}.eml",
+        mime_type="message/rfc822",
+        blob=base64.b64encode(content).decode("ascii"),
+    )
+    return [
+        TextContent(type="text", text=json.dumps(metadata)),
+        EmbeddedResource(type="resource", resource=resource),
+    ]

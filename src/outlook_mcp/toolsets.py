@@ -76,7 +76,7 @@ TOOL_GROUPS: dict[str, str] = {
     "outlook_batch_triage": "mail",
     "outlook_list_thread": "mail",
     # MIME export is separate from ordinary mail reads and off by default.
-    "outlook_mail_get_mime": "mime",
+    "outlook_export_message": "mime",
     # rules — their own group: the four schemas are the most expensive single
     # feature here (~1.2k proxy tokens, mostly `create_rule`'s argument list), and
     # a client that gated down to `mail` should not pay for them.
@@ -153,7 +153,7 @@ TOOL_GROUPS: dict[str, str] = {
 # Tools that only read — no mailbox/calendar mutation. (download_attachment is
 # deliberately excluded: it writes a local file, so it isn't read-only.)
 READ_ONLY: set[str] = {
-    "outlook_mail_get_mime",
+    "outlook_export_message",
     "outlook_auth_status",
     "outlook_whoami",
     "outlook_list_inbox",

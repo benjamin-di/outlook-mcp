@@ -234,12 +234,12 @@ def test_every_registered_tool_is_classified():
 
 
 def test_mime_export_requires_its_own_explicit_selection():
-    names = ["outlook_mail_get_mime", "outlook_list_inbox", "outlook_auth_status"]
-    assert "outlook_mail_get_mime" not in toolsets.select_kept_tools(names, None)
+    names = ["outlook_export_message", "outlook_list_inbox", "outlook_auth_status"]
+    assert "outlook_export_message" not in toolsets.select_kept_tools(names, None)
     for settings_write in (False, True):
         assert "mime" not in toolsets.resolve_groups(None, settings_write)
     assert toolsets.select_kept_tools(names, {"mime"}) == {
-        "outlook_mail_get_mime",
+        "outlook_export_message",
         "outlook_auth_status",
     }
-    assert toolsets.annotation_for("outlook_mail_get_mime").read_only_hint is True
+    assert toolsets.annotation_for("outlook_export_message").read_only_hint is True

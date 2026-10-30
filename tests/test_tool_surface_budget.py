@@ -398,8 +398,8 @@ asyncio.run(main())
     assert measured["cost"] <= DOCUMENT_SURFACE_CEILING, measured
 
 
-# MIME export: default stays 71 / 11,130; default + mime is 72 / 11,224
-# (+94 proxy tokens). All groups: 77 / 12,189. Measured on Python 3.13 with
+# MIME export: default stays 71 / 11,130; default + mime is 72 / 11,209
+# (+79 proxy tokens). All groups: 77 / 12,175. Measured on Python 3.13 with
 # the by_alias=True dump above. Its own ceiling gives about 1% headroom,
 # without raising the default, rules or document ceilings.
 MIME_SURFACE_CEILING = 11_350
@@ -432,11 +432,11 @@ asyncio.run(main())
 
     default = measure(default_groups)
     enabled = measure(default_groups | {"mime"})
-    mime = [tool for tool in enabled if tool["name"] == "outlook_mail_get_mime"]
+    mime = [tool for tool in enabled if tool["name"] == "outlook_export_message"]
     assert len(default) == 71
     assert len(enabled) == 72
     assert len(mime) == 1
     assert mime[0]["annotations"]["readOnlyHint"] is True
-    assert [tool for tool in enabled if tool["name"] != "outlook_mail_get_mime"] == default
+    assert [tool for tool in enabled if tool["name"] != "outlook_export_message"] == default
     assert _proxy_tokens(default) <= DEFAULT_SURFACE_CEILING
     assert _proxy_tokens(enabled) <= MIME_SURFACE_CEILING

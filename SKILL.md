@@ -87,7 +87,7 @@ Pass `concise=True` to read tools (`outlook_list_inbox`, `outlook_read_message`,
 - `outlook_auth_status` — Check authentication status and read-only mode
 
 ### Mail — Read
-- `outlook_mail_get_mime` — Export original MIME by Graph message ID as base64, with byte count and SHA-256; read-only, at most 32 MiB, opt-in `mime` group
+- `outlook_export_message` — Export original MIME by Graph message ID as base64, with byte count and SHA-256; read-only, at most 32 MiB, opt-in `mime` group
 - `outlook_list_inbox` — List messages with filters (folder, unread, sender, date, uncategorized only, Focused class)
 - `outlook_read_message` — Get full message by ID, or by its Message-ID header value (`<abc@example.com>`); `include_sender_auth=True` adds whether Microsoft verified the From domain
 - `outlook_read_messages` — Bulk read up to 20 messages by ID in one `$batch` round-trip (use NOT N read_message calls)

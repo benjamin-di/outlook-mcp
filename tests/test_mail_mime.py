@@ -2,11 +2,14 @@
 
 import base64
 import hashlib
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from mcp.client import Client
+from mcp.types import BlobResourceContents, EmbeddedResource, TextContent
 
 from outlook_mcp.tools import mail_mime
 
@@ -65,14 +68,20 @@ async def test_original_multipart_bytes_and_id_are_preserved(monkeypatch, graph)
 
     mock_graph(monkeypatch, stream, check=check)
     result = await mail_mime.get_mime(graph, "A/B+C=")
-    assert base64.b64decode(result["content_base64"]) == data
-    assert result == {
+    assert len(result) == 2
+    assert isinstance(result[0], TextContent)
+    assert json.loads(result[0].text) == {
         "message_id": "A/B+C=",
-        "content_base64": base64.b64encode(data).decode("ascii"),
         "size_bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
         "content_type": "message/rfc822",
     }
+    assert isinstance(result[1], EmbeddedResource)
+    resource = result[1].resource
+    assert isinstance(resource, BlobResourceContents)
+    assert str(resource.uri) == "message:///A%2FB%2BC%3D.eml"
+    assert resource.mime_type == "message/rfc822"
+    assert base64.b64decode(resource.blob) == data
     graph.credential.get_token.assert_called_once_with("https://graph.microsoft.com/.default")
     assert stream.closed
 
@@ -105,7 +114,53 @@ async def test_exact_limit_is_accepted(monkeypatch, graph):
     monkeypatch.setattr(mail_mime, "MAX_MIME_BYTES", 8)
     stream = TrackedStream([b"1234", b"5678"])
     mock_graph(monkeypatch, stream)
-    assert (await mail_mime.get_mime(graph, "message"))["size_bytes"] == 8
+    assert json.loads((await mail_mime.get_mime(graph, "message"))[0].text)["size_bytes"] == 8
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra", [0, 1])
+async def test_real_ten_mib_boundary(monkeypatch, graph, extra):
+    data = b"x" * (10 * 1024 * 1024 + extra)
+    stream = TrackedStream([data])
+    mock_graph(monkeypatch, stream)
+    if extra:
+        with pytest.raises(ValueError, match="10 MiB export limit"):
+            await mail_mime.get_mime(graph, "message")
+    else:
+        result = await mail_mime.get_mime(graph, "message")
+        assert json.loads(result[0].text)["size_bytes"] == len(data)
+        assert base64.b64decode(result[1].resource.blob) == data
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data", [b"Subject: text\r\n\r\nhello\r\n", b"\x00\xff\x80\r\n"])
+async def test_export_reaches_mcp_client_as_exact_blob_without_duplicate_json(
+    monkeypatch, graph, data
+):
+    from outlook_mcp import server
+
+    monkeypatch.setattr(server, "_get_graph_client", lambda ctx: graph)
+    # The suite normally loads default groups; expose this opt-in for this call only.
+    monkeypatch.setattr(server.mcp._tool_manager, "_tools", dict(server.mcp._tool_manager._tools))
+    if "outlook_export_message" not in server.mcp._tool_manager._tools:
+        server.mcp.add_tool(server.outlook_export_message)
+    stream = TrackedStream([data])
+    mock_graph(monkeypatch, stream)
+    async with Client(server.mcp) as client:
+        result = await client.call_tool("outlook_export_message", {"message_id": "message"})
+    assert result.is_error is False
+    assert result.structured_content is None
+    assert [block.type for block in result.content] == ["text", "resource"]
+    meta = json.loads(result.content[0].text)
+    assert meta["size_bytes"] == len(data)
+    assert meta["sha256"] == hashlib.sha256(data).hexdigest()
+    assert "content_base64" not in meta
+    resource = result.content[1].resource
+    assert isinstance(resource, BlobResourceContents)
+    assert resource.mime_type == "message/rfc822"
+    assert base64.b64decode(resource.blob) == data
     assert stream.closed
 
 

@@ -105,7 +105,7 @@ EXPECTED_TOOLS = [
     "outlook_update_rule",
     "outlook_delete_rule",
     # Original MIME (1) — the opt-in `mime` group
-    "outlook_mail_get_mime",
+    "outlook_export_message",
 ]
 
 
@@ -144,8 +144,8 @@ def _expected_tool_names() -> set[str]:
         expected.discard("outlook_read_attachment")
     if not _rules_are_loaded():
         expected -= RULE_TOOLS
-    if "outlook_mail_get_mime" not in mcp._tool_manager._tools:
-        expected.discard("outlook_mail_get_mime")
+    if "outlook_export_message" not in mcp._tool_manager._tools:
+        expected.discard("outlook_export_message")
     return expected
 
 

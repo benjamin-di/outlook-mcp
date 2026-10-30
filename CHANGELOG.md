@@ -8,7 +8,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Opt-in `mime` toolset exports original message MIME as base64 with byte count and SHA-256, bounded to 32 MiB on the existing sign-in.
+- Opt-in `mime` toolset adds `outlook_export_message`: original message MIME as a `message/rfc822` resource blob after JSON metadata with byte count and SHA-256, bounded to 10 MiB on the existing sign-in.
 
 ## [1.30.2] — 2026-10-29
 

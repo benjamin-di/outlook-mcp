@@ -320,7 +320,7 @@ the error lists their paths. `outlook_rename_folder` and `outlook_delete_folder`
 |------|-------------|
 | `outlook_list_inbox` | List messages in a folder. `folder` accepts display names, well-known names, paths (`Inbox/Travel/Flights`), or Graph IDs. Filter by read status, sender, date range, Focused Inbox classification, or no categories (`uncategorized_only`). Pagination via `cursor` (or `skip`). |
 | `outlook_read_message` | Get full message by ID, or by its Message-ID header value (`<abc@example.com>`, matched exactly; the response's `id` is the Graph ID the other tools take). Format: `text`, `html`, or `full` (both). Pass `include_deferred_send=True` to also surface the draft's scheduled delivery time. Pass `include_sender_auth=True` to add `sender_authentication`, Microsoft's verdict on the From domain: `authenticated`, `from_domain`, the `dkim`, `dmarc` and `compauth` results, and a short `reason`. Only Microsoft's own topmost `Authentication-Results` header counts, and `authenticated` is true only for a pass aligned with the From domain. It vouches for `from_domain` only, never for the display name, and `false` means unverified, not spoofed. |
-| `outlook_mail_get_mime` | **Opt-in** (`mime` group). Export original MIME by Graph message ID as base64, with byte count and SHA-256; read-only, bounded to 32 MiB. |
+| `outlook_export_message` | **Opt-in** (`mime` group). Export original MIME by Graph message ID as a `message/rfc822` resource blob after JSON metadata (`size_bytes`, `sha256`); read-only, bounded to 10 MiB. |
 | `outlook_read_messages` | Bulk read up to 20 messages by ID via Graph `$batch` in one round-trip. Per-message shape matches `outlook_read_message` byte-for-byte for the same `(format, concise, include_deferred_send, include_sender_auth)`. Partial-failure tolerant: 404s on some IDs surface in `failures[]` without failing the whole call. Use NOT N `outlook_read_message` calls. |
 | `outlook_search_mail` | Search mail using KQL query. Optionally scope to a folder by name, path or ID. A `cursor` continues the search in the folder it started in. Graph has been seen to end a search a little past 250 results without saying so (255–275 on Exchange Online; 275 also observed on Outlook.com), so a last page past 250 carries `incomplete`, a note that older matches may be missing and how to reach them. |
 | `outlook_list_folders` | List mail folders with counts, `parent_id`, and `child_count`. Pass `recursive=true` to walk the full folder tree (subfolders included); each folder then carries its `path`, the form every `folder` argument accepts. |
@@ -330,6 +330,10 @@ the error lists their paths. `outlook_rename_folder` and `outlook_delete_folder`
 Original MIME export uses the existing sign-in and needs no additional scope or package.
 Enable it with `OUTLOOK_MCP_TOOLSETS=mail,mime` (plus any other groups you need) and restart.
 It preserves the original bytes, including attachments; it does not parse or rewrite them.
+The result contains a small JSON metadata block followed by an embedded resource with a
+base64 blob, never decoded text. Messages larger than 10 MiB are refused while streaming.
+A throttled request (HTTP 429) returns an error; bulk exporters must pace their calls and
+handle throttling rather than relying on automatic retries.
 
 ### Mail Write
 
